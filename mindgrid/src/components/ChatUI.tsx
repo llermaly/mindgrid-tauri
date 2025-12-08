@@ -491,20 +491,17 @@ export function ChatUI({
                 ? (isCodexRunning ? "bg-blue-400 animate-pulse" : "bg-blue-500")
                 : (isRunning ? "bg-green-500 animate-pulse" : "bg-zinc-600")
             }`} />
-            <span className="text-sm font-medium text-zinc-200">
-              {activeAgent === "codex" ? "Codex" : "Claude"}
-            </span>
+            {onModelChange && (
+              <ModelSelector
+                value={model || null}
+                onChange={onModelChange}
+                size="sm"
+              />
+            )}
             <span className="text-xs px-2 py-1 rounded border border-zinc-700 text-neutral-400">
               {activeAgent === "codex" ? (isCodexRunning ? "Running" : "Idle") : (isRunning ? "Running" : "Idle")}
             </span>
           </div>
-          {onModelChange && (
-            <ModelSelector
-              value={model || null}
-              onChange={onModelChange}
-              size="sm"
-            />
-          )}
           <div className="flex items-center gap-2">
             <button
               onClick={() => setThinkingMode((v) => !v)}
@@ -631,13 +628,6 @@ export function ChatUI({
                 ) : null
               )}
             </div>
-            <button
-              onClick={() => setFiltersExpanded((v) => !v)}
-              className="px-2 py-1 rounded text-xs border border-zinc-700 text-neutral-400 hover:text-white hover:border-zinc-500"
-              title="Toggle message filters"
-            >
-              Filters
-            </button>
           </div>
 
           {/* Permission Mode Selector */}

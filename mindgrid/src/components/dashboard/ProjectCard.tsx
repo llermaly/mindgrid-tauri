@@ -1,6 +1,7 @@
 import type { ProjectPreset } from "../../lib/presets";
 import { StatusBadge } from "./StatusBadge";
 import type { DashboardProject, DashboardSession } from "./types";
+import { PathLink } from "../PathLink";
 
 interface ProjectCardProps {
   project: DashboardProject;
@@ -29,7 +30,7 @@ export function ProjectCard({ project, preset, onOpen, onOpenSession }: ProjectC
           </div>
           <div className="min-w-0 flex-1">
             <h3 className="font-medium text-white truncate">{project.name}</h3>
-            <p className="text-xs text-neutral-500 truncate">{project.path}</p>
+            <PathLink path={project.path} className="text-xs text-neutral-500" />
           </div>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
