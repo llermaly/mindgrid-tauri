@@ -116,12 +116,12 @@ export function ChatUI({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const handleStartClaude = useCallback(async () => {
-    const id = await spawnClaude(cwd, claudeSessionId);
-    if (id) {
-      setHasStarted(true);
+  // Initialize config on mount (no "Start Claude" button needed)
+  useEffect(() => {
+    if (!hasStarted) {
+      spawnClaude(cwd, claudeSessionId).then(() => setHasStarted(true));
     }
-  }, [spawnClaude, cwd, claudeSessionId]);
+  }, [cwd, claudeSessionId, hasStarted, spawnClaude]);
 
   const handleSend = useCallback(async () => {
     if (!input.trim()) return;
@@ -140,16 +140,9 @@ export function ChatUI({
     console.log("[ChatUI] Adding user message immediately:", userMessage.id);
     onClaudeMessage?.(userMessage);
 
-    if (!hasStarted) {
-      await handleStartClaude();
-      // Wait a moment for Claude to initialize, then send
-      setTimeout(() => {
-        sendMessage(message);
-      }, 1000);
-    } else if (isRunning) {
-      sendMessage(message);
-    }
-  }, [input, hasStarted, isRunning, handleStartClaude, sendMessage, onClaudeMessage]);
+    // Send message directly - each message spawns a new Claude process
+    sendMessage(message);
+  }, [input, sendMessage, onClaudeMessage]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -192,20 +185,12 @@ export function ChatUI({
               Stop
             </button>
           )}
-          {!isRunning && !hasStarted && (
-            <button
-              onClick={handleStartClaude}
-              className="px-3 py-1 text-xs font-medium rounded bg-blue-600 hover:bg-blue-500 text-zinc-100"
-            >
-              Start Claude
-            </button>
-          )}
         </div>
       </div>
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {messages.length === 0 && !hasStarted ? (
+        {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-zinc-500">
             <svg
               className="w-12 h-12 mb-4 text-zinc-700"
@@ -222,27 +207,7 @@ export function ChatUI({
             </svg>
             <p className="text-sm">Start a conversation with Claude</p>
             <p className="text-xs text-zinc-600 mt-1">
-              Type a message or click "Start Claude" to begin
-            </p>
-          </div>
-        ) : messages.length === 0 && hasStarted && isRunning ? (
-          <div className="h-full flex flex-col items-center justify-center text-zinc-500">
-            <svg
-              className="w-12 h-12 mb-4 text-green-600"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.5}
-                d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-              />
-            </svg>
-            <p className="text-sm text-green-500">Claude is ready</p>
-            <p className="text-xs text-zinc-600 mt-1">
-              Type a message below to start the conversation
+              Type a message below to begin
             </p>
           </div>
         ) : (
@@ -261,7 +226,7 @@ export function ChatUI({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={hasStarted ? "Send a message..." : "Type a message to start..."}
+            placeholder="Send a message..."
             className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-sm resize-none focus:outline-none focus:border-blue-500 text-zinc-200 placeholder-zinc-500 min-h-[48px] max-h-[200px]"
             rows={1}
             disabled={false}

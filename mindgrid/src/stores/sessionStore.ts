@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { invoke } from "@tauri-apps/api/core";
 import type { ParsedMessage, ClaudeEvent } from "../lib/claude-types";
 import { debug } from "./debugStore";
 import * as db from "../lib/database";
@@ -201,8 +202,36 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   createSession: async (projectId, name, cwd) => {
+    const id = generateId();
+    let sessionCwd = cwd;
+
+    // Try to create worktree for isolation
+    try {
+      const project = get().projects[projectId];
+      if (project) {
+        const isGit = await invoke<boolean>("validate_git_repository", { projectPath: project.path });
+        if (isGit) {
+           // Use sanitized name + short ID for uniqueness and readability
+           const sanitizedName = name.replace(/[^a-zA-Z0-9-_]/g, "-").toLowerCase();
+           const worktreeName = `${sanitizedName}-${id.slice(0, 6)}`;
+           
+           debug.info("SessionStore", "Creating worktree for session", { worktreeName });
+           
+           const worktreePath = await invoke<string>("create_workspace_worktree", {
+             projectPath: project.path,
+             name: worktreeName
+           });
+           sessionCwd = worktreePath;
+           debug.info("SessionStore", "Created worktree", { worktreePath });
+        }
+      }
+    } catch (err) {
+      console.error("Failed to create worktree:", err);
+      debug.error("SessionStore", "Failed to create worktree", err);
+    }
+
     const session: Session = {
-      id: generateId(),
+      id,
       name,
       projectId,
       claudeSessionId: null,
@@ -211,12 +240,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       isRunning: false,
       totalCost: 0,
       model: null,
-      cwd,
+      cwd: sessionCwd,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
 
-    debug.info("SessionStore", "Creating session", { name, projectId, id: session.id });
+    debug.info("SessionStore", "Creating session", { name, projectId, id: session.id, cwd: session.cwd });
     console.log("Creating session:", session);
 
     // Save to DB
@@ -272,10 +301,29 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   deleteSession: async (id) => {
+    console.log("[SessionStore] deleteSession called for id:", id);
     const session = get().sessions[id];
-    if (!session) return;
+    if (!session) {
+      console.error("[SessionStore] Session not found for delete:", id);
+      return;
+    }
 
     debug.info("SessionStore", "Deleting session", { id, name: session.name });
+
+    // Remove worktree if it exists and is different from project path
+    const project = get().projects[session.projectId];
+    if (project && session.cwd !== project.path && session.cwd.includes(".mindgrid/worktrees")) {
+       try {
+         debug.info("SessionStore", "Removing worktree", { worktreePath: session.cwd });
+         await invoke("remove_workspace_worktree", {
+           projectPath: project.path,
+           worktreePath: session.cwd
+         });
+       } catch (err) {
+         console.error("Failed to remove worktree:", err);
+         debug.error("SessionStore", "Failed to remove worktree", err);
+       }
+    }
 
     // Delete from DB
     await db.deleteSession(id);
@@ -298,9 +346,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     });
 
     // Update project in DB
-    const project = get().projects[session.projectId];
-    if (project) {
-      await db.saveProject(project);
+    const updatedProject = get().projects[session.projectId];
+    if (updatedProject) {
+      await db.saveProject(updatedProject);
     }
   },
 

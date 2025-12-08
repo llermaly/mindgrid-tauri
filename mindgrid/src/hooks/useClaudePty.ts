@@ -48,6 +48,13 @@ export function useClaudePty(options: UseClaudePtyOptions = {}) {
       (event) => {
         console.log("[useClaudePty] Event received:", event.type, event);
         debug.event("ClaudeParser", `Event: ${event.type}`, event);
+
+        // Capture Claude session ID from init event for subsequent --resume calls
+        if (event.type === "system" && event.subtype === "init" && event.session_id) {
+          console.log("[useClaudePty] Captured Claude session ID:", event.session_id);
+          configRef.current.claudeSessionId = event.session_id;
+        }
+
         try {
           onEventRef.current?.(event);
         } catch (err) {
@@ -154,24 +161,28 @@ export function useClaudePty(options: UseClaudePtyOptions = {}) {
         await invoke("kill_pty", { id: ptyIdRef.current });
       }
 
+      // Reset parser state for new message to avoid stale data
+      parserRef.current?.flush();
+
       const { cwd, claudeSessionId } = configRef.current;
-      
-      // Build args similar to commander
+
+      // Build args similar to commander - each message spawns fresh process
       const claudeArgs: string[] = [
         "-p", message,
         "--output-format", "stream-json",
-        "--include-partial-messages",
-        "--verbose"
+        "--verbose",
+        "--include-partial-messages"
       ];
 
-      // Add --resume flag if we have a Claude session ID
+      // Add --resume flag if we have a Claude session ID to continue conversation
       if (claudeSessionId) {
-        // Note: verify if your Claude CLI version supports --resume. 
-        // If not, context might be maintained via CWD or other means.
-        // Keeping it as it was in original mindgrid code.
         claudeArgs.push("--resume", claudeSessionId);
+        console.log("[useClaudePty] Using --resume with session:", claudeSessionId);
+      } else {
+        console.log("[useClaudePty] Starting fresh Claude session (no --resume)");
       }
 
+      console.log("[useClaudePty] Full Claude args:", claudeArgs.join(" "));
       debug.info("PTY", "Spawning Claude for message", { cwd, claudeSessionId, args: claudeArgs });
 
       const id = await invoke<string>("spawn_pty", {

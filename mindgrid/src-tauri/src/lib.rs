@@ -1,4 +1,5 @@
 mod pty;
+mod git;
 
 use std::sync::Arc;
 use tauri_plugin_sql::{Migration, MigrationKind};
@@ -76,6 +77,10 @@ pub fn run() {
             pty::write_pty,
             pty::resize_pty,
             pty::kill_pty,
+            git::validate_git_repository,
+            git::get_git_worktrees,
+            git::create_workspace_worktree,
+            git::remove_workspace_worktree,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

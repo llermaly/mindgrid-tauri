@@ -1,0 +1,1 @@
+- REMINDER: We found that commander has a lot in common with our codebase so we can validate things in there. No need to reinvent the wheel.
