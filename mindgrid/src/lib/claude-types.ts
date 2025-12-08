@@ -87,6 +87,8 @@ export interface ClaudeSystemEvent {
   mcp_servers?: string[];
   model?: string;
   api_key_source?: string;
+  context_tokens?: number;
+  context_window?: number;
 }
 
 export interface ClaudeAssistantEvent {
@@ -132,6 +134,15 @@ export interface ClaudeResultEvent {
   is_error?: boolean;
   num_turns?: number;
   total_cost_usd?: number;
+  modelUsage?: {
+    [modelName: string]: {
+      inputTokens?: number;
+      cacheReadInputTokens?: number;
+      cacheCreationInputTokens?: number;
+      outputTokens?: number;
+      contextWindow?: number;
+    };
+  };
 }
 
 export interface ClaudeErrorEvent {
