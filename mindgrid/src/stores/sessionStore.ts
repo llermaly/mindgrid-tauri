@@ -33,6 +33,13 @@ export interface Project {
   updatedAt: number;
 }
 
+interface GhCliStatus {
+  available: boolean;
+  authenticated: boolean;
+  path: string | null;
+  error: string | null;
+}
+
 interface SessionState {
   projects: Record<string, Project>;
   sessions: Record<string, Session>;
@@ -41,6 +48,7 @@ interface SessionState {
   isLoading: boolean;
   isInitialized: boolean;
   ghAvailable: boolean;
+  ghCliStatus: GhCliStatus | null;
 
   // Init
   initialize: () => Promise<void>;

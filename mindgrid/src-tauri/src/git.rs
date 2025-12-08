@@ -834,24 +834,96 @@ pub async fn git_push(
     })
 }
 
+/// Find gh CLI path (checks common Homebrew locations)
+fn find_gh_path() -> Option<String> {
+    // Common paths where gh might be installed
+    let paths = [
+        "/opt/homebrew/bin/gh",      // Apple Silicon Homebrew
+        "/usr/local/bin/gh",          // Intel Homebrew
+        "/usr/bin/gh",                // System install
+        "gh",                         // In PATH
+    ];
+
+    for path in paths {
+        if path == "gh" {
+            // Check if gh is in PATH
+            if std::process::Command::new("which")
+                .arg("gh")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+            {
+                return Some("gh".to_string());
+            }
+        } else if std::path::Path::new(path).exists() {
+            return Some(path.to_string());
+        }
+    }
+    None
+}
+
+#[derive(Debug, Serialize)]
+pub struct GhCliStatus {
+    pub available: bool,
+    pub authenticated: bool,
+    pub path: Option<String>,
+    pub error: Option<String>,
+}
+
 /// Check if gh CLI is available and authenticated
 #[tauri::command]
-pub async fn git_check_gh_cli() -> Result<bool, String> {
-    let output = tokio::process::Command::new("gh")
+pub async fn git_check_gh_cli() -> Result<GhCliStatus, String> {
+    let gh_path = match find_gh_path() {
+        Some(path) => path,
+        None => return Ok(GhCliStatus {
+            available: false,
+            authenticated: false,
+            path: None,
+            error: Some("gh CLI not found. Install with: brew install gh".to_string()),
+        }),
+    };
+
+    let output = tokio::process::Command::new(&gh_path)
         .arg("auth")
         .arg("status")
         .output()
         .await;
 
     match output {
-        Ok(result) => Ok(result.status.success()),
-        Err(_) => Ok(false), // gh not found
+        Ok(result) => {
+            if result.status.success() {
+                Ok(GhCliStatus {
+                    available: true,
+                    authenticated: true,
+                    path: Some(gh_path),
+                    error: None,
+                })
+            } else {
+                Ok(GhCliStatus {
+                    available: true,
+                    authenticated: false,
+                    path: Some(gh_path),
+                    error: Some("gh CLI not authenticated. Run: gh auth login".to_string()),
+                })
+            }
+        }
+        Err(e) => Ok(GhCliStatus {
+            available: true,
+            authenticated: false,
+            path: Some(gh_path),
+            error: Some(format!("Failed to check gh auth: {}", e)),
+        }),
     }
 }
 
 /// Get PR info for the current branch using gh CLI
 #[tauri::command]
 pub async fn git_get_pr_info(working_directory: String) -> Result<Option<PullRequestInfo>, String> {
+    let gh_path = match find_gh_path() {
+        Some(path) => path,
+        None => return Ok(None),
+    };
+
     // Get current branch name
     let branch_output = tokio::process::Command::new("git")
         .arg("-C")
@@ -868,7 +940,7 @@ pub async fn git_get_pr_info(working_directory: String) -> Result<Option<PullReq
     let branch = String::from_utf8_lossy(&branch_output.stdout).trim().to_string();
 
     // Use gh CLI to get PR info
-    let output = tokio::process::Command::new("gh")
+    let output = tokio::process::Command::new(&gh_path)
         .arg("pr")
         .arg("list")
         .arg("--head")
@@ -917,6 +989,15 @@ pub async fn git_create_pr(
     title: String,
     body: String,
 ) -> Result<CreatePrResult, String> {
+    let gh_path = match find_gh_path() {
+        Some(path) => path,
+        None => return Ok(CreatePrResult {
+            success: false,
+            url: None,
+            error: Some("gh CLI not found. Install with: brew install gh".to_string()),
+        }),
+    };
+
     // Get current branch name
     let branch_output = tokio::process::Command::new("git")
         .arg("-C")
@@ -935,7 +1016,7 @@ pub async fn git_create_pr(
     }
 
     // Create PR using gh CLI
-    let output = tokio::process::Command::new("gh")
+    let output = tokio::process::Command::new(&gh_path)
         .arg("pr")
         .arg("create")
         .arg("--title")
@@ -1077,6 +1158,15 @@ pub async fn git_merge_pr(
     working_directory: String,
     squash: bool,
 ) -> Result<MergeResult, String> {
+    let gh_path = match find_gh_path() {
+        Some(path) => path,
+        None => return Ok(MergeResult {
+            success: false,
+            message: None,
+            error: Some("gh CLI not found. Install with: brew install gh".to_string()),
+        }),
+    };
+
     let mut args = vec!["pr", "merge", "--delete-branch"];
 
     if squash {
@@ -1085,7 +1175,7 @@ pub async fn git_merge_pr(
         args.push("--merge");
     }
 
-    let output = tokio::process::Command::new("gh")
+    let output = tokio::process::Command::new(&gh_path)
         .args(&args)
         .current_dir(&working_directory)
         .output()
