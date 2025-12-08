@@ -5,6 +5,7 @@ import type { ClaudeEvent, ParsedMessage, PermissionMode, CommitMode } from "../
 import { COMMIT_MODE_INFO } from "../lib/claude-types";
 import { debug } from "../stores/debugStore";
 import { ModelSelector } from "./ModelSelector";
+import { ContextUsagePopup } from "./ContextUsagePopup";
 
 interface PrInfo {
   number: number;
@@ -170,6 +171,9 @@ export function ChatUI({
   const [prTitle, setPrTitle] = useState("");
   const [prBody, setPrBody] = useState("");
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [showContextPopup, setShowContextPopup] = useState(false);
+  const [contextPopupPos, setContextPopupPos] = useState({ x: 0, y: 0 });
+  const [contextUsed, setContextUsed] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -216,12 +220,48 @@ export function ChatUI({
     }
   }, []);
 
+  // Parse context usage from events
+  const handleClaudeEvent = useCallback((event: ClaudeEvent) => {
+    // Check for context usage in result messages
+    if (event.type === 'result' && event.modelUsage) {
+      const usage = event.modelUsage;
+      // Get the first model's usage (usually there's only one)
+      const modelKey = Object.keys(usage)[0];
+      if (modelKey && usage[modelKey]) {
+        const modelUsage = usage[modelKey];
+        const inputTokens = (modelUsage.inputTokens || 0) + (modelUsage.cacheReadInputTokens || 0);
+        const contextWindow = modelUsage.contextWindow || 200000;
+        const percentage = Math.round((inputTokens / contextWindow) * 100);
+        setContextUsed(percentage);
+      }
+    }
+
+    // Also check for system messages with context info
+    if (event.type === 'system' && event.subtype === 'init') {
+      if (event.context_tokens && event.context_window) {
+        const percentage = Math.round((event.context_tokens / event.context_window) * 100);
+        setContextUsed(percentage);
+      }
+    }
+
+    // Forward to original handler
+    onClaudeEvent?.(event);
+  }, [onClaudeEvent]);
+
   const { isRunning, spawnClaude, sendMessage, kill } = useClaudePty({
-    onEvent: onClaudeEvent,
+    onEvent: handleClaudeEvent,
     onMessage: onClaudeMessage,
     onRawOutput: (data) => {
       // Pipe raw PTY output to debug panel for troubleshooting Claude replies
       debug.pty("ClaudeRaw", "PTY output", data.slice(0, 500));
+
+      // Parse context usage from text output (fallback method)
+      // Pattern: "76k/200k tokens (38%)" or "Context: 76000/200000 tokens"
+      const contextMatch = data.match(/(\d+)k?\/(\d+)k?\s+tokens\s+\((\d+)%\)/i);
+      if (contextMatch) {
+        const percentage = parseInt(contextMatch[3], 10);
+        setContextUsed(percentage);
+      }
     },
   });
 
@@ -570,6 +610,39 @@ export function ChatUI({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Context Usage Indicator */}
+          <div
+            className="relative"
+            onMouseEnter={(e) => {
+              setContextPopupPos({ x: e.clientX, y: e.clientY });
+              setShowContextPopup(true);
+            }}
+            onMouseLeave={() => setShowContextPopup(false)}
+          >
+            <span
+              className={`flex items-center gap-1 cursor-help px-1.5 py-0.5 rounded hover:bg-zinc-800 transition-colors text-xs ${
+                contextUsed > 80 ? 'text-red-400' : contextUsed > 50 ? 'text-yellow-400' : 'text-zinc-400'
+              }`}
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"
+                />
+              </svg>
+              {contextUsed}%
+            </span>
+            {showContextPopup && (
+              <ContextUsagePopup
+                contextUsed={contextUsed}
+                model={model}
+                position={contextPopupPos}
+              />
+            )}
+          </div>
+
           {/* Clear Session Button */}
           {messages.length > 0 && onClearSession && (
             <button
