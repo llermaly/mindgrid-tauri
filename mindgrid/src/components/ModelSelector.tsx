@@ -61,10 +61,18 @@ export function ModelSelector({
       return allowedProviders.includes(m.provider);
     });
     const seen = new Set<string>();
-    return combined.filter((model) => {
+    const unique = combined.filter((model) => {
       if (seen.has(model.id)) return false;
       seen.add(model.id);
       return true;
+    });
+
+    // Sort by provider (anthropic first, then openai, then google), then by name
+    const providerOrder: Record<string, number> = { anthropic: 0, openai: 1, google: 2 };
+    return unique.sort((a, b) => {
+      const providerDiff = (providerOrder[a.provider] ?? 3) - (providerOrder[b.provider] ?? 3);
+      if (providerDiff !== 0) return providerDiff;
+      return a.name.localeCompare(b.name);
     });
   }, [remoteModels, allowedProviders]);
 
@@ -101,33 +109,49 @@ export function ModelSelector({
       {isOpen && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
-          <div className="absolute top-full right-0 mt-1 bg-neutral-800 border border-neutral-700 rounded-lg shadow-xl z-50 py-1 min-w-40">
-            {availableModels.map(model => (
-              <button
-                key={model.id}
-                className={`w-full px-3 py-2 text-left text-sm hover:bg-neutral-700 flex items-center gap-2 ${
-                  value === model.id ? 'bg-neutral-700/50' : ''
-                }`}
-                onClick={() => {
-                  onChange(model.id);
-                  setIsOpen(false);
-                }}
-              >
-                <span
-                  className="w-2 h-2 rounded-full flex-shrink-0"
-                  style={{ background: model.color }}
-                />
-                <span className="flex-1">{model.name}</span>
-                {value === model.id && (
-                  <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
-              </button>
-            ))}
+          <div className="absolute top-full left-0 mt-1 bg-neutral-800 border border-neutral-700 rounded-lg shadow-xl z-50 py-1 min-w-48 max-h-80 overflow-y-auto">
+            {availableModels.map((model, index) => {
+              const prevModel = index > 0 ? availableModels[index - 1] : null;
+              const showHeader = !prevModel || prevModel.provider !== model.provider;
+              const providerLabels: Record<string, string> = {
+                anthropic: 'Anthropic',
+                openai: 'OpenAI',
+                google: 'Google',
+              };
+
+              return (
+                <div key={model.id}>
+                  {showHeader && (
+                    <div className="px-3 py-1.5 text-[10px] font-semibold text-neutral-500 uppercase tracking-wider border-t border-neutral-700 first:border-t-0 mt-1 first:mt-0">
+                      {providerLabels[model.provider] || model.provider}
+                    </div>
+                  )}
+                  <button
+                    className={`w-full px-3 py-1.5 text-left text-sm hover:bg-neutral-700 flex items-center gap-2 ${
+                      value === model.id ? 'bg-neutral-700/50' : ''
+                    }`}
+                    onClick={() => {
+                      onChange(model.id);
+                      setIsOpen(false);
+                    }}
+                  >
+                    <span
+                      className="w-2 h-2 rounded-full flex-shrink-0"
+                      style={{ background: model.color }}
+                    />
+                    <span className="flex-1 truncate">{model.name}</span>
+                    {value === model.id && (
+                      <svg className="w-4 h-4 text-blue-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+              );
+            })}
             {!remoteLoaded && (
               <div className="px-3 py-2 text-xs text-neutral-400 border-t border-neutral-700">
-                Loading Codex models...
+                Loading models...
               </div>
             )}
           </div>

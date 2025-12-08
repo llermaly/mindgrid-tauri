@@ -434,12 +434,19 @@ export function ChatUI({
     }
   }, [onGitPush, isPushing, onGetPrInfo]);
 
-  // Fetch PR info on mount and after push (only if gh is available)
+  // Use ref for onGetPrInfo to avoid triggering effect on every render
+  const onGetPrInfoRef = useRef(onGetPrInfo);
   useEffect(() => {
-    if (ghAvailable && onGetPrInfo && cwd?.includes('.mindgrid/worktrees')) {
-      onGetPrInfo().then(setPrInfo);
+    onGetPrInfoRef.current = onGetPrInfo;
+  }, [onGetPrInfo]);
+
+  // Fetch PR info on mount (only if gh is available)
+  // Note: We use a ref for the callback to prevent re-fetching on every render
+  useEffect(() => {
+    if (ghAvailable && onGetPrInfoRef.current && cwd?.includes('.mindgrid/worktrees')) {
+      onGetPrInfoRef.current().then(setPrInfo);
     }
-  }, [ghAvailable, onGetPrInfo, cwd]);
+  }, [ghAvailable, cwd]); // Intentionally NOT including onGetPrInfo to prevent excessive API calls
 
   const handleCreatePr = useCallback(async () => {
     if (!onCreatePr || isCreatingPr) return;

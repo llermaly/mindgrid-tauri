@@ -53,6 +53,10 @@ export function Sidebar({ activePage, onOpenSettings, onNavigateHome }: SidebarP
       const session = await createSession(project.id, sessionName, projectPath);
       debug.info("Sidebar", "Session created", { id: session.id, name: sessionName });
 
+      // Navigate to the new session
+      onNavigateHome();
+      setActiveSession(session.id);
+
       // Open chat windows for each selected chat type
       if (chatTypes.length > 0) {
         debug.info("Sidebar", "Opening chat windows", { count: chatTypes.length });
@@ -91,6 +95,10 @@ export function Sidebar({ activePage, onOpenSettings, onNavigateHome }: SidebarP
     }
 
     setCreateSessionForProject(null);
+
+    // Navigate to the new session
+    onNavigateHome();
+    setActiveSession(newSession.id);
   };
 
   const toggleProject = (projectId: string) => {

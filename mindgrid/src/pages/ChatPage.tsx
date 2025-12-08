@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { ChatUI } from "../components/ChatUI";
 import { useSessionStore } from "../stores/sessionStore";
-import type { ClaudeEvent, ParsedMessage } from "../lib/claude-types";
+import type { ClaudeEvent, ParsedMessage, PermissionMode, CommitMode } from "../lib/claude-types";
 import { debug } from "../stores/debugStore";
 
 interface ChatPageProps {
@@ -75,6 +75,16 @@ export function ChatPage({ sessionId, isNewChat }: ChatPageProps) {
     [sessionId, addMessage]
   );
 
+  // Memoize callbacks to prevent excessive re-renders and API calls
+  const handleGetPrInfo = useCallback(() => getPrInfo(sessionId), [getPrInfo, sessionId]);
+  const handleGitPush = useCallback(() => gitPush(sessionId), [gitPush, sessionId]);
+  const handleCreatePr = useCallback((title: string, body: string) => createPr(sessionId, title, body), [createPr, sessionId]);
+  const handleMergePr = useCallback((squash: boolean) => mergePr(sessionId, squash), [mergePr, sessionId]);
+  const handleClearSession = useCallback(() => clearSession(sessionId), [clearSession, sessionId]);
+  const handlePermissionModeChange = useCallback((mode: PermissionMode) => setPermissionMode(sessionId, mode), [setPermissionMode, sessionId]);
+  const handleCommitModeChange = useCallback((mode: CommitMode) => setCommitMode(sessionId, mode), [setCommitMode, sessionId]);
+  const handleModelChange = useCallback((model: string) => setSessionModel(sessionId, model), [setSessionModel, sessionId]);
+
   // Update window title when session loads
   useEffect(() => {
     if (session && project) {
@@ -135,14 +145,14 @@ export function ChatPage({ sessionId, isNewChat }: ChatPageProps) {
           sessionName={session.name}
           onClaudeEvent={handleClaudeEvent}
           onClaudeMessage={handleClaudeMessage}
-          onPermissionModeChange={(mode) => setPermissionMode(sessionId, mode)}
-          onCommitModeChange={(mode) => setCommitMode(sessionId, mode)}
-          onModelChange={(model) => setSessionModel(sessionId, model)}
-          onClearSession={() => clearSession(sessionId)}
-          onGitPush={() => gitPush(sessionId)}
-          onGetPrInfo={() => getPrInfo(sessionId)}
-          onCreatePr={(title, body) => createPr(sessionId, title, body)}
-          onMergePr={(squash) => mergePr(sessionId, squash)}
+          onPermissionModeChange={handlePermissionModeChange}
+          onCommitModeChange={handleCommitModeChange}
+          onModelChange={handleModelChange}
+          onClearSession={handleClearSession}
+          onGitPush={handleGitPush}
+          onGetPrInfo={handleGetPrInfo}
+          onCreatePr={handleCreatePr}
+          onMergePr={handleMergePr}
           ghAvailable={ghAvailable}
         />
       </div>
