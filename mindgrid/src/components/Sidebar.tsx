@@ -3,6 +3,8 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useSessionStore, type Project, type Session } from "../stores/sessionStore";
 import { debug } from "../stores/debugStore";
 import { GitStatusIndicator } from "./GitStatusIndicator";
+import { openChatWindow, openNewChatInSession } from "../lib/window-manager";
+import { CreateSessionDialog } from "./CreateSessionDialog";
 
 export function Sidebar() {
   const {
@@ -22,6 +24,7 @@ export function Sidebar() {
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
+  const [createSessionForProject, setCreateSessionForProject] = useState<Project | null>(null);
 
   const handleCreateProject = async () => {
     try {
@@ -52,9 +55,14 @@ export function Sidebar() {
     }
   };
 
-  const handleCreateSession = async (project: Project) => {
-    const sessionNum = project.sessions.length + 1;
-    await createSession(project.id, `Session ${sessionNum}`, project.path);
+  const handleCreateSession = (project: Project) => {
+    setCreateSessionForProject(project);
+  };
+
+  const handleCreateSessionConfirm = async (sessionName: string) => {
+    if (!createSessionForProject) return;
+    await createSession(createSessionForProject.id, sessionName, createSessionForProject.path);
+    setCreateSessionForProject(null);
   };
 
   const toggleProject = (projectId: string) => {
@@ -143,6 +151,15 @@ export function Sidebar() {
           ))
         )}
       </div>
+
+      {/* Create Session Dialog */}
+      <CreateSessionDialog
+        isOpen={createSessionForProject !== null}
+        projectName={createSessionForProject?.name ?? ""}
+        existingSessionCount={createSessionForProject?.sessions.length ?? 0}
+        onClose={() => setCreateSessionForProject(null)}
+        onCreate={handleCreateSessionConfirm}
+      />
     </div>
   );
 }
@@ -299,6 +316,18 @@ function ProjectItem({
                 onDelete={() => onDeleteSession(session.id)}
                 onRename={(name) => onRenameSession(session.id, name)}
                 onRefreshGitStatus={() => onRefreshGitStatus(session.id)}
+                onOpenChatWindow={() => openChatWindow({
+                  sessionId: session.id,
+                  sessionName: session.name,
+                  projectName: project.name,
+                  cwd: session.cwd,
+                })}
+                onNewChat={() => openNewChatInSession({
+                  sessionId: session.id,
+                  sessionName: session.name,
+                  projectName: project.name,
+                  cwd: session.cwd,
+                })}
               />
             ))}
             {sessions.length === 0 && (
@@ -367,9 +396,11 @@ interface SessionItemProps {
   onDelete: () => Promise<void> | void;
   onRename: (name: string) => void;
   onRefreshGitStatus: () => void;
+  onOpenChatWindow: () => void;
+  onNewChat: () => void;
 }
 
-function SessionItem({ session, isActive, onSelect, onDelete, onRename, onRefreshGitStatus }: SessionItemProps) {
+function SessionItem({ session, isActive, onSelect, onDelete, onRename, onRefreshGitStatus, onOpenChatWindow, onNewChat }: SessionItemProps) {
   const [showDelete, setShowDelete] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -512,15 +543,41 @@ function SessionItem({ session, isActive, onSelect, onDelete, onRename, onRefres
           <span className="text-xs text-zinc-500 shrink-0">${session.totalCost.toFixed(3)}</span>
         )}
         {showDelete && (
-          <button
-            onClick={handleDeleteClick}
-            className="p-0.5 rounded shrink-0 hover:bg-zinc-700 text-zinc-500 hover:text-red-400"
-            title="Delete session"
-          >
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          <>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenChatWindow();
+              }}
+              className="p-0.5 rounded shrink-0 hover:bg-zinc-700 text-zinc-500 hover:text-blue-400"
+              title="Open chat in new window"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onNewChat();
+              }}
+              className="p-0.5 rounded shrink-0 hover:bg-zinc-700 text-zinc-500 hover:text-green-400"
+              title="New chat in new window (Cmd+N)"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+            <button
+              onClick={handleDeleteClick}
+              className="p-0.5 rounded shrink-0 hover:bg-zinc-700 text-zinc-500 hover:text-red-400"
+              title="Delete session"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </>
         )}
       </div>
 

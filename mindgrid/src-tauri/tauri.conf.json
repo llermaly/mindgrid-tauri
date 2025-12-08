@@ -12,14 +12,18 @@
   "app": {
     "windows": [
       {
-        "title": "mindgrid",
-        "width": 800,
-        "height": 600
+        "label": "main",
+        "title": "MindGrid",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600
       }
     ],
     "security": {
       "csp": null
-    }
+    },
+    "withGlobalTauri": true
   },
   "plugins": {
     "sql": {
