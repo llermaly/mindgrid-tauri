@@ -1,7 +1,15 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useClaudePty } from "../hooks/useClaudePty";
-import type { ClaudeEvent, ParsedMessage } from "../lib/claude-types";
+import type { ClaudeEvent, ParsedMessage, PermissionMode, CommitMode } from "../lib/claude-types";
+import { COMMIT_MODE_INFO } from "../lib/claude-types";
 import { debug } from "../stores/debugStore";
+
+interface PrInfo {
+  number: number;
+  title: string;
+  state: string;
+  url: string;
+}
 
 interface ChatUIProps {
   className?: string;
@@ -9,9 +17,44 @@ interface ChatUIProps {
   claudeSessionId?: string | null;
   messages: ParsedMessage[];
   model?: string | null;
+  permissionMode?: PermissionMode;
+  commitMode?: CommitMode;
+  gitAhead?: number;
+  sessionName?: string;
+  ghAvailable?: boolean;
   onClaudeEvent?: (event: ClaudeEvent) => void;
   onClaudeMessage?: (message: ParsedMessage) => void;
+  onPermissionModeChange?: (mode: PermissionMode) => void;
+  onCommitModeChange?: (mode: CommitMode) => void;
+  onClearSession?: () => void;
+  onGitPush?: () => Promise<{ success: boolean; error?: string }>;
+  onGetPrInfo?: () => Promise<PrInfo | null>;
+  onCreatePr?: (title: string, body: string) => Promise<{ success: boolean; url?: string; error?: string }>;
+  onMergePr?: (squash: boolean) => Promise<{ success: boolean; message?: string; error?: string }>;
 }
+
+const PERMISSION_MODE_INFO: Record<PermissionMode, { label: string; description: string; color: string }> = {
+  default: {
+    label: 'Default',
+    description: 'Prompts for permission on first use',
+    color: 'text-zinc-400',
+  },
+  acceptEdits: {
+    label: 'Accept Edits',
+    description: 'Auto-accepts file edits',
+    color: 'text-blue-400',
+  },
+  plan: {
+    label: 'Plan Only',
+    description: 'Read-only, no modifications',
+    color: 'text-yellow-400',
+  },
+  bypassPermissions: {
+    label: 'Bypass',
+    description: 'Skip all prompts (dangerous)',
+    color: 'text-red-400',
+  },
+};
 
 const MESSAGE_STYLES: Record<string, { bg: string; color: string; label: string }> = {
   user: { bg: "bg-blue-500/10", color: "text-blue-400", label: "You" },
@@ -94,11 +137,34 @@ export function ChatUI({
   claudeSessionId,
   messages,
   model,
+  permissionMode = 'default',
+  commitMode = 'checkpoint',
+  gitAhead = 0,
+  sessionName = '',
+  ghAvailable = false,
   onClaudeEvent,
   onClaudeMessage,
+  onPermissionModeChange,
+  onCommitModeChange,
+  onClearSession,
+  onGitPush,
+  onGetPrInfo,
+  onCreatePr,
+  onMergePr,
 }: ChatUIProps) {
   const [input, setInput] = useState("");
   const [hasStarted, setHasStarted] = useState(false);
+  const [showModeDropdown, setShowModeDropdown] = useState(false);
+  const [showCommitDropdown, setShowCommitDropdown] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [isPushing, setIsPushing] = useState(false);
+  const [pushError, setPushError] = useState<string | null>(null);
+  const [prInfo, setPrInfo] = useState<PrInfo | null>(null);
+  const [isCreatingPr, setIsCreatingPr] = useState(false);
+  const [isMergingPr, setIsMergingPr] = useState(false);
+  const [showPrDialog, setShowPrDialog] = useState(false);
+  const [prTitle, setPrTitle] = useState("");
+  const [prBody, setPrBody] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -119,9 +185,17 @@ export function ChatUI({
   // Initialize config on mount (no "Start Claude" button needed)
   useEffect(() => {
     if (!hasStarted) {
-      spawnClaude(cwd, claudeSessionId).then(() => setHasStarted(true));
+      spawnClaude(cwd, claudeSessionId, permissionMode).then(() => setHasStarted(true));
     }
-  }, [cwd, claudeSessionId, hasStarted, spawnClaude]);
+  }, [cwd, claudeSessionId, permissionMode, hasStarted, spawnClaude]);
+
+  // Update config when permission mode changes
+  useEffect(() => {
+    if (hasStarted) {
+      spawnClaude(cwd, claudeSessionId, permissionMode);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [permissionMode]);
 
   const handleSend = useCallback(async () => {
     if (!input.trim()) return;
@@ -156,6 +230,68 @@ export function ChatUI({
     setHasStarted(false);
   }, [kill]);
 
+  const handleGitPush = useCallback(async () => {
+    if (!onGitPush || isPushing) return;
+    setIsPushing(true);
+    setPushError(null);
+    try {
+      const result = await onGitPush();
+      if (!result.success) {
+        setPushError(result.error || "Failed to push to remote");
+      } else {
+        // Refresh PR info after push
+        if (onGetPrInfo) {
+          const info = await onGetPrInfo();
+          setPrInfo(info);
+        }
+      }
+    } catch (error) {
+      setPushError(error instanceof Error ? error.message : "Failed to push to remote");
+    } finally {
+      setIsPushing(false);
+    }
+  }, [onGitPush, isPushing, onGetPrInfo]);
+
+  // Fetch PR info on mount and after push (only if gh is available)
+  useEffect(() => {
+    if (ghAvailable && onGetPrInfo && cwd?.includes('.mindgrid/worktrees')) {
+      onGetPrInfo().then(setPrInfo);
+    }
+  }, [ghAvailable, onGetPrInfo, cwd]);
+
+  const handleCreatePr = useCallback(async () => {
+    if (!onCreatePr || isCreatingPr) return;
+    setIsCreatingPr(true);
+    try {
+      const result = await onCreatePr(prTitle || sessionName, prBody);
+      if (result.success && result.url) {
+        // Open PR URL in browser
+        window.open(result.url, '_blank');
+        setShowPrDialog(false);
+        // Refresh PR info
+        if (onGetPrInfo) {
+          const info = await onGetPrInfo();
+          setPrInfo(info);
+        }
+      }
+    } finally {
+      setIsCreatingPr(false);
+    }
+  }, [onCreatePr, isCreatingPr, prTitle, prBody, sessionName, onGetPrInfo]);
+
+  const handleMergePr = useCallback(async () => {
+    if (!onMergePr || isMergingPr) return;
+    setIsMergingPr(true);
+    try {
+      const result = await onMergePr(true); // squash merge
+      if (result.success) {
+        setPrInfo(null); // PR is merged, clear info
+      }
+    } finally {
+      setIsMergingPr(false);
+    }
+  }, [onMergePr, isMergingPr]);
+
   return (
     <div className={`flex flex-col h-full bg-zinc-900 ${className}`}>
       {/* Header */}
@@ -170,13 +306,227 @@ export function ChatUI({
               {model}
             </span>
           )}
-          {claudeSessionId && (
-            <span className="text-xs text-zinc-500" title={claudeSessionId}>
-              Session: {claudeSessionId.slice(0, 8)}...
-            </span>
+
+          {/* Permission Mode Selector */}
+          <div className="relative">
+            <button
+              onClick={() => setShowModeDropdown(!showModeDropdown)}
+              className={`text-xs px-2 py-1 rounded border border-zinc-600 hover:border-zinc-500 flex items-center gap-1 ${PERMISSION_MODE_INFO[permissionMode].color}`}
+              title={PERMISSION_MODE_INFO[permissionMode].description}
+            >
+              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              </svg>
+              {PERMISSION_MODE_INFO[permissionMode].label}
+              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+
+            {showModeDropdown && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowModeDropdown(false)} />
+                <div className="absolute top-full mt-1 left-0 w-48 bg-zinc-800 border border-zinc-700 rounded-lg shadow-lg z-20 py-1">
+                  {(Object.keys(PERMISSION_MODE_INFO) as PermissionMode[]).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => {
+                        onPermissionModeChange?.(mode);
+                        setShowModeDropdown(false);
+                      }}
+                      className={`w-full px-3 py-2 text-left text-xs hover:bg-zinc-700 flex flex-col ${
+                        mode === permissionMode ? 'bg-zinc-700/50' : ''
+                      }`}
+                    >
+                      <span className={PERMISSION_MODE_INFO[mode].color}>
+                        {PERMISSION_MODE_INFO[mode].label}
+                      </span>
+                      <span className="text-zinc-500 text-[10px]">
+                        {PERMISSION_MODE_INFO[mode].description}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Commit Mode Selector */}
+          <div className="relative">
+            <button
+              onClick={() => setShowCommitDropdown(!showCommitDropdown)}
+              className={`text-xs px-2 py-1 rounded border border-zinc-600 hover:border-zinc-500 flex items-center gap-1 ${COMMIT_MODE_INFO[commitMode].color}`}
+              title={COMMIT_MODE_INFO[commitMode].description}
+            >
+              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <circle cx="12" cy="12" r="4" />
+                <line x1="1.05" y1="12" x2="7" y2="12" />
+                <line x1="17.01" y1="12" x2="22.96" y2="12" />
+              </svg>
+              {COMMIT_MODE_INFO[commitMode].label}
+              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+
+            {showCommitDropdown && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowCommitDropdown(false)} />
+                <div className="absolute top-full mt-1 left-0 w-48 bg-zinc-800 border border-zinc-700 rounded-lg shadow-lg z-20 py-1">
+                  {(Object.keys(COMMIT_MODE_INFO) as CommitMode[]).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => {
+                        onCommitModeChange?.(mode);
+                        setShowCommitDropdown(false);
+                      }}
+                      className={`w-full px-3 py-2 text-left text-xs hover:bg-zinc-700 flex flex-col ${
+                        mode === commitMode ? 'bg-zinc-700/50' : ''
+                      }`}
+                    >
+                      <span className={COMMIT_MODE_INFO[mode].color}>
+                        {COMMIT_MODE_INFO[mode].label}
+                      </span>
+                      <span className="text-zinc-500 text-[10px]">
+                        {COMMIT_MODE_INFO[mode].description}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Push Button - show when there are commits ahead */}
+          {onGitPush && gitAhead > 0 && (
+            <div className="relative">
+              <button
+                onClick={handleGitPush}
+                disabled={isPushing || isRunning}
+                className={`text-xs px-2 py-1 rounded flex items-center gap-1 ${
+                  pushError
+                    ? 'bg-red-600 hover:bg-red-500 text-white'
+                    : isPushing
+                    ? 'bg-zinc-700 text-zinc-400 cursor-wait'
+                    : 'bg-green-600 hover:bg-green-500 text-white'
+                }`}
+                title={pushError || (gitAhead > 0 ? `Push ${gitAhead} commit${gitAhead > 1 ? 's' : ''} to remote` : 'Push branch to remote')}
+              >
+                {isPushing ? (
+                  <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+                    <path d="M12 2a10 10 0 0 1 10 10" />
+                  </svg>
+                ) : (
+                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <line x1="12" y1="19" x2="12" y2="5" />
+                    <polyline points="5 12 12 5 19 12" />
+                  </svg>
+                )}
+                {isPushing ? 'Pushing...' : (gitAhead > 0 ? `Push (${gitAhead})` : 'Push')}
+              </button>
+            </div>
+          )}
+
+          {/* Create PR Button - show for worktrees without PR */}
+          {onCreatePr && cwd?.includes('.mindgrid/worktrees') && !prInfo && (
+            <button
+              onClick={() => {
+                if (!ghAvailable) return;
+                setPrTitle(sessionName);
+                setPrBody(`Changes from session: ${sessionName}`);
+                setShowPrDialog(true);
+              }}
+              disabled={isCreatingPr || gitAhead > 0 || !ghAvailable}
+              className={`text-xs px-2 py-1 rounded flex items-center gap-1 ${
+                ghAvailable
+                  ? 'bg-purple-600 hover:bg-purple-500 text-white disabled:bg-zinc-700 disabled:text-zinc-400'
+                  : 'bg-zinc-700 text-zinc-500 cursor-not-allowed'
+              }`}
+              title={
+                !ghAvailable
+                  ? "Install gh CLI for GitHub features (brew install gh)"
+                  : gitAhead > 0
+                  ? "Push changes first before creating PR"
+                  : "Create Pull Request"
+              }
+            >
+              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <circle cx="18" cy="18" r="3" />
+                <circle cx="6" cy="6" r="3" />
+                <path d="M13 6h3a2 2 0 0 1 2 2v7" />
+                <line x1="6" y1="9" x2="6" y2="21" />
+              </svg>
+              Create PR
+            </button>
+          )}
+
+          {/* PR Info & Merge Button - show when PR exists */}
+          {prInfo && prInfo.state === 'open' && (
+            <>
+              <a
+                href={prInfo.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs px-2 py-1 rounded flex items-center gap-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-200"
+                title={`PR #${prInfo.number}: ${prInfo.title}`}
+              >
+                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <circle cx="18" cy="18" r="3" />
+                  <circle cx="6" cy="6" r="3" />
+                  <path d="M13 6h3a2 2 0 0 1 2 2v7" />
+                  <line x1="6" y1="9" x2="6" y2="21" />
+                </svg>
+                #{prInfo.number}
+              </a>
+              {onMergePr && (
+                <button
+                  onClick={ghAvailable ? handleMergePr : undefined}
+                  disabled={isMergingPr || !ghAvailable}
+                  className={`text-xs px-2 py-1 rounded flex items-center gap-1 ${
+                    !ghAvailable
+                      ? 'bg-zinc-700 text-zinc-500 cursor-not-allowed'
+                      : isMergingPr
+                      ? 'bg-zinc-700 text-zinc-400 cursor-wait'
+                      : 'bg-green-600 hover:bg-green-500 text-white'
+                  }`}
+                  title={!ghAvailable ? "Install gh CLI for GitHub features (brew install gh)" : "Squash and merge PR"}
+                >
+                  {isMergingPr ? (
+                    <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                      <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+                      <path d="M12 2a10 10 0 0 1 10 10" />
+                    </svg>
+                  ) : (
+                    <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                      <polyline points="16 3 21 3 21 8" />
+                      <line x1="4" y1="20" x2="21" y2="3" />
+                      <polyline points="21 16 21 21 16 21" />
+                      <line x1="15" y1="15" x2="21" y2="21" />
+                      <line x1="4" y1="4" x2="9" y2="9" />
+                    </svg>
+                  )}
+                  {isMergingPr ? 'Merging...' : 'Merge'}
+                </button>
+              )}
+            </>
           )}
         </div>
+
         <div className="flex items-center gap-2">
+          {/* Clear Session Button */}
+          {messages.length > 0 && onClearSession && (
+            <button
+              onClick={() => setShowClearConfirm(true)}
+              className="p-1.5 rounded hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200"
+              title="Clear session"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+              </svg>
+            </button>
+          )}
+
           {isRunning && (
             <button
               onClick={handleKill}
@@ -187,6 +537,87 @@ export function ChatUI({
           )}
         </div>
       </div>
+
+      {/* Clear Session Confirmation */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowClearConfirm(false)}>
+          <div className="bg-zinc-800 border border-zinc-700 rounded-lg p-4 max-w-sm mx-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-medium text-zinc-200 mb-2">Clear Session</h3>
+            <p className="text-xs text-zinc-400 mb-4">
+              This will clear all messages and start a fresh conversation. This cannot be undone.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setShowClearConfirm(false)}
+                className="px-3 py-1.5 text-xs font-medium rounded bg-zinc-700 hover:bg-zinc-600 text-zinc-300"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  onClearSession?.();
+                  setShowClearConfirm(false);
+                  setHasStarted(false); // Reset to re-initialize
+                }}
+                className="px-3 py-1.5 text-xs font-medium rounded bg-red-600 hover:bg-red-500 text-white"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create PR Dialog */}
+      {showPrDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowPrDialog(false)}>
+          <div className="bg-zinc-800 border border-zinc-700 rounded-lg p-4 max-w-md mx-4 shadow-xl w-full" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-medium text-zinc-200 mb-3">Create Pull Request</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-zinc-400 block mb-1">Title</label>
+                <input
+                  type="text"
+                  value={prTitle}
+                  onChange={(e) => setPrTitle(e.target.value)}
+                  className="w-full px-3 py-2 text-sm bg-zinc-900 border border-zinc-700 rounded focus:border-purple-500 focus:outline-none text-zinc-200"
+                  placeholder="PR title..."
+                />
+              </div>
+              <div>
+                <label className="text-xs text-zinc-400 block mb-1">Description</label>
+                <textarea
+                  value={prBody}
+                  onChange={(e) => setPrBody(e.target.value)}
+                  className="w-full px-3 py-2 text-sm bg-zinc-900 border border-zinc-700 rounded focus:border-purple-500 focus:outline-none text-zinc-200 min-h-[80px] resize-none"
+                  placeholder="Describe your changes..."
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end mt-4">
+              <button
+                onClick={() => setShowPrDialog(false)}
+                className="px-3 py-1.5 text-xs font-medium rounded bg-zinc-700 hover:bg-zinc-600 text-zinc-300"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreatePr}
+                disabled={isCreatingPr || !prTitle.trim()}
+                className="px-3 py-1.5 text-xs font-medium rounded bg-purple-600 hover:bg-purple-500 disabled:bg-zinc-700 disabled:text-zinc-400 text-white flex items-center gap-1"
+              >
+                {isCreatingPr && (
+                  <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+                    <path d="M12 2a10 10 0 0 1 10 10" />
+                  </svg>
+                )}
+                {isCreatingPr ? 'Creating...' : 'Create PR'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">

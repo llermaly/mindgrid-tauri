@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { ClaudeStreamParser } from "../lib/claude-parser";
-import type { ClaudeEvent, ParsedMessage } from "../lib/claude-types";
+import type { ClaudeEvent, ParsedMessage, PermissionMode } from "../lib/claude-types";
 import { debug } from "../stores/debugStore";
 
 interface PtyOutput {
@@ -132,13 +132,21 @@ export function useClaudePty(options: UseClaudePtyOptions = {}) {
   }, []);
 
   // Store config for per-message spawning
-  const configRef = useRef<{ cwd?: string; claudeSessionId?: string | null }>({});
+  const configRef = useRef<{
+    cwd?: string;
+    claudeSessionId?: string | null;
+    permissionMode?: PermissionMode;
+  }>({});
 
-  const spawnClaude = useCallback(async (cwd?: string, claudeSessionId?: string | null) => {
+  const spawnClaude = useCallback(async (
+    cwd?: string,
+    claudeSessionId?: string | null,
+    permissionMode?: PermissionMode
+  ) => {
     // Just store the config and "start" the session conceptually
-    configRef.current = { cwd, claudeSessionId };
-    debug.info("PTY", "Session initialized", { cwd, claudeSessionId });
-    
+    configRef.current = { cwd, claudeSessionId, permissionMode };
+    debug.info("PTY", "Session initialized", { cwd, claudeSessionId, permissionMode });
+
     // Return a dummy ID to satisfy the UI that we "started"
     return "session-active";
   }, []);
@@ -154,7 +162,7 @@ export function useClaudePty(options: UseClaudePtyOptions = {}) {
     }
   }, []);
 
-  const sendMessage = useCallback(async (message: string) => {
+  const sendMessage = useCallback(async (message: string, overridePermissionMode?: PermissionMode) => {
     try {
       // Kill existing process if any (though we shouldn't have one if we wait for response)
       if (ptyIdRef.current) {
@@ -164,7 +172,8 @@ export function useClaudePty(options: UseClaudePtyOptions = {}) {
       // Reset parser state for new message to avoid stale data
       parserRef.current?.flush();
 
-      const { cwd, claudeSessionId } = configRef.current;
+      const { cwd, claudeSessionId, permissionMode: configPermissionMode } = configRef.current;
+      const permissionMode = overridePermissionMode || configPermissionMode || 'default';
 
       // Build args similar to commander - each message spawns fresh process
       const claudeArgs: string[] = [
@@ -173,6 +182,30 @@ export function useClaudePty(options: UseClaudePtyOptions = {}) {
         "--verbose",
         "--include-partial-messages"
       ];
+
+      // Add permission flags based on permission mode
+      switch (permissionMode) {
+        case 'bypassPermissions':
+          // Skip all permission prompts - dangerous but fast
+          claudeArgs.push("--dangerously-skip-permissions");
+          console.log("[useClaudePty] Using bypass permissions mode");
+          break;
+        case 'acceptEdits':
+          // Allow file edit tools automatically
+          claudeArgs.push("--allowedTools", "Edit,Write,Read,Glob,Grep,MultiEdit,NotebookEdit");
+          console.log("[useClaudePty] Using acceptEdits mode");
+          break;
+        case 'plan':
+          // Plan mode - only allow read-only tools
+          claudeArgs.push("--allowedTools", "Read,Glob,Grep,Task,WebFetch,WebSearch");
+          console.log("[useClaudePty] Using plan mode (read-only)");
+          break;
+        case 'default':
+        default:
+          // Default: Claude Code will prompt for permissions
+          console.log("[useClaudePty] Using default permission mode");
+          break;
+      }
 
       // Add --resume flag if we have a Claude session ID to continue conversation
       if (claudeSessionId) {
@@ -183,7 +216,7 @@ export function useClaudePty(options: UseClaudePtyOptions = {}) {
       }
 
       console.log("[useClaudePty] Full Claude args:", claudeArgs.join(" "));
-      debug.info("PTY", "Spawning Claude for message", { cwd, claudeSessionId, args: claudeArgs });
+      debug.info("PTY", "Spawning Claude for message", { cwd, claudeSessionId, permissionMode, args: claudeArgs });
 
       const id = await invoke<string>("spawn_pty", {
         args: {

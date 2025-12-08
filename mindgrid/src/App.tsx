@@ -7,7 +7,7 @@ import type { ClaudeEvent, ParsedMessage } from "./lib/claude-types";
 import { debug } from "./stores/debugStore";
 
 function App() {
-  const [showDebug, setShowDebug] = useState(true);
+  const [showDebug, setShowDebug] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
 
   const {
@@ -18,6 +18,15 @@ function App() {
     initialize,
     isInitialized,
     isLoading,
+    clearSession,
+    setPermissionMode,
+    setCommitMode,
+    checkpointCommit,
+    gitPush,
+    getPrInfo,
+    createPr,
+    mergePr,
+    ghAvailable,
   } = useSessionStore();
 
   // Initialize store on mount
@@ -28,16 +37,22 @@ function App() {
   const activeSession = activeSessionId ? sessions[activeSessionId] : null;
 
   const handleClaudeEvent = useCallback(
-    (event: ClaudeEvent) => {
+    async (event: ClaudeEvent) => {
       debug.event("App", `Claude event: ${event.type}`, event);
       console.log("[App] Claude event:", event.type, "activeSessionId:", activeSessionId);
       if (activeSessionId) {
         storeHandleClaudeEvent(activeSessionId, event);
+
+        // Auto-checkpoint on result events when commitMode is 'checkpoint'
+        if (event.type === "result" && activeSession?.commitMode === 'checkpoint') {
+          debug.info("App", "Triggering auto-checkpoint after Claude response");
+          checkpointCommit(activeSessionId);
+        }
       } else {
         console.warn("[App] No activeSessionId, event not processed");
       }
     },
-    [activeSessionId, storeHandleClaudeEvent]
+    [activeSessionId, storeHandleClaudeEvent, activeSession?.commitMode, checkpointCommit]
   );
 
   const handleClaudeMessage = useCallback(
@@ -129,8 +144,20 @@ function App() {
                 claudeSessionId={activeSession.claudeSessionId}
                 messages={activeSession.messages}
                 model={activeSession.model}
+                permissionMode={activeSession.permissionMode}
+                commitMode={activeSession.commitMode}
+                gitAhead={activeSession.gitStatus?.ahead ?? 0}
+                sessionName={activeSession.name}
                 onClaudeEvent={handleClaudeEvent}
                 onClaudeMessage={handleClaudeMessage}
+                onPermissionModeChange={(mode) => activeSessionId && setPermissionMode(activeSessionId, mode)}
+                onCommitModeChange={(mode) => activeSessionId && setCommitMode(activeSessionId, mode)}
+                onClearSession={() => activeSessionId && clearSession(activeSessionId)}
+                onGitPush={() => activeSessionId ? gitPush(activeSessionId) : Promise.resolve({ success: false, error: "No session" })}
+                onGetPrInfo={() => activeSessionId ? getPrInfo(activeSessionId) : Promise.resolve(null)}
+                onCreatePr={(title, body) => activeSessionId ? createPr(activeSessionId, title, body) : Promise.resolve({ success: false, error: "No session" })}
+                onMergePr={(squash) => activeSessionId ? mergePr(activeSessionId, squash) : Promise.resolve({ success: false, error: "No session" })}
+                ghAvailable={ghAvailable}
               />
             ) : (
               <EmptyState />

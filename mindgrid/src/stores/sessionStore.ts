@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
-import type { ParsedMessage, ClaudeEvent } from "../lib/claude-types";
+import type { ParsedMessage, ClaudeEvent, PermissionMode, CommitMode } from "../lib/claude-types";
+import type { GitStatus } from "../lib/git-types";
 import { debug } from "./debugStore";
 import * as db from "../lib/database";
 
@@ -17,6 +18,10 @@ export interface Session {
   cwd: string;
   createdAt: number;
   updatedAt: number;
+  gitStatus?: GitStatus | null;
+  gitStatusLoading?: boolean;
+  permissionMode: PermissionMode;
+  commitMode: CommitMode;
 }
 
 export interface Project {
@@ -35,6 +40,7 @@ interface SessionState {
   activeProjectId: string | null;
   isLoading: boolean;
   isInitialized: boolean;
+  ghAvailable: boolean;
 
   // Init
   initialize: () => Promise<void>;
@@ -57,6 +63,26 @@ interface SessionState {
   // PTY actions
   setPtyId: (sessionId: string, ptyId: string | null) => void;
   setRunning: (sessionId: string, isRunning: boolean) => void;
+
+  // Git actions
+  refreshGitStatus: (sessionId: string) => Promise<void>;
+  refreshAllGitStatuses: () => Promise<void>;
+
+  // Session management
+  clearSession: (sessionId: string) => Promise<void>;
+  setPermissionMode: (sessionId: string, mode: PermissionMode) => void;
+  setCommitMode: (sessionId: string, mode: CommitMode) => void;
+
+  // Commit actions
+  checkpointCommit: (sessionId: string, message?: string) => Promise<boolean>;
+
+  // Push actions
+  gitPush: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
+
+  // PR actions
+  getPrInfo: (sessionId: string) => Promise<{ number: number; title: string; state: string; url: string } | null>;
+  createPr: (sessionId: string, title: string, body: string) => Promise<{ success: boolean; url?: string; error?: string }>;
+  mergePr: (sessionId: string, squash: boolean) => Promise<{ success: boolean; message?: string; error?: string }>;
 }
 
 const generateId = () => crypto.randomUUID();
@@ -68,6 +94,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   activeProjectId: null,
   isLoading: false,
   isInitialized: false,
+  ghAvailable: false,
 
   initialize: async () => {
     if (get().isInitialized) return;
@@ -76,6 +103,15 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     debug.info("SessionStore", "Initializing from store");
 
     try {
+      // Check gh CLI availability
+      let ghAvailable = false;
+      try {
+        ghAvailable = await invoke<boolean>("git_check_gh_cli");
+        debug.info("SessionStore", "gh CLI check", { available: ghAvailable });
+      } catch (err) {
+        debug.info("SessionStore", "gh CLI not available", err);
+      }
+
       // Load projects
       const projectList = await db.loadProjects();
       const projects: Record<string, Project> = {};
@@ -115,6 +151,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         activeProjectId,
         isLoading: false,
         isInitialized: true,
+        ghAvailable,
       });
 
       debug.info("SessionStore", "Initialized", {
@@ -122,6 +159,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         sessions: Object.keys(sessions).length,
         activeSessionId,
       });
+
+      // Refresh git statuses for all sessions after initialization
+      setTimeout(() => {
+        get().refreshAllGitStatuses();
+      }, 500);
     } catch (err) {
       debug.error("SessionStore", "Failed to initialize", err);
       console.error("SessionStore initialization error:", err);
@@ -243,6 +285,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       cwd: sessionCwd,
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      permissionMode: 'bypassPermissions',
+      commitMode: 'checkpoint',
     };
 
     debug.info("SessionStore", "Creating session", { name, projectId, id: session.id, cwd: session.cwd });
@@ -476,5 +520,255 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         },
       };
     });
+  },
+
+  refreshGitStatus: async (sessionId) => {
+    const session = get().sessions[sessionId];
+    if (!session) return;
+
+    // Set loading state
+    set((state) => ({
+      sessions: {
+        ...state.sessions,
+        [sessionId]: { ...state.sessions[sessionId], gitStatusLoading: true },
+      },
+    }));
+
+    try {
+      const gitStatus = await invoke<GitStatus>("get_git_status", {
+        workingDirectory: session.cwd,
+      });
+
+      set((state) => ({
+        sessions: {
+          ...state.sessions,
+          [sessionId]: {
+            ...state.sessions[sessionId],
+            gitStatus,
+            gitStatusLoading: false,
+          },
+        },
+      }));
+
+      debug.info("SessionStore", "Git status refreshed", { sessionId, state: gitStatus.state });
+    } catch (err) {
+      // Not a git repository or other error - clear status
+      set((state) => ({
+        sessions: {
+          ...state.sessions,
+          [sessionId]: {
+            ...state.sessions[sessionId],
+            gitStatus: null,
+            gitStatusLoading: false,
+          },
+        },
+      }));
+      debug.info("SessionStore", "Git status unavailable", { sessionId, error: err });
+    }
+  },
+
+  refreshAllGitStatuses: async () => {
+    const sessions = Object.values(get().sessions);
+
+    // Refresh in parallel with a small delay between each to avoid overwhelming
+    const promises = sessions.map((session, index) =>
+      new Promise<void>((resolve) => {
+        setTimeout(async () => {
+          await get().refreshGitStatus(session.id);
+          resolve();
+        }, index * 100); // Stagger by 100ms
+      })
+    );
+
+    await Promise.all(promises);
+  },
+
+  clearSession: async (sessionId) => {
+    const session = get().sessions[sessionId];
+    if (!session) return;
+
+    debug.info("SessionStore", "Clearing session messages", { sessionId });
+
+    // Clear messages from state
+    set((state) => ({
+      sessions: {
+        ...state.sessions,
+        [sessionId]: {
+          ...state.sessions[sessionId],
+          messages: [],
+          claudeSessionId: null, // Reset Claude session to start fresh
+          totalCost: 0,
+          updatedAt: Date.now(),
+        },
+      },
+    }));
+
+    // Clear messages from database
+    await db.clearSessionMessages(sessionId);
+
+    // Update session in database
+    const updatedSession = get().sessions[sessionId];
+    if (updatedSession) {
+      await db.saveSession({ ...updatedSession, messages: [] });
+    }
+  },
+
+  setPermissionMode: (sessionId, mode) => {
+    set((state) => {
+      const session = state.sessions[sessionId];
+      if (!session) return state;
+      return {
+        sessions: {
+          ...state.sessions,
+          [sessionId]: { ...session, permissionMode: mode, updatedAt: Date.now() },
+        },
+      };
+    });
+  },
+
+  setCommitMode: (sessionId, mode) => {
+    set((state) => {
+      const session = state.sessions[sessionId];
+      if (!session) return state;
+      return {
+        sessions: {
+          ...state.sessions,
+          [sessionId]: { ...session, commitMode: mode, updatedAt: Date.now() },
+        },
+      };
+    });
+  },
+
+  checkpointCommit: async (sessionId, message) => {
+    const session = get().sessions[sessionId];
+    if (!session) return false;
+
+    try {
+      // Check if there are changes to commit
+      const hasChanges = await invoke<boolean>("git_has_changes", {
+        workingDirectory: session.cwd,
+      });
+
+      if (!hasChanges) {
+        debug.info("SessionStore", "No changes to checkpoint", { sessionId });
+        return false;
+      }
+
+      // Create checkpoint commit
+      const commitMessage = message || `checkpoint: auto-commit at ${new Date().toLocaleTimeString()}`;
+      const result = await invoke<{ success: boolean; hash?: string; message?: string }>("git_checkpoint_commit", {
+        workingDirectory: session.cwd,
+        message: commitMessage,
+      });
+
+      if (result.success) {
+        debug.info("SessionStore", "Checkpoint commit created", { sessionId, hash: result.hash });
+        // Refresh git status after commit
+        await get().refreshGitStatus(sessionId);
+        return true;
+      } else {
+        debug.error("SessionStore", "Checkpoint commit failed", { sessionId, message: result.message });
+        return false;
+      }
+    } catch (err) {
+      debug.error("SessionStore", "Failed to create checkpoint commit", err);
+      return false;
+    }
+  },
+
+  gitPush: async (sessionId) => {
+    const session = get().sessions[sessionId];
+    if (!session) return { success: false, error: "Session not found" };
+
+    debug.info("SessionStore", "Pushing changes to remote", { sessionId });
+
+    try {
+      const result = await invoke<{ success: boolean; error?: string }>("git_push", {
+        workingDirectory: session.cwd,
+        setUpstream: true,
+      });
+
+      if (result.success) {
+        debug.info("SessionStore", "Push completed successfully", { sessionId });
+        // Refresh git status after push
+        await get().refreshGitStatus(sessionId);
+        return { success: true };
+      } else {
+        debug.error("SessionStore", "Push failed", { sessionId, error: result.error });
+        return { success: false, error: result.error };
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to push to remote";
+      debug.error("SessionStore", "Push error", err);
+      return { success: false, error: errorMessage };
+    }
+  },
+
+  getPrInfo: async (sessionId) => {
+    const session = get().sessions[sessionId];
+    if (!session) return null;
+
+    try {
+      const result = await invoke<{ number: number; title: string; state: string; url: string } | null>("git_get_pr_info", {
+        workingDirectory: session.cwd,
+      });
+      return result;
+    } catch (err) {
+      debug.error("SessionStore", "Failed to get PR info", err);
+      return null;
+    }
+  },
+
+  createPr: async (sessionId, title, body) => {
+    const session = get().sessions[sessionId];
+    if (!session) return { success: false, error: "Session not found" };
+
+    debug.info("SessionStore", "Creating PR", { sessionId, title });
+
+    try {
+      const result = await invoke<{ success: boolean; url?: string; error?: string }>("git_create_pr", {
+        workingDirectory: session.cwd,
+        title,
+        body,
+      });
+
+      if (result.success) {
+        debug.info("SessionStore", "PR created successfully", { sessionId, url: result.url });
+      } else {
+        debug.error("SessionStore", "PR creation failed", { sessionId, error: result.error });
+      }
+      return result;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to create PR";
+      debug.error("SessionStore", "PR creation error", err);
+      return { success: false, error: errorMessage };
+    }
+  },
+
+  mergePr: async (sessionId, squash) => {
+    const session = get().sessions[sessionId];
+    if (!session) return { success: false, error: "Session not found" };
+
+    debug.info("SessionStore", "Merging PR", { sessionId, squash });
+
+    try {
+      const result = await invoke<{ success: boolean; message?: string; error?: string }>("git_merge_pr", {
+        workingDirectory: session.cwd,
+        squash,
+      });
+
+      if (result.success) {
+        debug.info("SessionStore", "PR merged successfully", { sessionId });
+        // Refresh git status after merge
+        await get().refreshGitStatus(sessionId);
+      } else {
+        debug.error("SessionStore", "PR merge failed", { sessionId, error: result.error });
+      }
+      return result;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to merge PR";
+      debug.error("SessionStore", "PR merge error", err);
+      return { success: false, error: errorMessage };
+    }
   },
 }));

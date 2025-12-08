@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useSessionStore, type Project, type Session } from "../stores/sessionStore";
 import { debug } from "../stores/debugStore";
+import { GitStatusIndicator } from "./GitStatusIndicator";
 
 export function Sidebar() {
   const {
@@ -14,6 +15,8 @@ export function Sidebar() {
     setActiveSession,
     deleteProject,
     deleteSession,
+    updateSession,
+    refreshGitStatus,
   } = useSessionStore();
 
   const [isCreatingProject, setIsCreatingProject] = useState(false);
@@ -134,6 +137,8 @@ export function Sidebar() {
               onCreateSession={() => handleCreateSession(project)}
               onDeleteProject={() => deleteProject(project.id)}
               onDeleteSession={deleteSession}
+              onRenameSession={(id, name) => updateSession(id, { name })}
+              onRefreshGitStatus={refreshGitStatus}
             />
           ))
         )}
@@ -153,6 +158,8 @@ interface ProjectItemProps {
   onCreateSession: () => void;
   onDeleteProject: () => void;
   onDeleteSession: (id: string) => Promise<void>;
+  onRenameSession: (id: string, name: string) => void;
+  onRefreshGitStatus: (sessionId: string) => void;
 }
 
 function ProjectItem({
@@ -166,16 +173,43 @@ function ProjectItem({
   onCreateSession,
   onDeleteProject,
   onDeleteSession,
+  onRenameSession,
+  onRefreshGitStatus,
 }: ProjectItemProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const deleteButtonRef = useRef<HTMLButtonElement>(null);
 
   const handleDeleteClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     setShowMenu(false);
     setShowDeleteModal(true);
   };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Delete" || e.key === "Backspace") {
+      e.preventDefault();
+      setShowDeleteModal(true);
+    }
+  };
+
+  const handleModalKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setShowDeleteModal(false);
+    } else if (e.key === "Enter" && !isDeleting) {
+      e.preventDefault();
+      deleteButtonRef.current?.click();
+    }
+  }, [isDeleting]);
+
+  // Auto-focus delete button when modal opens
+  useEffect(() => {
+    if (showDeleteModal && deleteButtonRef.current) {
+      deleteButtonRef.current.focus();
+    }
+  }, [showDeleteModal]);
 
   const handleConfirmDelete = async () => {
     setIsDeleting(true);
@@ -192,10 +226,12 @@ function ProjectItem({
       <div className="border-b border-zinc-800">
         {/* Project Header */}
         <div
-          className={`flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-zinc-800 ${
+          tabIndex={0}
+          className={`flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-zinc-800 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:ring-inset ${
             isActive ? "bg-zinc-800" : ""
           }`}
           onClick={onToggle}
+          onKeyDown={handleKeyDown}
         >
           <svg
             className={`w-3 h-3 text-zinc-500 transition-transform ${isExpanded ? "rotate-90" : ""}`}
@@ -261,6 +297,8 @@ function ProjectItem({
                 isActive={activeSessionId === session.id}
                 onSelect={() => onSelectSession(session.id)}
                 onDelete={() => onDeleteSession(session.id)}
+                onRename={(name) => onRenameSession(session.id, name)}
+                onRefreshGitStatus={() => onRefreshGitStatus(session.id)}
               />
             ))}
             {sessions.length === 0 && (
@@ -275,6 +313,7 @@ function ProjectItem({
         <div
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
           onClick={() => setShowDeleteModal(false)}
+          onKeyDown={handleModalKeyDown}
         >
           <div
             className="bg-zinc-800 border border-zinc-700 rounded-lg p-4 max-w-sm mx-4 shadow-xl"
@@ -283,6 +322,9 @@ function ProjectItem({
             <h3 className="text-sm font-medium text-zinc-200 mb-2">Delete Project</h3>
             <p className="text-xs text-zinc-400 mb-4">
               Are you sure you want to delete "{project.name}" and all its sessions? This action cannot be undone.
+            </p>
+            <p className="text-xs text-zinc-500 mb-4">
+              Press Enter to confirm, Escape to cancel
             </p>
             <div className="flex gap-2 justify-end">
               <button
@@ -293,9 +335,10 @@ function ProjectItem({
                 Cancel
               </button>
               <button
+                ref={deleteButtonRef}
                 onClick={handleConfirmDelete}
                 disabled={isDeleting}
-                className="px-3 py-1.5 text-xs font-medium rounded bg-red-600 hover:bg-red-500 text-white disabled:opacity-50 flex items-center gap-1"
+                className="px-3 py-1.5 text-xs font-medium rounded bg-red-600 hover:bg-red-500 text-white disabled:opacity-50 flex items-center gap-1 focus:outline-none focus:ring-2 focus:ring-red-400"
               >
                 {isDeleting ? (
                   <>
@@ -322,17 +365,99 @@ interface SessionItemProps {
   isActive: boolean;
   onSelect: () => void;
   onDelete: () => Promise<void> | void;
+  onRename: (name: string) => void;
+  onRefreshGitStatus: () => void;
 }
 
-function SessionItem({ session, isActive, onSelect, onDelete }: SessionItemProps) {
+function SessionItem({ session, isActive, onSelect, onDelete, onRename, onRefreshGitStatus }: SessionItemProps) {
   const [showDelete, setShowDelete] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(session.name);
+  const deleteButtonRef = useRef<HTMLButtonElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Refresh git status when session becomes active
+  useEffect(() => {
+    if (isActive) {
+      onRefreshGitStatus();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isActive]);
+
+  // Auto-focus delete button when modal opens
+  useEffect(() => {
+    if (showModal && deleteButtonRef.current) {
+      deleteButtonRef.current.focus();
+    }
+  }, [showModal]);
+
+  // Auto-focus and select input when editing starts
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
 
   const handleDeleteClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     setShowModal(true);
   };
+
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditName(session.name);
+    setIsEditing(true);
+  };
+
+  const handleRenameSubmit = () => {
+    const trimmedName = editName.trim();
+    if (trimmedName && trimmedName !== session.name) {
+      onRename(trimmedName);
+    }
+    setIsEditing(false);
+  };
+
+  const handleRenameCancel = () => {
+    setEditName(session.name);
+    setIsEditing(false);
+  };
+
+  const handleInputKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleRenameSubmit();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      handleRenameCancel();
+    }
+    e.stopPropagation();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (isEditing) return;
+    if (e.key === "Delete" || e.key === "Backspace") {
+      e.preventDefault();
+      e.stopPropagation();
+      setShowModal(true);
+    } else if (e.key === "F2") {
+      e.preventDefault();
+      setEditName(session.name);
+      setIsEditing(true);
+    }
+  };
+
+  const handleModalKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setShowModal(false);
+    } else if (e.key === "Enter" && !isDeleting) {
+      e.preventDefault();
+      deleteButtonRef.current?.click();
+    }
+  }, [isDeleting]);
 
   const handleConfirmDelete = async () => {
     setIsDeleting(true);
@@ -347,10 +472,13 @@ function SessionItem({ session, isActive, onSelect, onDelete }: SessionItemProps
   return (
     <>
       <div
+        tabIndex={0}
         onMouseEnter={() => setShowDelete(true)}
         onMouseLeave={() => setShowDelete(false)}
         onClick={onSelect}
-        className={`flex items-center gap-2 px-3 py-1.5 ml-4 cursor-pointer rounded-l ${
+        onDoubleClick={handleDoubleClick}
+        onKeyDown={handleKeyDown}
+        className={`flex items-center gap-2 px-3 py-1.5 ml-4 cursor-pointer rounded-l focus:outline-none focus:ring-1 focus:ring-blue-500 focus:ring-inset ${
           isActive
             ? "bg-blue-600/20 border-r-2 border-blue-500"
             : "hover:bg-zinc-800"
@@ -361,7 +489,25 @@ function SessionItem({ session, isActive, onSelect, onDelete }: SessionItemProps
             session.isRunning ? "bg-green-500 animate-pulse" : "bg-zinc-600"
           }`}
         />
-        <span className="flex-1 text-xs text-zinc-300 truncate">{session.name}</span>
+        {isEditing ? (
+          <input
+            ref={inputRef}
+            type="text"
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            onBlur={handleRenameSubmit}
+            onKeyDown={handleInputKeyDown}
+            onClick={(e) => e.stopPropagation()}
+            className="flex-1 text-xs text-zinc-100 bg-zinc-700 border border-zinc-600 rounded px-1 py-0.5 outline-none focus:border-blue-500"
+          />
+        ) : (
+          <span className="flex-1 text-xs text-zinc-300 truncate">{session.name}</span>
+        )}
+        <GitStatusIndicator
+          gitStatus={session.gitStatus}
+          isLoading={session.gitStatusLoading}
+          onClick={onRefreshGitStatus}
+        />
         {session.totalCost > 0 && (
           <span className="text-xs text-zinc-500 shrink-0">${session.totalCost.toFixed(3)}</span>
         )}
@@ -383,6 +529,7 @@ function SessionItem({ session, isActive, onSelect, onDelete }: SessionItemProps
         <div
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
           onClick={() => setShowModal(false)}
+          onKeyDown={handleModalKeyDown}
         >
           <div
             className="bg-zinc-800 border border-zinc-700 rounded-lg p-4 max-w-sm mx-4 shadow-xl"
@@ -391,6 +538,9 @@ function SessionItem({ session, isActive, onSelect, onDelete }: SessionItemProps
             <h3 className="text-sm font-medium text-zinc-200 mb-2">Delete Session</h3>
             <p className="text-xs text-zinc-400 mb-4">
               Are you sure you want to delete "{session.name}"? This action cannot be undone.
+            </p>
+            <p className="text-xs text-zinc-500 mb-4">
+              Press Enter to confirm, Escape to cancel
             </p>
             <div className="flex gap-2 justify-end">
               <button
@@ -401,9 +551,10 @@ function SessionItem({ session, isActive, onSelect, onDelete }: SessionItemProps
                 Cancel
               </button>
               <button
+                ref={deleteButtonRef}
                 onClick={handleConfirmDelete}
                 disabled={isDeleting}
-                className="px-3 py-1.5 text-xs font-medium rounded bg-red-600 hover:bg-red-500 text-white disabled:opacity-50 flex items-center gap-1"
+                className="px-3 py-1.5 text-xs font-medium rounded bg-red-600 hover:bg-red-500 text-white disabled:opacity-50 flex items-center gap-1 focus:outline-none focus:ring-2 focus:ring-red-400"
               >
                 {isDeleting ? (
                   <>

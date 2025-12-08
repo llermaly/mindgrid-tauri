@@ -1,5 +1,69 @@
 // Claude CLI stream-json event types
 
+// Permission modes for Claude Code
+export type PermissionMode =
+  | 'default'        // Standard behavior - prompts for permission on first use
+  | 'acceptEdits'    // Auto-accepts file edit permissions
+  | 'plan'           // Plan mode - analyze only, no modifications
+  | 'bypassPermissions'; // Skip all permission prompts (dangerous)
+
+// High-risk tools that modify files or execute commands
+export const HIGH_RISK_TOOLS = [
+  'Bash',
+  'Write',
+  'Edit',
+  'MultiEdit',
+  'Delete',
+  'NotebookEdit',
+] as const;
+
+// Permission request from Claude
+export interface PermissionRequest {
+  id: string;
+  sessionId: string;
+  toolName: string;
+  toolInput: Record<string, unknown>;
+  timestamp: number;
+}
+
+// Permission response to Claude
+export interface PermissionResponse {
+  allow: boolean;
+  reason?: string;
+}
+
+// Commit modes for worktree changes
+export type CommitMode = 'checkpoint' | 'structured' | 'disabled';
+
+export interface CommitModeSettings {
+  mode: CommitMode;
+  checkpointPrefix?: string; // Default: "checkpoint: "
+  structuredPromptTemplate?: string; // Template to append for structured mode
+}
+
+export const DEFAULT_COMMIT_MODE_SETTINGS: CommitModeSettings = {
+  mode: 'checkpoint',
+  checkpointPrefix: 'checkpoint: ',
+};
+
+export const COMMIT_MODE_INFO: Record<CommitMode, { label: string; description: string; color: string }> = {
+  checkpoint: {
+    label: 'Checkpoint',
+    description: 'Auto-commit after each response',
+    color: 'text-green-400',
+  },
+  structured: {
+    label: 'Structured',
+    description: 'Claude handles commits properly',
+    color: 'text-blue-400',
+  },
+  disabled: {
+    label: 'Manual',
+    description: 'No auto-commits',
+    color: 'text-zinc-400',
+  },
+};
+
 export type ClaudeEventType =
   | "system"
   | "assistant"

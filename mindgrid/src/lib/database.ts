@@ -117,6 +117,8 @@ export async function loadSessions(): Promise<Session[]> {
     ptyId: null, // Runtime only
     messages: session.messages || [], // Ensure messages array exists
     isRunning: false, // Runtime only
+    permissionMode: session.permissionMode || 'default', // Default permission mode
+    commitMode: session.commitMode || 'checkpoint', // Default commit mode
   }));
 }
 
@@ -140,6 +142,8 @@ export async function saveSession(session: Session): Promise<void> {
     cwd: session.cwd,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
+    permissionMode: session.permissionMode || 'default',
+    commitMode: session.commitMode || 'checkpoint',
   };
 
   if (index >= 0) {
@@ -219,4 +223,10 @@ export async function deleteMessages(sessionId: string): Promise<void> {
   await s.set("messages", allMessages);
   await s.save();
   debug.info("Database", `Deleted messages for session ${sessionId}`);
+}
+
+// Alias for clearing session messages (keeps session, clears messages)
+export async function clearSessionMessages(sessionId: string): Promise<void> {
+  await deleteMessages(sessionId);
+  debug.info("Database", `Cleared messages for session ${sessionId}`);
 }

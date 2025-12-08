@@ -81,6 +81,19 @@ pub fn run() {
             git::get_git_worktrees,
             git::create_workspace_worktree,
             git::remove_workspace_worktree,
+            git::get_git_status,
+            git::get_git_diff,
+            git::git_add_all,
+            git::git_commit,
+            git::git_checkpoint_commit,
+            git::git_has_changes,
+            git::git_get_last_commit,
+            git::git_push,
+            git::git_check_gh_cli,
+            git::git_get_pr_info,
+            git::git_create_pr,
+            git::git_merge_to_main,
+            git::git_merge_pr,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
