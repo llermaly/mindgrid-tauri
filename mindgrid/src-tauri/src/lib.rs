@@ -128,6 +128,8 @@ pub fn run() {
             git::git_merge_to_main,
             git::git_merge_pr,
             git::open_in_editor,
+            git::list_gitignored_files,
+            git::copy_files_to_worktree,
             codex::codex_list_models,
             codex::run_codex,
             is_dev_mode,

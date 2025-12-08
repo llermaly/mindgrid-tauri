@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { PRESETS, type ChatType } from "../../lib/presets";
 import { openChatWindow, openMultipleChatWindows } from "../../lib/window-manager";
 import { useSessionStore, type Project, type Session } from "../../stores/sessionStore";
@@ -125,6 +126,20 @@ export function Dashboard() {
 
     const newSession = await createSession(selectedProjectId, config.name, project.path);
 
+    // Copy selected gitignored files to worktree
+    if (config.filesToCopy && config.filesToCopy.length > 0 && newSession.cwd !== project.path) {
+      try {
+        await invoke<string[]>("copy_files_to_worktree", {
+          projectPath: project.path,
+          worktreePath: newSession.cwd,
+          files: config.filesToCopy,
+        });
+      } catch (copyErr) {
+        console.error("Failed to copy files:", copyErr);
+        // Don't fail the whole operation, just log the error
+      }
+    }
+
     // Update session with additional config
     const { setPermissionMode, setCommitMode, setSessionModel } = useSessionStore.getState();
 
@@ -145,10 +160,25 @@ export function Dashboard() {
     projectName: string,
     projectPath: string,
     sessionName: string,
-    chatTypes: ChatType[]
+    chatTypes: ChatType[],
+    filesToCopy?: string[]
   ) => {
     const project = await createProject(projectName, projectPath);
     const session = await createSession(project.id, sessionName, projectPath);
+
+    // Copy selected gitignored files to worktree
+    if (filesToCopy && filesToCopy.length > 0 && session.cwd !== projectPath) {
+      try {
+        await invoke<string[]>("copy_files_to_worktree", {
+          projectPath,
+          worktreePath: session.cwd,
+          files: filesToCopy,
+        });
+      } catch (copyErr) {
+        console.error("Failed to copy files:", copyErr);
+        // Don't fail the whole operation, just log the error
+      }
+    }
 
     if (chatTypes.length > 0) {
       await openMultipleChatWindows(
@@ -480,6 +510,7 @@ export function Dashboard() {
         <CreateSessionDialog
           isOpen={showCreateSessionDialog}
           projectName={selectedProject.name}
+          projectPath={selectedProject.path}
           existingSessionCount={selectedProject.sessions.length}
           onClose={() => setShowCreateSessionDialog(false)}
           onCreate={handleCreateSession}

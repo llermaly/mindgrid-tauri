@@ -1271,3 +1271,216 @@ pub async fn open_in_editor(path: String) -> Result<(), String> {
 
     Ok(())
 }
+
+#[derive(Debug, Serialize)]
+pub struct GitIgnoredFile {
+    pub path: String,
+    pub name: String,
+    pub is_directory: bool,
+    pub size: Option<u64>,
+}
+
+/// List files that are gitignored in the project root (useful for .env files, etc.)
+#[tauri::command]
+pub async fn list_gitignored_files(project_path: String) -> Result<Vec<GitIgnoredFile>, String> {
+    let path = Path::new(&project_path);
+
+    if !path.exists() || !path.is_dir() {
+        return Err("Directory does not exist".to_string());
+    }
+
+    // Common patterns for files that should be copied to worktrees
+    let common_patterns = [
+        ".env",
+        ".env.local",
+        ".env.development",
+        ".env.development.local",
+        ".env.production",
+        ".env.production.local",
+        ".env.test",
+        ".env.test.local",
+        ".envrc",
+        ".tool-versions",
+        ".nvmrc",
+        ".node-version",
+        ".ruby-version",
+        ".python-version",
+        "credentials.json",
+        "secrets.json",
+        ".secrets",
+        "config.local.json",
+        "config.local.yaml",
+        "config.local.yml",
+    ];
+
+    let mut files = Vec::new();
+
+    // Check for files matching common patterns
+    for pattern in common_patterns {
+        let file_path = path.join(pattern);
+        if file_path.exists() {
+            let is_dir = file_path.is_dir();
+            let size = if !is_dir {
+                std::fs::metadata(&file_path).ok().map(|m| m.len())
+            } else {
+                None
+            };
+
+            // Verify it's actually gitignored (or untracked)
+            let is_ignored = tokio::process::Command::new("git")
+                .arg("-C")
+                .arg(&project_path)
+                .args(["check-ignore", "-q", pattern])
+                .output()
+                .await
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+
+            // Also check if it's untracked (not in git index)
+            let is_untracked = tokio::process::Command::new("git")
+                .arg("-C")
+                .arg(&project_path)
+                .args(["ls-files", "--error-unmatch", pattern])
+                .output()
+                .await
+                .map(|o| !o.status.success())
+                .unwrap_or(true);
+
+            if is_ignored || is_untracked {
+                files.push(GitIgnoredFile {
+                    path: pattern.to_string(),
+                    name: pattern.to_string(),
+                    is_directory: is_dir,
+                    size,
+                });
+            }
+        }
+    }
+
+    // Also scan for any .env* files we might have missed
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with(".env") && !files.iter().any(|f| f.name == name) {
+                let file_path = entry.path();
+                let is_dir = file_path.is_dir();
+                let size = if !is_dir {
+                    std::fs::metadata(&file_path).ok().map(|m| m.len())
+                } else {
+                    None
+                };
+
+                // Check if gitignored
+                let is_ignored = tokio::process::Command::new("git")
+                    .arg("-C")
+                    .arg(&project_path)
+                    .args(["check-ignore", "-q", &name])
+                    .output()
+                    .await
+                    .map(|o| o.status.success())
+                    .unwrap_or(false);
+
+                let is_untracked = tokio::process::Command::new("git")
+                    .arg("-C")
+                    .arg(&project_path)
+                    .args(["ls-files", "--error-unmatch", &name])
+                    .output()
+                    .await
+                    .map(|o| !o.status.success())
+                    .unwrap_or(true);
+
+                if is_ignored || is_untracked {
+                    files.push(GitIgnoredFile {
+                        path: name.clone(),
+                        name,
+                        is_directory: is_dir,
+                        size,
+                    });
+                }
+            }
+        }
+    }
+
+    // Sort by name
+    files.sort_by(|a, b| a.name.cmp(&b.name));
+
+    Ok(files)
+}
+
+/// Copy selected gitignored files from project root to worktree
+#[tauri::command]
+pub async fn copy_files_to_worktree(
+    project_path: String,
+    worktree_path: String,
+    files: Vec<String>,
+) -> Result<Vec<String>, String> {
+    let source = Path::new(&project_path);
+    let dest = Path::new(&worktree_path);
+
+    if !source.exists() || !source.is_dir() {
+        return Err("Source directory does not exist".to_string());
+    }
+
+    if !dest.exists() || !dest.is_dir() {
+        return Err("Destination directory does not exist".to_string());
+    }
+
+    let mut copied = Vec::new();
+    let mut errors = Vec::new();
+
+    for file in files {
+        let source_file = source.join(&file);
+        let dest_file = dest.join(&file);
+
+        if !source_file.exists() {
+            errors.push(format!("File not found: {}", file));
+            continue;
+        }
+
+        // Create parent directories if needed
+        if let Some(parent) = dest_file.parent() {
+            if !parent.exists() {
+                if let Err(e) = std::fs::create_dir_all(parent) {
+                    errors.push(format!("Failed to create directory for {}: {}", file, e));
+                    continue;
+                }
+            }
+        }
+
+        // Copy file or directory
+        if source_file.is_dir() {
+            if let Err(e) = copy_dir_recursive(&source_file, &dest_file) {
+                errors.push(format!("Failed to copy directory {}: {}", file, e));
+                continue;
+            }
+        } else {
+            if let Err(e) = std::fs::copy(&source_file, &dest_file) {
+                errors.push(format!("Failed to copy {}: {}", file, e));
+                continue;
+            }
+        }
+
+        copied.push(file);
+    }
+
+    if !errors.is_empty() {
+        eprintln!("Errors copying files: {:?}", errors);
+    }
+
+    Ok(copied)
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if src_path.is_dir() {
+            copy_dir_recursive(&src_path, &dst_path)?;
+        } else {
+            std::fs::copy(&src_path, &dst_path)?;
+        }
+    }
+    Ok(())
+}
