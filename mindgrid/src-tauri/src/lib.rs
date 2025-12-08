@@ -94,6 +94,7 @@ pub fn run() {
             git::git_create_pr,
             git::git_merge_to_main,
             git::git_merge_pr,
+            git::open_in_editor,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

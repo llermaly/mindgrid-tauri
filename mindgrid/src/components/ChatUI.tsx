@@ -1,4 +1,5 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useClaudePty } from "../hooks/useClaudePty";
 import type { ClaudeEvent, ParsedMessage, PermissionMode, CommitMode } from "../lib/claude-types";
 import { COMMIT_MODE_INFO } from "../lib/claude-types";
@@ -165,8 +166,52 @@ export function ChatUI({
   const [showPrDialog, setShowPrDialog] = useState(false);
   const [prTitle, setPrTitle] = useState("");
   const [prBody, setPrBody] = useState("");
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Parse cwd to extract project path and worktree name
+  const pathInfo = useMemo(() => {
+    if (!cwd) return null;
+
+    // Normalize path (remove trailing slash if present)
+    const normalizedCwd = cwd.replace(/\/+$/, '');
+
+    // Check if this is a worktree path: /path/to/project/.mindgrid/worktrees/<worktree-name>
+    const worktreeMatch = normalizedCwd.match(/^(.+)\/\.mindgrid\/worktrees\/([^/]+)/);
+    if (worktreeMatch) {
+      const projectPath = worktreeMatch[1];
+      const worktreeName = worktreeMatch[2];
+      const projectName = projectPath.split('/').pop() || projectPath;
+      // Full worktree path for opening in editor
+      const worktreePath = `${projectPath}/.mindgrid/worktrees/${worktreeName}`;
+      return {
+        projectPath,
+        projectName,
+        worktreeName,
+        worktreePath,
+        isWorktree: true,
+      };
+    }
+
+    // Regular project path
+    const projectName = normalizedCwd.split('/').pop() || normalizedCwd;
+    return {
+      projectPath: normalizedCwd,
+      projectName,
+      worktreeName: null,
+      worktreePath: null,
+      isWorktree: false,
+    };
+  }, [cwd]);
+
+  const openInEditor = useCallback(async (path: string) => {
+    try {
+      await invoke("open_in_editor", { path });
+    } catch (error) {
+      debug.error("ChatUI", "Failed to open in editor", error);
+    }
+  }, []);
 
   const { isRunning, spawnClaude, sendMessage, kill } = useClaudePty({
     onEvent: onClaudeEvent,
@@ -273,6 +318,9 @@ export function ChatUI({
           const info = await onGetPrInfo();
           setPrInfo(info);
         }
+        // Show success message
+        setSuccessMessage("PR created successfully!");
+        setTimeout(() => setSuccessMessage(null), 5000);
       }
     } finally {
       setIsCreatingPr(false);
@@ -286,6 +334,9 @@ export function ChatUI({
       const result = await onMergePr(true); // squash merge
       if (result.success) {
         setPrInfo(null); // PR is merged, clear info
+        setSuccessMessage("PR merged successfully! Branch has been deleted.");
+        // Auto-hide success message after 5 seconds
+        setTimeout(() => setSuccessMessage(null), 5000);
       }
     } finally {
       setIsMergingPr(false);
@@ -568,6 +619,28 @@ export function ChatUI({
         </div>
       )}
 
+      {/* Success Message Toast */}
+      {successMessage && (
+        <div className="fixed top-4 right-4 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="bg-green-600 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 max-w-sm">
+            <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+              <polyline points="22 4 12 14.01 9 11.01" />
+            </svg>
+            <span className="text-sm">{successMessage}</span>
+            <button
+              onClick={() => setSuccessMessage(null)}
+              className="ml-auto p-1 hover:bg-green-500 rounded"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Create PR Dialog */}
       {showPrDialog && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowPrDialog(false)}>
@@ -679,10 +752,28 @@ export function ChatUI({
         </div>
         <div className="flex items-center gap-4 mt-2 text-xs text-zinc-500">
           <span>Press Enter to send, Shift+Enter for new line</span>
-          {cwd && (
-            <span className="truncate ml-auto" title={cwd}>
-              {cwd}
-            </span>
+          {pathInfo && (
+            <div className="flex items-center gap-1 ml-auto">
+              <button
+                onClick={() => openInEditor(pathInfo.projectPath)}
+                className="hover:text-blue-400 hover:underline cursor-pointer transition-colors"
+                title={`Open project in VS Code: ${pathInfo.projectPath}`}
+              >
+                {pathInfo.projectName}
+              </button>
+              {pathInfo.isWorktree && pathInfo.worktreeName && pathInfo.worktreePath && (
+                <>
+                  <span className="text-zinc-600">/</span>
+                  <button
+                    onClick={() => openInEditor(pathInfo.worktreePath!)}
+                    className="hover:text-blue-400 hover:underline cursor-pointer transition-colors"
+                    title={`Open worktree in VS Code: ${pathInfo.worktreePath}`}
+                  >
+                    {pathInfo.worktreeName}
+                  </button>
+                </>
+              )}
+            </div>
           )}
         </div>
       </div>

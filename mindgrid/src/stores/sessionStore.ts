@@ -103,6 +103,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   isLoading: false,
   isInitialized: false,
   ghAvailable: false,
+  ghCliStatus: null,
 
   initialize: async () => {
     if (get().isInitialized) return;
@@ -222,8 +223,24 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
     debug.info("SessionStore", "Deleting project", { id, name: project.name });
 
-    // Delete all sessions first
+    // Delete all sessions first (including worktree cleanup)
     for (const sessionId of project.sessions) {
+      const session = get().sessions[sessionId];
+      if (session) {
+        // Remove worktree if it exists
+        if (session.cwd !== project.path && session.cwd.includes(".mindgrid/worktrees")) {
+          try {
+            debug.info("SessionStore", "Removing worktree for project deletion", { worktreePath: session.cwd });
+            await invoke("remove_workspace_worktree", {
+              projectPath: project.path,
+              worktreePath: session.cwd
+            });
+          } catch (err) {
+            console.error("Failed to remove worktree:", err);
+            debug.error("SessionStore", "Failed to remove worktree", err);
+          }
+        }
+      }
       await db.deleteSession(sessionId);
     }
 

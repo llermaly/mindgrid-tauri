@@ -1197,3 +1197,17 @@ pub async fn git_merge_pr(
         error: None,
     })
 }
+
+#[tauri::command]
+pub async fn open_in_editor(path: String) -> Result<(), String> {
+    // Open VS Code with the given path
+    let status = tokio::process::Command::new("code")
+        .arg(&path)
+        .spawn()
+        .map_err(|e| format!("Failed to open VS Code: {}", e))?;
+
+    // Don't wait for VS Code to close, just check it started
+    drop(status);
+
+    Ok(())
+}
