@@ -1,11 +1,37 @@
 mod pty;
 mod git;
+mod codex;
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri_plugin_sql::{Migration, MigrationKind};
+
+// Global flag to track if we're in dev mode
+static DEV_MODE: AtomicBool = AtomicBool::new(false);
+
+/// Check if the application is running in developer mode
+#[tauri::command]
+fn is_dev_mode() -> bool {
+    DEV_MODE.load(Ordering::Relaxed)
+}
+
+/// Get the database name based on dev mode
+fn get_db_name() -> &'static str {
+    if DEV_MODE.load(Ordering::Relaxed) {
+        "mindgrid-dev.db"
+    } else {
+        "mindgrid.db"
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Check for dev mode via environment variable
+    if std::env::var("MINDGRID_DEV_MODE").is_ok() {
+        DEV_MODE.store(true, Ordering::Relaxed);
+        println!("[MindGrid] Running in DEVELOPER MODE - using isolated data storage");
+    }
+
     let pty_state = Arc::new(pty::PtyState::new());
 
     let migrations = vec![
@@ -62,13 +88,17 @@ pub fn run() {
         },
     ];
 
+    // Build database URI based on dev mode
+    let db_uri = format!("sqlite:{}", get_db_name());
+    println!("[MindGrid] Using database: {}", db_uri);
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(
             tauri_plugin_sql::Builder::default()
-                .add_migrations("sqlite:mindgrid.db", migrations)
+                .add_migrations(&db_uri, migrations)
                 .build(),
         )
         .manage(pty_state)
@@ -77,6 +107,8 @@ pub fn run() {
             pty::write_pty,
             pty::resize_pty,
             pty::kill_pty,
+            pty::get_claude_usage,
+            pty::get_codex_usage,
             git::list_git_repos,
             git::validate_git_repository,
             git::get_git_worktrees,
@@ -96,6 +128,9 @@ pub fn run() {
             git::git_merge_to_main,
             git::git_merge_pr,
             git::open_in_editor,
+            codex::codex_list_models,
+            codex::run_codex,
+            is_dev_mode,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

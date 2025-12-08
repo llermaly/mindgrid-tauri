@@ -1,5 +1,5 @@
 export interface ModelConfig {
-  id: string;
+  id: string; // CLI flag value (e.g., 'sonnet', 'opus', 'haiku', 'gpt-5.1-codex')
   name: string;
   shortName: string;
   color: string;
@@ -10,36 +10,60 @@ export interface ModelConfig {
 
 export const MODELS: ModelConfig[] = [
   {
-    id: 'claude-sonnet-4-20250514',
-    name: 'Claude Sonnet 4',
-    shortName: 'Sonnet 4',
+    id: 'sonnet',
+    name: 'Claude Sonnet 4.5',
+    shortName: 'Sonnet 4.5',
     color: '#8b5cf6',
     provider: 'anthropic',
     contextWindow: 200000,
     isDefault: true,
   },
   {
-    id: 'claude-opus-4-20250514',
-    name: 'Claude Opus 4',
-    shortName: 'Opus 4',
+    id: 'opus',
+    name: 'Claude Opus 4.5',
+    shortName: 'Opus 4.5',
     color: '#f97316',
     provider: 'anthropic',
     contextWindow: 200000,
   },
   {
-    id: 'claude-3-5-sonnet-20241022',
-    name: 'Claude 3.5 Sonnet',
-    shortName: 'Sonnet 3.5',
-    color: '#a855f7',
+    id: 'haiku',
+    name: 'Claude Haiku 4.5',
+    shortName: 'Haiku 4.5',
+    color: '#06b6d4',
     provider: 'anthropic',
     contextWindow: 200000,
   },
   {
-    id: 'claude-3-5-haiku-20241022',
-    name: 'Claude 3.5 Haiku',
-    shortName: 'Haiku',
-    color: '#06b6d4',
-    provider: 'anthropic',
+    id: 'gpt-5.1-codex-max',
+    name: 'GPT-5.1 Codex Max',
+    shortName: 'Codex Max',
+    color: '#22c55e',
+    provider: 'openai',
+    contextWindow: 200000,
+  },
+  {
+    id: 'gpt-5.1-codex',
+    name: 'GPT-5.1 Codex',
+    shortName: 'Codex',
+    color: '#16a34a',
+    provider: 'openai',
+    contextWindow: 200000,
+  },
+  {
+    id: 'gpt-5.1-codex-mini',
+    name: 'GPT-5.1 Codex Mini',
+    shortName: 'Codex Mini',
+    color: '#10b981',
+    provider: 'openai',
+    contextWindow: 200000,
+  },
+  {
+    id: 'gpt-5.1',
+    name: 'GPT-5.1',
+    shortName: 'GPT-5.1',
+    color: '#38bdf8',
+    provider: 'openai',
     contextWindow: 200000,
   },
 ];

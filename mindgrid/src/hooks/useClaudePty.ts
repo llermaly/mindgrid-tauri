@@ -136,16 +136,18 @@ export function useClaudePty(options: UseClaudePtyOptions = {}) {
     cwd?: string;
     claudeSessionId?: string | null;
     permissionMode?: PermissionMode;
+    model?: string | null;
   }>({});
 
   const spawnClaude = useCallback(async (
     cwd?: string,
     claudeSessionId?: string | null,
-    permissionMode?: PermissionMode
+    permissionMode?: PermissionMode,
+    model?: string | null
   ) => {
     // Just store the config and "start" the session conceptually
-    configRef.current = { cwd, claudeSessionId, permissionMode };
-    debug.info("PTY", "Session initialized", { cwd, claudeSessionId, permissionMode });
+    configRef.current = { cwd, claudeSessionId, permissionMode, model };
+    debug.info("PTY", "Session initialized", { cwd, claudeSessionId, permissionMode, model });
 
     // Return a dummy ID to satisfy the UI that we "started"
     return "session-active";
@@ -172,7 +174,7 @@ export function useClaudePty(options: UseClaudePtyOptions = {}) {
       // Reset parser state for new message to avoid stale data
       parserRef.current?.flush();
 
-      const { cwd, claudeSessionId, permissionMode: configPermissionMode } = configRef.current;
+      const { cwd, claudeSessionId, permissionMode: configPermissionMode, model } = configRef.current;
       const permissionMode = overridePermissionMode || configPermissionMode || 'default';
 
       // Build args similar to commander - each message spawns fresh process
@@ -182,6 +184,12 @@ export function useClaudePty(options: UseClaudePtyOptions = {}) {
         "--verbose",
         "--include-partial-messages"
       ];
+
+      // Add model flag if specified
+      if (model) {
+        claudeArgs.push("--model", model);
+        console.log("[useClaudePty] Using model:", model);
+      }
 
       // Add permission flags based on permission mode
       switch (permissionMode) {

@@ -6,6 +6,10 @@ import { COMMIT_MODE_INFO } from "../lib/claude-types";
 import { debug } from "../stores/debugStore";
 import { ModelSelector } from "./ModelSelector";
 import { ContextUsagePopup } from "./ContextUsagePopup";
+import { UsagePopup } from "./UsagePopup";
+import { useCodexRunner } from "../hooks/useCodexRunner";
+import { useClaudeUsage } from "../hooks/useClaudeUsage";
+import { getModelById } from "../lib/models";
 
 interface PrInfo {
   number: number;
@@ -62,7 +66,7 @@ const PERMISSION_MODE_INFO: Record<PermissionMode, { label: string; description:
 
 const MESSAGE_STYLES: Record<string, { bg: string; color: string; label: string }> = {
   user: { bg: "bg-blue-500/10", color: "text-blue-400", label: "You" },
-  assistant: { bg: "bg-zinc-800/50", color: "text-zinc-300", label: "Claude" },
+  assistant: { bg: "bg-zinc-800/50", color: "text-zinc-300", label: "Assistant" },
   system: { bg: "bg-yellow-500/10", color: "text-yellow-400", label: "System" },
   tool: { bg: "bg-cyan-500/10", color: "text-cyan-400", label: "Tool" },
 };
@@ -174,8 +178,16 @@ export function ChatUI({
   const [showContextPopup, setShowContextPopup] = useState(false);
   const [contextPopupPos, setContextPopupPos] = useState({ x: 0, y: 0 });
   const [contextUsed, setContextUsed] = useState(0);
+  const [thinkingMode, setThinkingMode] = useState(true);
+  const [showUsagePopup, setShowUsagePopup] = useState(false);
+  const [usagePopupPos, setUsagePopupPos] = useState({ x: 0, y: 0 });
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [activeFilters, setActiveFilters] = useState<string[]>(['all']);
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const [isListening, setIsListening] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Parse cwd to extract project path and worktree name
   const pathInfo = useMemo(() => {
@@ -265,25 +277,66 @@ export function ChatUI({
     },
   });
 
+  const { runCodex, isRunning: isCodexRunning } = useCodexRunner({
+    cwd,
+    onComplete: (content) => {
+      const assistantMessage: ParsedMessage = {
+        id: `codex-${Date.now()}`,
+        role: "assistant",
+        content: content || "(no output)",
+        timestamp: Date.now(),
+      };
+      onClaudeMessage?.(assistantMessage);
+    },
+    onError: (err) => {
+      const assistantMessage: ParsedMessage = {
+        id: `codex-${Date.now()}-error`,
+        role: "assistant",
+        content: `Codex error: ${err}`,
+        timestamp: Date.now(),
+        isError: true,
+      };
+      onClaudeMessage?.(assistantMessage);
+    },
+  });
+
+  const activeAgent: "claude" | "codex" = useMemo(() => {
+    const provider = getModelById(model || undefined)?.provider;
+    if (provider === "openai") return "codex";
+    return "claude";
+  }, [model]);
+
+  const { usageData: claudeUsageData, criticalUsage: claudeCriticalUsage, error: claudeUsageError } = useClaudeUsage();
+
+  // Use Claude usage data (Codex usage not yet implemented)
+  const criticalUsage = claudeCriticalUsage;
+  const usageError = claudeUsageError;
+
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Rough context usage estimate based on message count
+  useEffect(() => {
+    const estimate = Math.min(95, Math.max(5, messages.length * 5));
+    setContextUsed(estimate);
+  }, [messages.length]);
+
   // Initialize config on mount (no "Start Claude" button needed)
   useEffect(() => {
-    if (!hasStarted) {
-      spawnClaude(cwd, claudeSessionId, permissionMode).then(() => setHasStarted(true));
+    if (!hasStarted && activeAgent === "claude") {
+      spawnClaude(cwd, claudeSessionId, permissionMode, model).then(() => setHasStarted(true));
     }
-  }, [cwd, claudeSessionId, permissionMode, hasStarted, spawnClaude]);
+  }, [cwd, claudeSessionId, permissionMode, model, hasStarted, spawnClaude, activeAgent]);
 
-  // Update config when permission mode changes
+  // Update config when permission mode or model changes
   useEffect(() => {
-    if (hasStarted) {
-      spawnClaude(cwd, claudeSessionId, permissionMode);
+    if (hasStarted && activeAgent === "claude") {
+      spawnClaude(cwd, claudeSessionId, permissionMode, model);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [permissionMode]);
+  }, [permissionMode, model, activeAgent]);
 
   const handleSend = useCallback(async () => {
     if (!input.trim()) return;
@@ -302,9 +355,13 @@ export function ChatUI({
     console.log("[ChatUI] Adding user message immediately:", userMessage.id);
     onClaudeMessage?.(userMessage);
 
-    // Send message directly - each message spawns a new Claude process
-    sendMessage(message);
-  }, [input, sendMessage, onClaudeMessage]);
+    // Send message through selected agent
+    if (activeAgent === "codex") {
+      await runCodex(message, model || undefined);
+    } else {
+      await sendMessage(message);
+    }
+  }, [input, sendMessage, onClaudeMessage, activeAgent, runCodex, model]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -317,6 +374,27 @@ export function ChatUI({
     await kill();
     setHasStarted(false);
   }, [kill]);
+
+  const filteredMessages = useMemo(() => {
+    if (activeFilters.includes('all')) return messages;
+    return messages.filter((m) => {
+      if (activeFilters.includes('thinking') && m.role === 'assistant' && m.content?.toLowerCase().includes('thinking')) return true;
+      if (activeFilters.includes('text') && m.role === 'assistant') return true;
+      if (activeFilters.includes('tool') && m.role === 'tool') return true;
+      if (activeFilters.includes('user') && m.role === 'user') return true;
+      return false;
+    });
+  }, [messages, activeFilters]);
+
+  const handleAttachment = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    const next = Array.from(files);
+    setAttachments((prev) => [...prev, ...next]);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }, []);
 
   const handleGitPush = useCallback(async () => {
     if (!onGitPush || isPushing) return;
@@ -390,10 +468,19 @@ export function ChatUI({
     <div className={`flex flex-col h-full bg-zinc-900 ${className}`}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700 bg-zinc-800/50">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${isRunning ? "bg-green-500 animate-pulse" : "bg-zinc-600"}`} />
-            <span className="text-sm font-medium text-zinc-200">Claude</span>
+            <div className={`w-2 h-2 rounded-full ${
+              activeAgent === "codex"
+                ? (isCodexRunning ? "bg-blue-400 animate-pulse" : "bg-blue-500")
+                : (isRunning ? "bg-green-500 animate-pulse" : "bg-zinc-600")
+            }`} />
+            <span className="text-sm font-medium text-zinc-200">
+              {activeAgent === "codex" ? "Codex" : "Claude"}
+            </span>
+            <span className="text-xs px-2 py-1 rounded border border-zinc-700 text-neutral-400">
+              {activeAgent === "codex" ? (isCodexRunning ? "Running" : "Idle") : (isRunning ? "Running" : "Idle")}
+            </span>
           </div>
           {onModelChange && (
             <ModelSelector
@@ -402,6 +489,103 @@ export function ChatUI({
               size="sm"
             />
           )}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setThinkingMode((v) => !v)}
+              className={`px-2 py-1 rounded text-xs border ${thinkingMode ? "border-purple-500 text-purple-200 bg-purple-500/10" : "border-zinc-700 text-neutral-400"}`}
+              title="Toggle thinking mode"
+            >
+              {thinkingMode ? "Thinking On" : "Thinking Off"}
+            </button>
+            {/* Context Usage Indicator with icon */}
+            <div
+              className="relative"
+              onMouseEnter={(e) => {
+                setContextPopupPos({ x: e.clientX, y: e.clientY });
+                setShowContextPopup(true);
+              }}
+              onMouseLeave={() => setShowContextPopup(false)}
+            >
+              <span
+                className={`flex items-center gap-1 cursor-help px-1.5 py-0.5 rounded hover:bg-zinc-800 transition-colors text-xs ${
+                  contextUsed > 80 ? 'text-red-400' : contextUsed > 50 ? 'text-yellow-400' : 'text-zinc-400'
+                }`}
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"
+                  />
+                </svg>
+                {contextUsed}%
+              </span>
+              {showContextPopup && (
+                <ContextUsagePopup
+                  contextUsed={contextUsed}
+                  model={model}
+                  position={contextPopupPos}
+                />
+              )}
+            </div>
+            {/* Account Usage Indicator with icon */}
+            <div
+              className="relative"
+              onMouseEnter={(e) => {
+                setUsagePopupPos({ x: e.clientX, y: e.clientY });
+                setShowUsagePopup(true);
+              }}
+              onMouseLeave={() => setShowUsagePopup(false)}
+            >
+              {criticalUsage ? (
+                <span
+                  className={`flex items-center gap-1 cursor-help px-1.5 py-0.5 rounded hover:bg-zinc-800 transition-colors text-xs ${
+                    criticalUsage.percentage > 80 ? 'text-red-400' : criticalUsage.percentage > 50 ? 'text-yellow-400' : 'text-zinc-400'
+                  }`}
+                  title={`${criticalUsage.label}: ${criticalUsage.percentage}%`}
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M13 10V3L4 14h7v7l9-11h-7z"
+                    />
+                  </svg>
+                  {criticalUsage.percentage}%
+                </span>
+              ) : usageError ? (
+                <span
+                  className="flex items-center gap-1 cursor-help px-1.5 py-0.5 rounded hover:bg-zinc-800 transition-colors text-xs text-zinc-600"
+                  title={`Usage data unavailable: ${usageError}`}
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M13 10V3L4 14h7v7l9-11h-7z"
+                    />
+                  </svg>
+                  --
+                </span>
+              ) : null}
+              {showUsagePopup && claudeUsageData && (
+                <UsagePopup
+                  usageData={claudeUsageData}
+                  position={usagePopupPos}
+                />
+              )}
+            </div>
+            <button
+              onClick={() => setFiltersExpanded((v) => !v)}
+              className="px-2 py-1 rounded text-xs border border-zinc-700 text-neutral-400 hover:text-white hover:border-zinc-500"
+              title="Toggle message filters"
+            >
+              Filters
+            </button>
+          </div>
 
           {/* Permission Mode Selector */}
           <div className="relative">
@@ -610,39 +794,6 @@ export function ChatUI({
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Context Usage Indicator */}
-          <div
-            className="relative"
-            onMouseEnter={(e) => {
-              setContextPopupPos({ x: e.clientX, y: e.clientY });
-              setShowContextPopup(true);
-            }}
-            onMouseLeave={() => setShowContextPopup(false)}
-          >
-            <span
-              className={`flex items-center gap-1 cursor-help px-1.5 py-0.5 rounded hover:bg-zinc-800 transition-colors text-xs ${
-                contextUsed > 80 ? 'text-red-400' : contextUsed > 50 ? 'text-yellow-400' : 'text-zinc-400'
-              }`}
-            >
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"
-                />
-              </svg>
-              {contextUsed}%
-            </span>
-            {showContextPopup && (
-              <ContextUsagePopup
-                contextUsed={contextUsed}
-                model={model}
-                position={contextPopupPos}
-              />
-            )}
-          </div>
-
           {/* Clear Session Button */}
           {messages.length > 0 && onClearSession && (
             <button
@@ -770,9 +921,64 @@ export function ChatUI({
         </div>
       )}
 
+      {/* Message filters */}
+      <div className="px-4 border-b border-zinc-800 bg-zinc-800/30 flex items-center gap-2">
+        {filtersExpanded ? (
+          <>
+            {[
+              { id: 'all', label: 'All' },
+              { id: 'thinking', label: 'Thinking' },
+              { id: 'text', label: 'Text' },
+              { id: 'tool', label: 'Tools' },
+              { id: 'user', label: 'User' },
+            ].map((f) => (
+              <button
+                key={f.id}
+                onClick={() => {
+                  if (f.id === 'all') {
+                    setActiveFilters(['all']);
+                  } else {
+                    const isActive = activeFilters.includes(f.id);
+                    const next = isActive
+                      ? activeFilters.filter((x) => x !== f.id && x !== 'all')
+                      : [...activeFilters.filter((x) => x !== 'all'), f.id];
+                    setActiveFilters(next.length ? next : ['all']);
+                  }
+                }}
+                className={`px-2 py-1 text-xs rounded ${
+                  activeFilters.includes(f.id)
+                    ? 'bg-blue-600 text-white'
+                    : 'text-neutral-400 hover:text-white hover:bg-neutral-700'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+            <button
+              onClick={() => setFiltersExpanded(false)}
+              className="ml-auto px-2 py-1 text-xs text-neutral-500 hover:text-white"
+              title="Hide filters"
+            >
+              ✕
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={() => setFiltersExpanded(true)}
+            className="text-xs text-neutral-400 hover:text-white py-2 flex items-center gap-1"
+            title="Show filters"
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h18M4 9h16M6 14h12M9 19h6" />
+            </svg>
+            Filters
+          </button>
+        )}
+      </div>
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {messages.length === 0 ? (
+        {filteredMessages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-zinc-500">
             <svg
               className="w-12 h-12 mb-4 text-zinc-700"
@@ -787,13 +993,13 @@ export function ChatUI({
                 d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
               />
             </svg>
-            <p className="text-sm">Start a conversation with Claude</p>
+            <p className="text-sm">Start a conversation</p>
             <p className="text-xs text-zinc-600 mt-1">
               Type a message below to begin
             </p>
           </div>
         ) : (
-          messages.map((message) => (
+          filteredMessages.map((message) => (
             <MessageItem key={message.id} message={message} />
           ))
         )}
@@ -802,7 +1008,7 @@ export function ChatUI({
 
       {/* Input */}
       <div className="p-4 border-t border-zinc-700 bg-zinc-800/30">
-        <div className="flex gap-3">
+        <div className="flex gap-3 items-start">
           <textarea
             ref={inputRef}
             value={input}
@@ -827,7 +1033,39 @@ export function ChatUI({
               />
             </svg>
           </button>
+          <div className="flex flex-col gap-2 text-xs text-neutral-400">
+            <div className="flex gap-2">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="px-2 py-1 rounded border border-zinc-700 hover:border-zinc-500 hover:text-white"
+              >
+                Attach
+              </button>
+              <button
+                onClick={() => setIsListening((v) => !v)}
+                className={`px-2 py-1 rounded border ${isListening ? "border-green-500 text-green-300" : "border-zinc-700 text-neutral-400"} hover:border-zinc-500`}
+              >
+                {isListening ? "Listening..." : "Audio"}
+              </button>
+            </div>
+            {attachments.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {attachments.map((file, idx) => (
+                  <span key={`${file.name}-${idx}`} className="px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-[11px]">
+                    {file.name}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={handleAttachment}
+        />
         <div className="flex items-center gap-4 mt-2 text-xs text-zinc-500">
           <span>Press Enter to send, Shift+Enter for new line</span>
           {pathInfo && (

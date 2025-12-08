@@ -3,6 +3,7 @@ import { load, Store } from "@tauri-apps/plugin-store";
 import type { Project, Session } from "../stores/sessionStore";
 import type { ParsedMessage } from "./claude-types";
 import { debug } from "../stores/debugStore";
+import { getStoreFilename, getDatabaseUri } from "./dev-mode";
 
 let db: Database | null = null;
 let store: Store | null = null;
@@ -11,8 +12,9 @@ let schemaChecked = false;
 // Get the store instance for JSON-based persistence (more reliable)
 async function getStore(): Promise<Store> {
   if (!store) {
-    debug.info("Database", "Loading store");
-    store = await load("mindgrid-data.json");
+    const filename = await getStoreFilename();
+    debug.info("Database", `Loading store: ${filename}`);
+    store = await load(filename);
     debug.info("Database", "Store loaded");
   }
   return store;
@@ -39,8 +41,9 @@ async function ensureSchema(database: Database) {
 
 export async function getDb(): Promise<Database> {
   if (!db) {
-    debug.info("Database", "Connecting to database");
-    db = await Database.load("sqlite:mindgrid.db");
+    const dbUri = await getDatabaseUri();
+    debug.info("Database", `Connecting to database: ${dbUri}`);
+    db = await Database.load(dbUri);
     debug.info("Database", "Connected");
 
     // Debug: check what's actually in the database

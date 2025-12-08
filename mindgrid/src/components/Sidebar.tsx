@@ -8,7 +8,13 @@ import { ProjectWizardDialog } from "./ProjectWizardDialog";
 import { ModelSelector } from "./ModelSelector";
 import type { ChatType } from "../lib/presets";
 
-export function Sidebar() {
+interface SidebarProps {
+  activePage: "home" | "settings";
+  onOpenSettings: () => void;
+  onNavigateHome: () => void;
+}
+
+export function Sidebar({ activePage, onOpenSettings, onNavigateHome }: SidebarProps) {
   const {
     projects,
     sessions,
@@ -87,9 +93,13 @@ export function Sidebar() {
   };
 
   const projectList = Object.values(projects);
+  const handleSelectSession = (id: string) => {
+    onNavigateHome();
+    setActiveSession(id);
+  };
 
   return (
-    <div className="flex flex-col h-full bg-zinc-900 border-r border-zinc-700 w-64">
+    <div className="flex flex-col h-full min-h-0 bg-zinc-900 border-r border-zinc-700 w-64">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-700">
         <span className="text-sm font-medium text-zinc-300">Projects</span>
@@ -105,7 +115,7 @@ export function Sidebar() {
       </div>
 
       {/* Project List */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto">
         {projectList.length === 0 ? (
           <div className="p-4 text-center text-zinc-500 text-sm">
             No projects yet.
@@ -122,7 +132,7 @@ export function Sidebar() {
               isActive={activeProjectId === project.id}
               activeSessionId={activeSessionId}
               onToggle={() => toggleProject(project.id)}
-              onSelectSession={setActiveSession}
+              onSelectSession={handleSelectSession}
               onCreateSession={() => handleCreateSession(project)}
               onDeleteProject={() => deleteProject(project.id)}
               onDeleteSession={deleteSession}
@@ -132,6 +142,25 @@ export function Sidebar() {
             />
           ))
         )}
+      </div>
+
+      <div className="border-t border-zinc-700 px-3 py-3 flex-shrink-0">
+        <button
+          onClick={() => {
+            onOpenSettings();
+          }}
+          className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition ${
+            activePage === "settings"
+              ? "bg-zinc-800 text-white border border-zinc-700"
+              : "text-zinc-400 hover:bg-zinc-800"
+          }`}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          Settings
+        </button>
       </div>
 
       {/* Create Session Dialog */}

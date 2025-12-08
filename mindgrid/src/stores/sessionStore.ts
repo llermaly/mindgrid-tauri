@@ -5,16 +5,27 @@ import type { GitStatus } from "../lib/git-types";
 import { debug } from "./debugStore";
 import * as db from "../lib/database";
 
+export type PanelType = 'research' | 'coding' | 'review' | 'terminal' | 'browser' | 'foundations' | 'git';
+
+export interface PanelState {
+  messages: ParsedMessage[];
+  claudeSessionId: string | null;
+  model: string | null;
+  isRunning: boolean;
+  totalCost: number;
+}
+
 export interface Session {
   id: string;
   name: string;
   projectId: string;
-  claudeSessionId: string | null;
+  claudeSessionId: string | null; // For single chat window mode
   ptyId: string | null;
-  messages: ParsedMessage[];
+  messages: ParsedMessage[]; // For single chat window mode
   isRunning: boolean;
   totalCost: number;
-  model: string | null;
+  model: string | null; // Default model for single chat window
+  panelStates?: Partial<Record<PanelType, PanelState>>; // Per-panel state for workspace
   cwd: string;
   createdAt: number;
   updatedAt: number;
@@ -82,7 +93,14 @@ interface SessionState {
   setPermissionMode: (sessionId: string, mode: PermissionMode) => void;
   setCommitMode: (sessionId: string, mode: CommitMode) => void;
   setSessionModel: (sessionId: string, model: string) => void;
+  setPanelModel: (sessionId: string, panelType: PanelType, model: string) => void;
   setProjectDefaultModel: (projectId: string, model: string | null) => void;
+
+  // Panel-specific actions for workspace mode
+  addPanelMessage: (sessionId: string, panelType: PanelType, message: ParsedMessage) => void;
+  handlePanelClaudeEvent: (sessionId: string, panelType: PanelType, event: ClaudeEvent) => void;
+  clearPanelSession: (sessionId: string, panelType: PanelType) => void;
+  getPanelState: (sessionId: string, panelType: PanelType) => PanelState;
 
   // Commit actions
   checkpointCommit: (sessionId: string, message?: string) => Promise<boolean>;
@@ -690,6 +708,183 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     if (session) {
       db.saveSession({ ...session, messages: [] });
     }
+  },
+
+  setPanelModel: (sessionId, panelType, model) => {
+    debug.info("SessionStore", "Setting panel model", { sessionId, panelType, model });
+    set((state) => {
+      const session = state.sessions[sessionId];
+      if (!session) return state;
+      const currentPanelState = session.panelStates?.[panelType] || {
+        messages: [],
+        claudeSessionId: null,
+        model: null,
+        isRunning: false,
+        totalCost: 0,
+      };
+      return {
+        sessions: {
+          ...state.sessions,
+          [sessionId]: {
+            ...session,
+            panelStates: {
+              ...session.panelStates,
+              [panelType]: {
+                ...currentPanelState,
+                model,
+              },
+            },
+            updatedAt: Date.now(),
+          },
+        },
+      };
+    });
+
+    // Persist to database
+    const session = get().sessions[sessionId];
+    if (session) {
+      db.saveSession({ ...session, messages: [] });
+    }
+  },
+
+  // Panel-specific actions for workspace mode
+  addPanelMessage: (sessionId, panelType, message) => {
+    set((state) => {
+      const session = state.sessions[sessionId];
+      if (!session) return state;
+
+      const currentPanelState = session.panelStates?.[panelType] || {
+        messages: [],
+        claudeSessionId: null,
+        model: null,
+        isRunning: false,
+        totalCost: 0,
+      };
+
+      // Update or add message (for streaming updates)
+      const existingIndex = currentPanelState.messages.findIndex((m) => m.id === message.id);
+      let newMessages: ParsedMessage[];
+      if (existingIndex >= 0) {
+        newMessages = [...currentPanelState.messages];
+        newMessages[existingIndex] = message;
+      } else {
+        newMessages = [...currentPanelState.messages, message];
+      }
+
+      return {
+        sessions: {
+          ...state.sessions,
+          [sessionId]: {
+            ...session,
+            panelStates: {
+              ...session.panelStates,
+              [panelType]: {
+                ...currentPanelState,
+                messages: newMessages,
+              },
+            },
+            updatedAt: Date.now(),
+          },
+        },
+      };
+    });
+  },
+
+  handlePanelClaudeEvent: (sessionId, panelType, event) => {
+    debug.event("SessionStore", `Panel Claude event: ${event.type}`, { sessionId, panelType, event });
+
+    set((state) => {
+      const session = state.sessions[sessionId];
+      if (!session) return state;
+
+      const currentPanelState = session.panelStates?.[panelType] || {
+        messages: [],
+        claudeSessionId: null,
+        model: null,
+        isRunning: false,
+        totalCost: 0,
+      };
+
+      let updates: Partial<PanelState> = {};
+
+      // Capture Claude session ID from init event
+      if (event.type === "system" && event.subtype === "init" && event.session_id) {
+        updates.claudeSessionId = event.session_id;
+        debug.info("SessionStore", "Panel captured Claude session ID", { sessionId, panelType, claudeSessionId: event.session_id });
+      }
+
+      // Update cost from result event
+      if (event.type === "result" && event.cost_usd !== undefined) {
+        updates.totalCost = (currentPanelState.totalCost || 0) + event.cost_usd;
+      }
+
+      if (Object.keys(updates).length === 0) return state;
+
+      return {
+        sessions: {
+          ...state.sessions,
+          [sessionId]: {
+            ...session,
+            panelStates: {
+              ...session.panelStates,
+              [panelType]: {
+                ...currentPanelState,
+                ...updates,
+              },
+            },
+            updatedAt: Date.now(),
+          },
+        },
+      };
+    });
+  },
+
+  clearPanelSession: (sessionId, panelType) => {
+    debug.info("SessionStore", "Clearing panel session", { sessionId, panelType });
+    set((state) => {
+      const session = state.sessions[sessionId];
+      if (!session) return state;
+
+      return {
+        sessions: {
+          ...state.sessions,
+          [sessionId]: {
+            ...session,
+            panelStates: {
+              ...session.panelStates,
+              [panelType]: {
+                messages: [],
+                claudeSessionId: null,
+                model: session.panelStates?.[panelType]?.model || null,
+                isRunning: false,
+                totalCost: 0,
+              },
+            },
+            updatedAt: Date.now(),
+          },
+        },
+      };
+    });
+  },
+
+  getPanelState: (sessionId, panelType) => {
+    const session = get().sessions[sessionId];
+    if (!session) {
+      return {
+        messages: [],
+        claudeSessionId: null,
+        model: null,
+        isRunning: false,
+        totalCost: 0,
+      };
+    }
+    return session.panelStates?.[panelType] || {
+      messages: [],
+      claudeSessionId: null,
+      model: session.model, // Fall back to session default
+      isRunning: false,
+      totalCost: 0,
+    };
   },
 
   setProjectDefaultModel: async (projectId, model) => {
