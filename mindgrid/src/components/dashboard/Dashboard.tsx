@@ -7,9 +7,11 @@ import { useUsageStore } from "../../stores/usageStore";
 import { ProjectWizardDialog } from "../ProjectWizardDialog";
 import { ProjectCard } from "./ProjectCard";
 import { ProjectDetailView } from "./ProjectDetailView";
+import { SessionDetailView } from "./SessionDetailView";
 import { UsageLimitsCard } from "./UsageLimitsCard";
 import type { DashboardProject, DashboardSession, DashboardActivity, DashboardGitInfo } from "./types";
 import { SettingsPage } from "../../pages/SettingsPage";
+import { CreateSessionDialog, type SessionConfig } from "../CreateSessionDialog";
 
 type DashboardView = "all" | "recent" | "active" | "settings";
 
@@ -21,14 +23,18 @@ export function Dashboard() {
     createSession,
     setActiveSession,
     refreshGitStatus,
+    deleteProject,
+    deleteSession,
   } = useSessionStore();
 
   const fetchAll = useUsageStore((state) => state.fetchAll);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<DashboardView>("all");
   const [showProjectWizard, setShowProjectWizard] = useState(false);
+  const [showCreateSessionDialog, setShowCreateSessionDialog] = useState(false);
 
   // Fetch usage data on mount and refresh every 30 seconds
   useEffect(() => {
@@ -76,6 +82,15 @@ export function Dashboard() {
     if (liveSession) {
       setActiveSession(liveSession.id);
       refreshGitStatus(liveSession.id);
+    }
+    setSelectedProjectId(project.id);
+    setSelectedSessionId(session.id);
+  };
+
+  const handleOpenSessionChat = (sessionId: string) => {
+    const liveSession = sessions[sessionId];
+    const project = liveSession ? Object.values(projects).find(p => p.id === liveSession.projectId) : null;
+    if (liveSession && project) {
       void openChatWindow({
         sessionId: liveSession.id,
         sessionName: liveSession.name,
@@ -83,7 +98,47 @@ export function Dashboard() {
         cwd: liveSession.cwd,
       });
     }
-    setSelectedProjectId(project.id);
+  };
+
+  const handleDeleteProject = async (projectId: string) => {
+    await deleteProject(projectId);
+    if (selectedProjectId === projectId) {
+      setSelectedProjectId(null);
+    }
+  };
+
+  const handleDeleteSession = async (sessionId: string) => {
+    await deleteSession(sessionId);
+    if (selectedSessionId === sessionId) {
+      setSelectedSessionId(null);
+    }
+  };
+
+  const handleOpenCreateSessionDialog = () => {
+    setShowCreateSessionDialog(true);
+  };
+
+  const handleCreateSession = async (config: SessionConfig) => {
+    if (!selectedProjectId) return;
+    const project = projects[selectedProjectId];
+    if (!project) return;
+
+    const newSession = await createSession(selectedProjectId, config.name, project.path);
+
+    // Update session with additional config
+    const { setPermissionMode, setCommitMode, setSessionModel } = useSessionStore.getState();
+
+    if (config.permissionMode !== "default") {
+      setPermissionMode(newSession.id, config.permissionMode);
+    }
+    if (config.commitMode !== "checkpoint") {
+      setCommitMode(newSession.id, config.commitMode);
+    }
+    if (config.model) {
+      setSessionModel(newSession.id, config.model);
+    }
+
+    setSelectedSessionId(newSession.id);
   };
 
   const handleCreateProjectWithChats = async (
@@ -167,6 +222,7 @@ export function Dashboard() {
               onClick={() => {
                 setActiveView("all");
                 setSelectedProjectId(null);
+                setSelectedSessionId(null);
               }}
             />
             <SidebarButton
@@ -180,6 +236,7 @@ export function Dashboard() {
               onClick={() => {
                 setActiveView("recent");
                 setSelectedProjectId(null);
+                setSelectedSessionId(null);
               }}
             />
             <SidebarButton
@@ -193,6 +250,7 @@ export function Dashboard() {
               onClick={() => {
                 setActiveView("active");
                 setSelectedProjectId(null);
+                setSelectedSessionId(null);
               }}
               badge={
                 allActiveSessions.length > 0 ? (
@@ -217,6 +275,7 @@ export function Dashboard() {
               active={isSettingsView}
               onClick={() => {
                 setSelectedProjectId(null);
+                setSelectedSessionId(null);
                 setActiveView("settings");
               }}
             />
@@ -226,12 +285,24 @@ export function Dashboard() {
         <div className="flex-1 overflow-hidden">
           {isSettingsView ? (
             <SettingsPage onBack={() => setActiveView("all")} />
+          ) : selectedSessionId && sessions[selectedSessionId] ? (
+            <SessionDetailView
+              session={sessions[selectedSessionId]}
+              projectName={selectedProject?.name || "Unknown Project"}
+              onClose={() => setSelectedSessionId(null)}
+              onOpenChat={() => handleOpenSessionChat(selectedSessionId)}
+              onDeleteSession={handleDeleteSession}
+              onRefreshGitStatus={() => refreshGitStatus(selectedSessionId)}
+            />
           ) : selectedProject ? (
             <ProjectDetailView
               project={selectedProject}
               preset={presetMap[selectedProject.presetId]}
               onClose={() => setSelectedProjectId(null)}
               onOpenSession={handleOpenSession}
+              onCreateSession={handleOpenCreateSessionDialog}
+              onDeleteProject={handleDeleteProject}
+              onDeleteSession={handleDeleteSession}
             />
           ) : (
             <div className="h-full overflow-y-auto scrollbar-thin p-6">
@@ -263,6 +334,8 @@ export function Dashboard() {
                             preset={presetMap[project.presetId]}
                             onOpen={(p) => setSelectedProjectId(p.id)}
                             onOpenSession={handleOpenSession}
+                            onDeleteProject={handleDeleteProject}
+                            onDeleteSession={handleDeleteSession}
                           />
                         ))}
                       </div>
@@ -402,6 +475,16 @@ export function Dashboard() {
         onClose={() => setShowProjectWizard(false)}
         onCreate={handleCreateProjectWithChats}
       />
+
+      {selectedProject && (
+        <CreateSessionDialog
+          isOpen={showCreateSessionDialog}
+          projectName={selectedProject.name}
+          existingSessionCount={selectedProject.sessions.length}
+          onClose={() => setShowCreateSessionDialog(false)}
+          onCreate={handleCreateSession}
+        />
+      )}
     </div>
   );
 }

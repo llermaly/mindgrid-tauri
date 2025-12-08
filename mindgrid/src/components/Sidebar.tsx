@@ -3,7 +3,7 @@ import { useSessionStore, type Project, type Session } from "../stores/sessionSt
 import { debug } from "../stores/debugStore";
 import { GitStatusIndicator } from "./GitStatusIndicator";
 import { openChatWindow, openNewChatInSession, openMultipleChatWindows } from "../lib/window-manager";
-import { CreateSessionDialog } from "./CreateSessionDialog";
+import { CreateSessionDialog, type SessionConfig } from "./CreateSessionDialog";
 import { ProjectWizardDialog } from "./ProjectWizardDialog";
 import { ModelSelector } from "./ModelSelector";
 import type { ChatType } from "../lib/presets";
@@ -74,9 +74,22 @@ export function Sidebar({ activePage, onOpenSettings, onNavigateHome }: SidebarP
     setCreateSessionForProject(project);
   };
 
-  const handleCreateSessionConfirm = async (sessionName: string) => {
+  const handleCreateSessionConfirm = async (config: SessionConfig) => {
     if (!createSessionForProject) return;
-    await createSession(createSessionForProject.id, sessionName, createSessionForProject.path);
+    const newSession = await createSession(createSessionForProject.id, config.name, createSessionForProject.path);
+
+    // Apply additional config
+    const { setPermissionMode, setCommitMode, setSessionModel } = useSessionStore.getState();
+    if (config.permissionMode !== "default") {
+      setPermissionMode(newSession.id, config.permissionMode);
+    }
+    if (config.commitMode !== "checkpoint") {
+      setCommitMode(newSession.id, config.commitMode);
+    }
+    if (config.model) {
+      setSessionModel(newSession.id, config.model);
+    }
+
     setCreateSessionForProject(null);
   };
 

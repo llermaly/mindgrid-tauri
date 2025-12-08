@@ -1,5 +1,6 @@
 interface StatusBadgeProps {
   status: "running" | "waiting" | "idle" | "completed";
+  size?: "sm" | "md" | "lg";
 }
 
 const STATUS_STYLES: Record<StatusBadgeProps["status"], { label: string; className: string }> = {
@@ -9,11 +10,18 @@ const STATUS_STYLES: Record<StatusBadgeProps["status"], { label: string; classNa
   completed: { label: "Completed", className: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" },
 };
 
-export function StatusBadge({ status }: StatusBadgeProps) {
+const SIZE_STYLES: Record<NonNullable<StatusBadgeProps["size"]>, string> = {
+  sm: "px-1.5 py-0.5 text-[10px]",
+  md: "px-2 py-0.5 text-[11px]",
+  lg: "px-3 py-1 text-xs",
+};
+
+export function StatusBadge({ status, size = "md" }: StatusBadgeProps) {
   const style = STATUS_STYLES[status];
+  const sizeStyle = SIZE_STYLES[size];
 
   return (
-    <span className={`px-2 py-0.5 text-[11px] font-medium border rounded-full ${style.className}`}>
+    <span className={`font-medium border rounded-full ${style.className} ${sizeStyle}`}>
       {style.label}
     </span>
   );
