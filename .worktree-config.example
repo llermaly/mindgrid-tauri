@@ -1,0 +1,16 @@
+# Worktree Configuration Example
+# Copy this file to .worktree-config and customize as needed
+
+# List of .env files to copy to new worktrees
+# The script will look for these files in:
+#   - Project root
+#   - mindgrid/
+#   - mindgrid/src-tauri/
+
+WORKTREE_ENV_FILES=(
+    ".env"
+    ".env.local"
+    ".env.development"
+    ".env.development.local"
+    ".env.production.local"
+)

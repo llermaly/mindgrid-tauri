@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Multitable - Settings</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #0a0a0a;
+      color: #e5e5e5;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      overflow: hidden;
+    }
+    .scrollbar-thin::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .scrollbar-thin::-webkit-scrollbar-track {
+      background: #171717;
+    }
+    .scrollbar-thin::-webkit-scrollbar-thumb {
+      background: #404040;
+      border-radius: 3px;
+    }
+    .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+      background: #525252;
+    }
+    .toggle-switch {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      background: #404040;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }
+    .toggle-switch.active {
+      background: #3b82f6;
+    }
+    .toggle-switch::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 20px;
+      height: 20px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.2s ease;
+    }
+    .toggle-switch.active::after {
+      transform: translateX(20px);
+    }
+    .setting-card {
+      transition: border-color 0.2s ease;
+    }
+    .setting-card:hover {
+      border-color: #525252;
+    }
+    .nav-item {
+      transition: all 0.15s ease;
+    }
+    .nav-item:hover {
+      background: rgba(64, 64, 64, 0.5);
+    }
+    .nav-item.active {
+      background: #262626;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    // Toggle Switch Component
+    function Toggle({ enabled, onChange, disabled }) {
+      return (
+        <button
+          onClick={() => !disabled && onChange(!enabled)}
+          className={`toggle-switch ${enabled ? 'active' : ''} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+          disabled={disabled}
+        />
+      );
+    }
+
+    // Select Dropdown Component
+    function Select({ value, onChange, options, disabled }) {
+      return (
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={disabled}
+          className="px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {options.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+      );
+    }
+
+    // Text Input Component
+    function TextInput({ value, onChange, placeholder, disabled, className = '' }) {
+      return (
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          disabled={disabled}
+          className={`px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
+        />
+      );
+    }
+
+    // Textarea Component
+    function TextArea({ value, onChange, placeholder, rows = 4, disabled }) {
+      return (
+        <textarea
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          rows={rows}
+          disabled={disabled}
+          className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500 resize-none disabled:opacity-50 disabled:cursor-not-allowed"
+        />
+      );
+    }
+
+    // Setting Section Component
+    function SettingSection({ title, description, children }) {
+      return (
+        <div className="setting-card bg-neutral-900 border border-neutral-800 rounded-xl p-5 mb-4">
+          <div className="mb-4">
+            <h3 className="text-white font-medium mb-1">{title}</h3>
+            {description && <p className="text-sm text-neutral-400">{description}</p>}
+          </div>
+          {children}
+        </div>
+      );
+    }
+
+    // Setting Row Component
+    function SettingRow({ label, description, children, vertical = false }) {
+      return (
+        <div className={`py-3 ${vertical ? '' : 'flex items-center justify-between'}`}>
+          <div className={vertical ? 'mb-3' : 'flex-1 mr-4'}>
+            <div className="text-sm text-neutral-200">{label}</div>
+            {description && <div className="text-xs text-neutral-500 mt-0.5">{description}</div>}
+          </div>
+          <div className={vertical ? 'w-full' : ''}>
+            {children}
+          </div>
+        </div>
+      );
+    }
+
+    // PATH Directory List Component
+    function PathDirectoryList({ paths, onChange }) {
+      const addPath = () => {
+        onChange([...paths, '']);
+      };
+
+      const updatePath = (index, value) => {
+        const newPaths = [...paths];
+        newPaths[index] = value;
+        onChange(newPaths);
+      };
+
+      const removePath = (index) => {
+        onChange(paths.filter((_, i) => i !== index));
+      };
+
+      return (
+        <div className="space-y-2">
+          {paths.map((path, index) => (
+            <div key={index} className="flex items-center gap-2">
+              <input
+                type="text"
+                value={path}
+                onChange={(e) => updatePath(index, e.target.value)}
+                placeholder="/path/to/directory"
+                className="flex-1 px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-white text-sm font-mono focus:outline-none focus:border-blue-500"
+              />
+              <button
+                onClick={() => removePath(index)}
+                className="p-2 text-neutral-400 hover:text-red-400 hover:bg-neutral-800 rounded-lg transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
+          ))}
+          <button
+            onClick={addPath}
+            className="w-full px-3 py-2 border border-dashed border-neutral-700 rounded-lg text-sm text-neutral-400 hover:text-white hover:border-neutral-500 transition-colors flex items-center justify-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Add Directory
+          </button>
+        </div>
+      );
+    }
+
+    // Navigation Items
+    const NAV_ITEMS = [
+      { id: 'appearance', label: 'Appearance', icon: (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+        </svg>
+      )},
+      { id: 'ai-providers', label: 'AI Providers', icon: (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+        </svg>
+      )},
+      { id: 'security', label: 'Security', icon: (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+        </svg>
+      )},
+      { id: 'projects', label: 'Projects', icon: (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+        </svg>
+      )},
+      { id: 'agents', label: 'Agents', icon: (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+        </svg>
+      )},
+      { id: 'updates', label: 'Updates', icon: (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+      )},
+      { id: 'advanced', label: 'Advanced', icon: (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+        </svg>
+      )}
+    ];
+
+    // Main Settings App
+    function SettingsApp() {
+      const [activeSection, setActiveSection] = useState('appearance');
+      const [hasChanges, setHasChanges] = useState(false);
+
+      // Settings State
+      const [settings, setSettings] = useState({
+        // Appearance
+        theme: 'system',
+
+        // AI Providers
+        aiProvider: 'claude-code',
+        customClaudeInstallation: '',
+
+        // Security
+        bypassPermissions: false,
+
+        // Projects
+        globalInstructions: '',
+
+        // Agents
+        codingAgentPrompt: '',
+        researchAgentPrompt: '',
+
+        // Updates
+        autoUpdates: true,
+
+        // Advanced
+        verboseLogging: false,
+        devMode: false,
+        additionalPaths: []
+      });
+
+      const updateSetting = (key, value) => {
+        setSettings(prev => ({ ...prev, [key]: value }));
+        setHasChanges(true);
+      };
+
+      const handleSave = () => {
+        // Save settings to localStorage or send to backend
+        localStorage.setItem('crystal-settings', JSON.stringify(settings));
+        setHasChanges(false);
+        // Show success feedback
+        alert('Settings saved successfully!');
+      };
+
+      const handleReset = () => {
+        if (confirm('Are you sure you want to reset all settings to defaults?')) {
+          setSettings({
+            theme: 'system',
+            aiProvider: 'claude-code',
+            customClaudeInstallation: '',
+            bypassPermissions: false,
+            globalInstructions: '',
+            codingAgentPrompt: '',
+            researchAgentPrompt: '',
+            autoUpdates: true,
+            verboseLogging: false,
+            devMode: false,
+            additionalPaths: []
+          });
+          setHasChanges(true);
+        }
+      };
+
+      // Load settings on mount
+      useEffect(() => {
+        const saved = localStorage.getItem('crystal-settings');
+        if (saved) {
+          try {
+            setSettings(JSON.parse(saved));
+          } catch (e) {
+            console.error('Failed to load settings:', e);
+          }
+        }
+      }, []);
+
+      const renderContent = () => {
+        switch (activeSection) {
+          case 'appearance':
+            return (
+              <div>
+                <h2 className="text-xl font-semibold text-white mb-6">Appearance</h2>
+                <SettingSection
+                  title="Theme"
+                  description="Choose how Multitable looks on your device"
+                >
+                  <div className="grid grid-cols-3 gap-3">
+                    {[
+                      { value: 'light', label: 'Light', icon: 'L' },
+                      { value: 'dark', label: 'Dark', icon: 'D' },
+                      { value: 'system', label: 'System', icon: 'S' }
+                    ].map(option => (
+                      <button
+                        key={option.value}
+                        onClick={() => updateSetting('theme', option.value)}
+                        className={`p-4 border rounded-xl transition-all ${
+                          settings.theme === option.value
+                            ? 'border-blue-500 bg-blue-500/10'
+                            : 'border-neutral-700 hover:border-neutral-600'
+                        }`}
+                      >
+                        <div className="text-2xl mb-2">{option.icon}</div>
+                        <div className="text-sm font-medium text-white">{option.label}</div>
+                      </button>
+                    ))}
+                  </div>
+                </SettingSection>
+              </div>
+            );
+
+          case 'ai-providers':
+            return (
+              <div>
+                <h2 className="text-xl font-semibold text-white mb-6">AI Providers</h2>
+                <SettingSection
+                  title="Default Provider"
+                  description="Select which AI provider to use for code generation"
+                >
+                  <SettingRow label="AI Provider">
+                    <Select
+                      value={settings.aiProvider}
+                      onChange={(value) => updateSetting('aiProvider', value)}
+                      options={[
+                        { value: 'claude-code', label: 'Claude Code' },
+                        { value: 'claude-code-router', label: 'Claude Code Router (coming soon)' }
+                      ]}
+                    />
+                  </SettingRow>
+                  <div className="border-t border-neutral-800 mt-2 pt-2">
+                    <SettingRow
+                      label="Custom Claude Installation"
+                      description="Leave empty to use 'claude' command (default)"
+                      vertical
+                    >
+                      <TextInput
+                        value={settings.customClaudeInstallation}
+                        onChange={(value) => updateSetting('customClaudeInstallation', value)}
+                        placeholder="/usr/local/bin/claude"
+                        className="w-full font-mono"
+                      />
+                    </SettingRow>
+                  </div>
+                </SettingSection>
+
+                <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-xl">
+                  <div className="flex items-start gap-3">
+                    <div className="text-blue-400 mt-0.5">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium text-blue-400">Claude Code Router</div>
+                      <div className="text-xs text-neutral-400 mt-1">
+                        Claude Code Router allows you to route requests to different AI providers based on task complexity. This feature is coming soon.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+
+          case 'security':
+            return (
+              <div>
+                <h2 className="text-xl font-semibold text-white mb-6">Security</h2>
+                <SettingSection
+                  title="Permissions"
+                  description="Control how Multitable handles permission requests"
+                >
+                  <SettingRow
+                    label="Bypass Permissions"
+                    description="Automatically approve all permission requests (not recommended)"
+                  >
+                    <Toggle
+                      enabled={settings.bypassPermissions}
+                      onChange={(value) => updateSetting('bypassPermissions', value)}
+                    />
+                  </SettingRow>
+                </SettingSection>
+
+                {settings.bypassPermissions && (
+                  <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl">
+                    <div className="flex items-start gap-3">
+                      <div className="text-red-400 mt-0.5">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium text-red-400">Security Warning</div>
+                        <div className="text-xs text-neutral-400 mt-1">
+                          Bypassing permissions allows AI agents to execute commands without your approval. This could potentially lead to unintended file modifications or system changes. Use with caution.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+
+          case 'projects':
+            return (
+              <div>
+                <h2 className="text-xl font-semibold text-white mb-6">Projects</h2>
+                <SettingSection
+                  title="Global Instructions"
+                  description="These instructions will be included in every project session"
+                >
+                  <TextArea
+                    value={settings.globalInstructions}
+                    onChange={(value) => updateSetting('globalInstructions', value)}
+                    placeholder="Enter global instructions for all projects...&#10;&#10;Example:&#10;- Always use TypeScript strict mode&#10;- Follow the existing code style&#10;- Write tests for new features"
+                    rows={8}
+                  />
+                  <div className="mt-3 text-xs text-neutral-500">
+                    These instructions will be prepended to every AI session. Use this for coding standards, preferences, or project-wide rules.
+                  </div>
+                </SettingSection>
+              </div>
+            );
+
+          case 'agents':
+            return (
+              <div>
+                <h2 className="text-xl font-semibold text-white mb-6">Agents</h2>
+                <SettingSection
+                  title="Coding Agent"
+                  description="Default system prompt for the Coding agent"
+                >
+                  <div className="flex items-center gap-3 mb-3 p-3 bg-neutral-800/50 rounded-lg">
+                    <div className="w-10 h-10 rounded-lg bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-blue-400 font-semibold">C</div>
+                    <div>
+                      <div className="text-sm font-medium text-white">Coding Agent</div>
+                      <div className="text-xs text-neutral-400">Implements features, fixes bugs, refactors code</div>
+                    </div>
+                  </div>
+                  <TextArea
+                    value={settings.codingAgentPrompt}
+                    onChange={(value) => updateSetting('codingAgentPrompt', value)}
+                    placeholder="Custom instructions for the Coding agent...&#10;&#10;Example:&#10;- Write clean, maintainable code&#10;- Add comments for complex logic&#10;- Follow SOLID principles"
+                    rows={6}
+                  />
+                </SettingSection>
+
+                <SettingSection
+                  title="Research Agent"
+                  description="Default system prompt for the Research agent"
+                >
+                  <div className="flex items-center gap-3 mb-3 p-3 bg-neutral-800/50 rounded-lg">
+                    <div className="w-10 h-10 rounded-lg bg-green-500/20 border border-green-500/30 flex items-center justify-center text-green-400 font-semibold">R</div>
+                    <div>
+                      <div className="text-sm font-medium text-white">Research Agent</div>
+                      <div className="text-xs text-neutral-400">Explores codebase, answers questions, writes docs</div>
+                    </div>
+                  </div>
+                  <TextArea
+                    value={settings.researchAgentPrompt}
+                    onChange={(value) => updateSetting('researchAgentPrompt', value)}
+                    placeholder="Custom instructions for the Research agent...&#10;&#10;Example:&#10;- Provide detailed explanations&#10;- Include code examples&#10;- Reference file paths"
+                    rows={6}
+                  />
+                </SettingSection>
+
+                <div className="p-4 bg-neutral-800/30 border border-neutral-700 rounded-xl">
+                  <div className="flex items-start gap-3">
+                    <div className="text-neutral-400 mt-0.5">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium text-neutral-300">About Agent Prompts</div>
+                      <div className="text-xs text-neutral-500 mt-1">
+                        These prompts are added to the system instructions for each agent type. They help customize agent behavior across all your projects. Project-specific prompts will be combined with these defaults.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+
+          case 'updates':
+            return (
+              <div>
+                <h2 className="text-xl font-semibold text-white mb-6">Updates</h2>
+                <SettingSection
+                  title="Automatic Updates"
+                  description="Keep Multitable up to date with the latest features and security fixes"
+                >
+                  <SettingRow
+                    label="Enable automatic updates"
+                    description="Multitable will automatically download and install updates"
+                  >
+                    <Toggle
+                      enabled={settings.autoUpdates}
+                      onChange={(value) => updateSetting('autoUpdates', value)}
+                    />
+                  </SettingRow>
+                </SettingSection>
+
+                <SettingSection
+                  title="Version Information"
+                >
+                  <div className="space-y-3">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-neutral-400">Current Version</span>
+                      <span className="text-white font-mono">1.0.0-beta</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-neutral-400">Last Checked</span>
+                      <span className="text-neutral-300">Just now</span>
+                    </div>
+                    <button className="w-full px-4 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 rounded-lg text-sm text-white transition-colors">
+                      Check for Updates
+                    </button>
+                  </div>
+                </SettingSection>
+              </div>
+            );
+
+          case 'advanced':
+            return (
+              <div>
+                <h2 className="text-xl font-semibold text-white mb-6">Advanced</h2>
+                <SettingSection
+                  title="Debugging"
+                  description="Options for troubleshooting and development"
+                >
+                  <SettingRow
+                    label="Enable verbose logging"
+                    description="Show detailed logs in the console for debugging"
+                  >
+                    <Toggle
+                      enabled={settings.verboseLogging}
+                      onChange={(value) => updateSetting('verboseLogging', value)}
+                    />
+                  </SettingRow>
+                  <div className="border-t border-neutral-800 mt-2 pt-2">
+                    <SettingRow
+                      label="Developer Mode"
+                      description="Returns raw JSON responses from Claude (for debugging)"
+                    >
+                      <Toggle
+                        enabled={settings.devMode}
+                        onChange={(value) => updateSetting('devMode', value)}
+                      />
+                    </SettingRow>
+                  </div>
+                </SettingSection>
+
+                <SettingSection
+                  title="Additional PATH Directories"
+                  description="Add custom directories to the PATH environment variable"
+                >
+                  <PathDirectoryList
+                    paths={settings.additionalPaths}
+                    onChange={(paths) => updateSetting('additionalPaths', paths)}
+                  />
+                  <div className="mt-3 text-xs text-neutral-500">
+                    These directories will be added to the PATH when running commands. Useful for custom tool installations.
+                  </div>
+                </SettingSection>
+
+                <SettingSection
+                  title="Reset Settings"
+                  description="Reset all settings to their default values"
+                >
+                  <button
+                    onClick={handleReset}
+                    className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 border border-red-600/50 text-red-400 rounded-lg text-sm transition-colors"
+                  >
+                    Reset All Settings
+                  </button>
+                </SettingSection>
+              </div>
+            );
+
+          default:
+            return null;
+        }
+      };
+
+      return (
+        <div className="h-screen flex flex-col">
+          {/* Title Bar */}
+          <div className="h-12 bg-neutral-900 border-b border-neutral-800 flex items-center justify-between px-4 flex-shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="flex gap-1.5">
+                <div className="w-3 h-3 rounded-full bg-red-500" />
+                <div className="w-3 h-3 rounded-full bg-yellow-500" />
+                <div className="w-3 h-3 rounded-full bg-green-500" />
+              </div>
+              <a href="main-app.html" className="text-neutral-400 hover:text-white transition-colors">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+              </a>
+              <span className="text-lg font-semibold">Multitable</span>
+              <span className="text-xs text-neutral-500 px-2 py-0.5 bg-neutral-800 rounded">Settings</span>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {hasChanges && (
+                <span className="text-xs text-orange-400 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 bg-orange-400 rounded-full" />
+                  Unsaved changes
+                </span>
+              )}
+              <button
+                onClick={handleSave}
+                disabled={!hasChanges}
+                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  hasChanges
+                    ? 'bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-600/50 text-emerald-400'
+                    : 'bg-neutral-800 text-neutral-500 cursor-not-allowed border border-neutral-700'
+                }`}
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+
+          {/* Main Content */}
+          <div className="flex-1 overflow-hidden flex">
+            {/* Sidebar Navigation */}
+            <div className="w-56 border-r border-neutral-800 p-4 flex flex-col">
+              <nav className="space-y-1">
+                {NAV_ITEMS.map(item => (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveSection(item.id)}
+                    className={`nav-item w-full px-3 py-2 rounded-lg text-left text-sm flex items-center gap-2 ${
+                      activeSection === item.id
+                        ? 'active'
+                        : 'text-neutral-400'
+                    }`}
+                  >
+                    {item.icon}
+                    {item.label}
+                  </button>
+                ))}
+              </nav>
+
+              <div className="mt-auto pt-4 border-t border-neutral-800">
+                <a
+                  href="main-app.html"
+                  className="w-full px-3 py-2 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800/50 text-left text-sm flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                  </svg>
+                  Back to Dashboard
+                </a>
+              </div>
+            </div>
+
+            {/* Settings Content */}
+            <div className="flex-1 overflow-y-auto scrollbar-thin p-8">
+              <div className="max-w-2xl">
+                {renderContent()}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<SettingsApp />);
+  </script>
+</body>
+</html>
