@@ -11,6 +11,7 @@ import { CodexUsagePopup } from "./CodexUsagePopup";
 import { useCodexRunner } from "../hooks/useCodexRunner";
 import { useUsageStore } from "../stores/usageStore";
 import { getModelById } from "../lib/models";
+import { Terminal } from "./Terminal";
 
 interface PrInfo {
   number: number;
@@ -186,6 +187,7 @@ export function ChatUI({
   const [activeFilters, setActiveFilters] = useState<string[]>(['all']);
   const [attachments, setAttachments] = useState<File[]>([]);
   const [isListening, setIsListening] = useState(false);
+  const [showTerminal, setShowTerminal] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -854,6 +856,20 @@ export function ChatUI({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Terminal Toggle Button */}
+          {cwd && (
+            <button
+              onClick={() => setShowTerminal(!showTerminal)}
+              className={`p-1.5 rounded hover:bg-zinc-700 ${showTerminal ? 'text-green-400' : 'text-zinc-400 hover:text-zinc-200'}`}
+              title={showTerminal ? "Hide terminal" : "Show terminal"}
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <polyline points="4 17 10 11 4 5" />
+                <line x1="12" y1="19" x2="20" y2="19" />
+              </svg>
+            </button>
+          )}
+
           {/* Clear Session Button */}
           {messages.length > 0 && onClearSession && (
             <button
@@ -1065,6 +1081,13 @@ export function ChatUI({
         )}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Terminal Panel */}
+      {showTerminal && cwd && (
+        <div className="h-64 border-t border-zinc-700 flex-shrink-0">
+          <Terminal mode="raw" cwd={cwd} />
+        </div>
+      )}
 
       {/* Input */}
       <div className="p-4 border-t border-zinc-700 bg-zinc-800/30">
