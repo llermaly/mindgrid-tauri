@@ -3,28 +3,49 @@ import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { usePty } from "../hooks/usePty";
+import type { ClaudeEvent, ParsedMessage } from "../lib/claude-types";
+import { debug } from "../stores/debugStore";
 
 interface TerminalProps {
   className?: string;
+  mode?: "raw" | "stream-json";
+  cwd?: string;
+  claudeSessionId?: string | null;
+  onClaudeEvent?: (event: ClaudeEvent) => void;
+  onClaudeMessage?: (message: ParsedMessage) => void;
 }
 
-export function Terminal({ className = "" }: TerminalProps) {
+export function Terminal({
+  className = "",
+  mode = "stream-json",
+  cwd,
+  claudeSessionId,
+  onClaudeEvent,
+  onClaudeMessage,
+}: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [terminal, setTerminal] = useState<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
-  const { spawn, write, isRunning } = usePty(terminal);
+
+  const { spawn, spawnClaude, write, kill, isRunning } = usePty(terminal, {
+    mode,
+    onEvent: onClaudeEvent,
+    onMessage: onClaudeMessage,
+  });
 
   // Initialize terminal
   useEffect(() => {
     if (!containerRef.current) return;
 
+    debug.info("Terminal", "Initializing xterm");
+
     const term = new XTerm({
       theme: {
-        background: "#18181b", // zinc-900
-        foreground: "#fafafa", // zinc-50
+        background: "#18181b",
+        foreground: "#fafafa",
         cursor: "#fafafa",
         cursorAccent: "#18181b",
-        selectionBackground: "#3f3f46", // zinc-700
+        selectionBackground: "#3f3f46",
         black: "#18181b",
         red: "#ef4444",
         green: "#22c55e",
@@ -58,11 +79,12 @@ export function Terminal({ className = "" }: TerminalProps) {
     fitAddonRef.current = fitAddon;
     setTerminal(term);
 
-    // Handle resize
     const resizeObserver = new ResizeObserver(() => {
       fitAddon.fit();
     });
     resizeObserver.observe(containerRef.current);
+
+    debug.info("Terminal", "xterm initialized", { cols: term.cols, rows: term.rows });
 
     return () => {
       resizeObserver.disconnect();
@@ -91,40 +113,58 @@ export function Terminal({ className = "" }: TerminalProps) {
     if (!terminal) return;
 
     terminal.clear();
-    terminal.writeln("Starting Claude Code...\r\n");
-
-    const id = await spawn({
-      cmd: "claude",
-      args: [],
-      cols: terminal.cols,
-      rows: terminal.rows,
-    });
-
-    if (id) {
-      terminal.writeln(`PTY ID: ${id}\r\n`);
+    if (claudeSessionId) {
+      terminal.writeln(`Resuming Claude Code session (${mode} mode)...\r\n`);
+    } else {
+      terminal.writeln(`Starting Claude Code (${mode} mode)...\r\n`);
     }
-  }, [terminal, spawn]);
+    if (cwd) {
+      terminal.writeln(`Working directory: ${cwd}\r\n`);
+    }
+    debug.info("Terminal", "Spawning Claude", { mode, cwd, claudeSessionId });
 
-  // Test with a simple shell command
+    await spawnClaude(cwd, claudeSessionId);
+  }, [terminal, spawnClaude, mode, cwd, claudeSessionId]);
+
   const handleSpawnShell = useCallback(async () => {
     if (!terminal) return;
 
     terminal.clear();
     terminal.writeln("Starting shell...\r\n");
+    debug.info("Terminal", "Spawning shell", { cwd });
 
     await spawn({
       cmd: "/bin/zsh",
       args: [],
       cols: terminal.cols,
       rows: terminal.rows,
+      cwd,
     });
-  }, [terminal, spawn]);
+  }, [terminal, spawn, cwd]);
+
+  const handleKill = useCallback(async () => {
+    await kill();
+    terminal?.writeln("\r\n[Killed]");
+  }, [kill, terminal]);
 
   return (
     <div className={`flex flex-col h-full ${className}`}>
       <div className="flex items-center justify-between px-3 py-2 bg-zinc-800 border-b border-zinc-700">
-        <span className="text-sm font-medium text-zinc-300">Terminal</span>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-zinc-300">Terminal</span>
+          <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-400">
+            {mode}
+          </span>
+        </div>
         <div className="flex gap-2">
+          {isRunning && (
+            <button
+              onClick={handleKill}
+              className="px-3 py-1 text-xs font-medium rounded bg-red-600 hover:bg-red-500 text-zinc-100"
+            >
+              Kill
+            </button>
+          )}
           <button
             onClick={handleSpawnShell}
             disabled={isRunning || !terminal}

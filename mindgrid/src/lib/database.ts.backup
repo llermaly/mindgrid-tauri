@@ -1,0 +1,215 @@
+import Database from "@tauri-apps/plugin-sql";
+import type { Project, Session } from "../stores/sessionStore";
+import type { ParsedMessage } from "./claude-types";
+import { debug } from "../stores/debugStore";
+
+let db: Database | null = null;
+
+export async function getDb(): Promise<Database> {
+  if (!db) {
+    debug.info("Database", "Connecting to database");
+    db = await Database.load("sqlite:mindgrid.db");
+    debug.info("Database", "Connected");
+
+    // Debug: check what's actually in the database
+    const tables = await db.select<Array<{ name: string }>>(
+      "SELECT name FROM sqlite_master WHERE type='table'"
+    );
+    console.log("Database tables:", tables);
+
+    const sessionCount = await db.select<Array<{ count: number }>>(
+      "SELECT COUNT(*) as count FROM sessions"
+    );
+    console.log("Session count on connect:", sessionCount);
+  }
+  return db;
+}
+
+// Project operations
+export async function loadProjects(): Promise<Project[]> {
+  const database = await getDb();
+  const rows = await database.select<
+    Array<{
+      id: string;
+      name: string;
+      path: string;
+      created_at: number;
+      updated_at: number;
+    }>
+  >("SELECT * FROM projects ORDER BY updated_at DESC");
+
+  debug.info("Database", `Loaded ${rows.length} projects`);
+
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    path: row.path,
+    sessions: [], // Will be populated separately
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+}
+
+export async function saveProject(project: Project): Promise<void> {
+  const database = await getDb();
+  await database.execute(
+    `INSERT OR REPLACE INTO projects (id, name, path, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [project.id, project.name, project.path, project.createdAt, project.updatedAt]
+  );
+  debug.info("Database", "Saved project", { id: project.id, name: project.name });
+}
+
+export async function deleteProject(projectId: string): Promise<void> {
+  const database = await getDb();
+  await database.execute("DELETE FROM projects WHERE id = $1", [projectId]);
+  debug.info("Database", "Deleted project", { id: projectId });
+}
+
+// Session operations
+export async function loadSessions(): Promise<Session[]> {
+  const database = await getDb();
+  const rows = await database.select<
+    Array<{
+      id: string;
+      project_id: string;
+      name: string;
+      cwd: string;
+      total_cost: number;
+      model: string | null;
+      claude_session_id: string | null;
+      created_at: number;
+      updated_at: number;
+    }>
+  >("SELECT * FROM sessions ORDER BY updated_at DESC");
+
+  debug.info("Database", `Loaded ${rows.length} sessions`, rows);
+
+  return rows.map((row) => ({
+    id: row.id,
+    projectId: row.project_id,
+    name: row.name,
+    cwd: row.cwd,
+    claudeSessionId: row.claude_session_id,
+    ptyId: null,
+    messages: [], // Will be populated separately if needed
+    isRunning: false,
+    totalCost: row.total_cost,
+    model: row.model,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+}
+
+export async function saveSession(session: Session): Promise<void> {
+  console.log("database.saveSession called with:", session);
+  const database = await getDb();
+  debug.info("Database", "Saving session", { id: session.id, projectId: session.projectId, name: session.name });
+
+  const params = [
+    session.id,
+    session.projectId,
+    session.name,
+    session.cwd,
+    session.totalCost,
+    session.model,
+    session.claudeSessionId,
+    session.createdAt,
+    session.updatedAt,
+  ];
+  console.log("Execute params:", params);
+
+  try {
+    // Use parameterized query (safer)
+    const result = await database.execute(
+      `INSERT OR REPLACE INTO sessions (id, project_id, name, cwd, total_cost, model, claude_session_id, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      params
+    );
+    console.log("Execute result:", result);
+
+    // Force a sync by querying total count
+    const allSessions = await database.select<Array<{ id: string; name: string }>>(
+      "SELECT id, name FROM sessions"
+    );
+    console.log("All sessions after insert:", allSessions);
+
+    debug.info("Database", "Saved session successfully", { id: session.id, name: session.name, totalInDb: allSessions.length });
+  } catch (err) {
+    console.error("Execute error:", err);
+    debug.error("Database", "Failed to save session", err);
+    throw err;
+  }
+}
+
+export async function updateSessionClaudeId(sessionId: string, claudeSessionId: string): Promise<void> {
+  const database = await getDb();
+  await database.execute(
+    "UPDATE sessions SET claude_session_id = $1, updated_at = $2 WHERE id = $3",
+    [claudeSessionId, Date.now(), sessionId]
+  );
+  debug.info("Database", "Updated session claude_session_id", { sessionId, claudeSessionId });
+}
+
+export async function deleteSession(sessionId: string): Promise<void> {
+  console.log("deleteSession called for:", sessionId);
+  console.trace("deleteSession stack trace");
+  const database = await getDb();
+  await database.execute("DELETE FROM sessions WHERE id = $1", [sessionId]);
+  debug.info("Database", "Deleted session", { id: sessionId });
+}
+
+// Message operations
+export async function loadMessages(sessionId: string): Promise<ParsedMessage[]> {
+  const database = await getDb();
+  const rows = await database.select<
+    Array<{
+      id: string;
+      role: string;
+      content: string;
+      tool_name: string | null;
+      tool_input: string | null;
+      tool_result: string | null;
+      is_error: number;
+      cost: number | null;
+      timestamp: number;
+    }>
+  >("SELECT * FROM messages WHERE session_id = $1 ORDER BY timestamp ASC", [sessionId]);
+
+  return rows.map((row) => ({
+    id: row.id,
+    role: row.role as ParsedMessage["role"],
+    content: row.content,
+    toolName: row.tool_name || undefined,
+    toolInput: row.tool_input ? JSON.parse(row.tool_input) : undefined,
+    toolResult: row.tool_result || undefined,
+    isError: row.is_error === 1,
+    cost: row.cost || undefined,
+    timestamp: row.timestamp,
+  }));
+}
+
+export async function saveMessage(sessionId: string, message: ParsedMessage): Promise<void> {
+  const database = await getDb();
+  await database.execute(
+    `INSERT OR REPLACE INTO messages (id, session_id, role, content, tool_name, tool_input, tool_result, is_error, cost, timestamp)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+    [
+      message.id,
+      sessionId,
+      message.role,
+      message.content,
+      message.toolName || null,
+      message.toolInput ? JSON.stringify(message.toolInput) : null,
+      message.toolResult || null,
+      message.isError ? 1 : 0,
+      message.cost || null,
+      message.timestamp,
+    ]
+  );
+}
+
+export async function deleteMessages(sessionId: string): Promise<void> {
+  const database = await getDb();
+  await database.execute("DELETE FROM messages WHERE session_id = $1", [sessionId]);
+}

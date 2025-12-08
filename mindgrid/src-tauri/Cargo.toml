@@ -28,4 +28,7 @@ portable-pty = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "io-util"] }
 parking_lot = "0.12"
 uuid = { version = "1", features = ["v4"] }
+tauri-plugin-dialog = "2.4.2"
+tauri-plugin-sql = { version = "2.3.1", features = ["sqlite"] }
+tauri-plugin-store = "2"
 

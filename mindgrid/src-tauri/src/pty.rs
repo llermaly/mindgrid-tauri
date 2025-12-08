@@ -85,6 +85,14 @@ pub fn spawn_pty(
         cmd.env(key, value);
     }
 
+    // Set TERM=dumb to disable fancy TUI output for CLI tools like Claude Code
+    cmd.env("TERM", "dumb");
+    // Disable color output
+    cmd.env("NO_COLOR", "1");
+    // Signal CI/non-interactive mode
+    cmd.env("CI", "true");
+    cmd.env("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1");
+
     let child = pair
         .slave
         .spawn_command(cmd)

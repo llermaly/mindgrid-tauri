@@ -7,15 +7,23 @@
     "dev": "lsof -ti:1420 | xargs kill -9 2>/dev/null; vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "worktree": "../scripts/worktree.sh",
+    "worktree:create": "../scripts/worktree.sh create",
+    "worktree:list": "../scripts/worktree.sh list",
+    "worktree:remove": "../scripts/worktree.sh remove"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2.4.2",
     "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-sql": "^2.3.1",
+    "@tauri-apps/plugin-store": "^2",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "zustand": "^5.0.9"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.17",
