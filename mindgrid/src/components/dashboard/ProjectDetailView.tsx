@@ -237,14 +237,20 @@ export function ProjectDetailView({ project, preset, onClose, onOpenSession, onC
                   className="flex items-center justify-between p-4 bg-neutral-800/50 border border-neutral-700 rounded-xl hover:border-neutral-600 transition-colors cursor-pointer group"
                   onClick={() => onOpenSession(project, session)}
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
                     <StatusBadge status={session.status} />
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <div className="text-sm font-medium text-white">{session.name}</div>
-                      <div className="text-xs text-neutral-500">{session.agents.join(", ") || "Coding"}</div>
+                      {session.initialPrompt ? (
+                        <div className="text-xs text-neutral-400 truncate" title={session.initialPrompt}>
+                          {session.initialPrompt}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-neutral-500">{session.agents.join(", ") || "Coding"}</div>
+                      )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-shrink-0">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();

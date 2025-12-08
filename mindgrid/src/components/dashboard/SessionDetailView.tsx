@@ -170,6 +170,16 @@ export function SessionDetailView({
             </div>
           )}
 
+          {/* Initial Prompt */}
+          {session.initialPrompt && (
+            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
+              <h3 className="text-sm font-medium text-white mb-4">Initial Prompt</h3>
+              <div className="p-4 bg-neutral-800 rounded-lg">
+                <p className="text-sm text-neutral-200 whitespace-pre-wrap">{session.initialPrompt}</p>
+              </div>
+            </div>
+          )}
+
           {/* Session Info */}
           <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
             <h3 className="text-sm font-medium text-white mb-4">Session Info</h3>
