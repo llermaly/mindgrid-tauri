@@ -24,7 +24,8 @@ export function BrowserPanel({ initialUrl = 'http://localhost:3000' }: BrowserPa
         <div className="flex items-center gap-1">
           <button
             className="p-1 hover:bg-neutral-800 rounded text-neutral-400"
-            onClick={() => {}}
+            onClick={() => window.history.back()}
+            title="Back"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -32,7 +33,8 @@ export function BrowserPanel({ initialUrl = 'http://localhost:3000' }: BrowserPa
           </button>
           <button
             className="p-1 hover:bg-neutral-800 rounded text-neutral-400"
-            onClick={() => {}}
+            onClick={() => window.history.forward()}
+            title="Forward"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -40,7 +42,8 @@ export function BrowserPanel({ initialUrl = 'http://localhost:3000' }: BrowserPa
           </button>
           <button
             className="p-1 hover:bg-neutral-800 rounded text-neutral-400"
-            onClick={() => setUrl(url)}
+            onClick={() => setUrl(url + '?_reload=' + Date.now())}
+            title="Reload"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -73,31 +76,32 @@ export function BrowserPanel({ initialUrl = 'http://localhost:3000' }: BrowserPa
       </div>
 
       {/* Browser Content */}
-      <div className="flex-1 min-h-0 bg-white flex items-center justify-center">
+      <div className="flex-1 min-h-0 bg-white">
         {url ? (
-          <div className="text-center text-neutral-400">
-            <svg className="w-16 h-16 mx-auto mb-4 text-neutral-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
-            </svg>
-            <div className="text-lg font-medium text-neutral-600">Browser Preview</div>
-            <div className="text-sm text-neutral-500">{url}</div>
-          </div>
+          <iframe
+            src={url}
+            className="w-full h-full border-0"
+            title="Browser Preview"
+            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
+          />
         ) : (
-          <div className="text-center text-neutral-400">
-            <svg className="w-16 h-16 mx-auto mb-4 text-neutral-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
-            </svg>
-            <p className="text-sm">Enter a URL to browse</p>
-            <p className="text-xs text-neutral-500 mt-1">
-              Navigate to localhost:3000 or any web address
-            </p>
+          <div className="h-full flex items-center justify-center text-neutral-400">
+            <div className="text-center">
+              <svg className="w-16 h-16 mx-auto mb-4 text-neutral-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+              </svg>
+              <p className="text-sm">Enter a URL to browse</p>
+              <p className="text-xs text-neutral-500 mt-1">
+                Navigate to localhost:3000 or any web address
+              </p>
+            </div>
           </div>
         )}
       </div>
 
       {/* Footer */}
       <div className="px-3 py-2 border-t border-neutral-800 flex items-center justify-end text-xs">
-        <span className="text-neutral-500">Console: 0 errors</span>
+        <span className="text-neutral-500">Ready</span>
       </div>
     </div>
   );
