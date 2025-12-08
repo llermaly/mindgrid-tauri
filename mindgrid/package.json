@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "lsof -ti:1420 | xargs kill -9 2>/dev/null; vite",
-    "dev:dev-mode": "lsof -ti:1422 | xargs kill -9 2>/dev/null; MINDGRID_DEV_MODE=1 vite",
+    "dev": "MINDGRID_DEV_MODE=0 vite --port 1420",
+    "dev:dev-mode": "MINDGRID_DEV_MODE=1 vite --port 1422",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
