@@ -77,6 +77,7 @@ pub fn run() {
             pty::write_pty,
             pty::resize_pty,
             pty::kill_pty,
+            git::list_git_repos,
             git::validate_git_repository,
             git::get_git_worktrees,
             git::create_workspace_worktree,

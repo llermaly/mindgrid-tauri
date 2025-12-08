@@ -5,16 +5,33 @@ import { useSessionStore, type Session, type Project } from "./stores/sessionSto
 import {
   openChatWindow,
   openNewChatInSession,
-  openMultipleChatWindows,
   closeAllSessionChatWindows,
   arrangeSessionWindows,
   getSessionChatWindowCount,
+  openWorkspaceWindow,
 } from "./lib/window-manager";
+import { SessionWorkspace } from "./components/workspace/SessionWorkspace";
+import { PanelType } from "./components/workspace/Panel";
+import { AgentPanel } from "./components/workspace/panels/AgentPanel";
+import { TerminalPanel } from "./components/workspace/panels/TerminalPanel";
+import { BrowserPanel } from "./components/workspace/panels/BrowserPanel";
+import { FoundationsPanel } from "./components/workspace/panels/FoundationsPanel";
+import { GitPanel } from "./components/workspace/panels/GitPanel";
 import type { ParsedMessage } from "./lib/claude-types";
+
+// Check if this window was opened in workspace mode and get session ID from URL
+function getWindowParams(): { mode: 'main' | 'workspace'; sessionId: string | null } {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    mode: params.get('mode') === 'workspace' ? 'workspace' : 'main',
+    sessionId: params.get('sessionId'),
+  };
+}
 
 function App() {
   const [showDebug, setShowDebug] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
+  const { mode: windowMode, sessionId: urlSessionId } = getWindowParams();
 
   const {
     activeSessionId,
@@ -30,8 +47,20 @@ function App() {
     initialize();
   }, [initialize]);
 
-  const activeSession = activeSessionId ? sessions[activeSessionId] : null;
+  // For workspace windows, use sessionId from URL; for main window, use activeSessionId
+  const effectiveSessionId = windowMode === 'workspace' && urlSessionId ? urlSessionId : activeSessionId;
+  const activeSession = effectiveSessionId ? sessions[effectiveSessionId] : null;
   const activeProject = activeSession ? projects[activeSession.projectId] : null;
+
+  // Debug logging for workspace windows
+  useEffect(() => {
+    if (windowMode === 'workspace') {
+      console.log('[Workspace] Window mode:', windowMode);
+      console.log('[Workspace] URL Session ID:', urlSessionId);
+      console.log('[Workspace] Sessions loaded:', Object.keys(sessions));
+      console.log('[Workspace] Session found:', !!activeSession);
+    }
+  }, [windowMode, urlSessionId, sessions, activeSession]);
 
   const totalCost = useMemo(() => {
     return Object.values(sessions).reduce((sum, s) => sum + s.totalCost, 0);
@@ -67,6 +96,34 @@ function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [activeSession, activeProject]);
 
+  // Render panel content for workspace mode
+  const renderPanelContent = (panelId: PanelType, session: Session) => {
+    switch (panelId) {
+      case 'research':
+      case 'coding':
+      case 'review':
+        return (
+          <AgentPanel
+            sessionId={session.id}
+            cwd={session.cwd}
+            claudeSessionId={session.claudeSessionId}
+            messages={session.messages}
+            model={session.model}
+          />
+        );
+      case 'terminal':
+        return <TerminalPanel cwd={session.cwd} />;
+      case 'browser':
+        return <BrowserPanel initialUrl="http://localhost:3000" />;
+      case 'foundations':
+        return <FoundationsPanel cwd={session.cwd} />;
+      case 'git':
+        return <GitPanel />;
+      default:
+        return null;
+    }
+  };
+
   // Show loading state
   if (!isInitialized || isLoading) {
     return (
@@ -75,6 +132,40 @@ function App() {
       </div>
     );
   }
+
+  // If this is a workspace window, show only the workspace view
+  if (windowMode === 'workspace') {
+    if (!activeSession) {
+      return (
+        <div className="h-full flex items-center justify-center bg-zinc-900">
+          <div className="text-center">
+            <div className="text-zinc-400 mb-2">Session not found</div>
+            <div className="text-zinc-500 text-sm">Session ID: {urlSessionId}</div>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="h-full bg-neutral-900">
+        <SessionWorkspace
+          sessionName={activeSession.name}
+          renderPanel={(panelId: PanelType) => renderPanelContent(panelId, activeSession)}
+        />
+      </div>
+    );
+  }
+
+  // Handler to open workspace window
+  const handleOpenWorkspace = () => {
+    if (activeSession && activeProject) {
+      openWorkspaceWindow({
+        sessionId: activeSession.id,
+        sessionName: activeSession.name,
+        projectName: activeProject.name,
+        cwd: activeSession.cwd,
+      });
+    }
+  };
 
   return (
     <div className="h-full flex flex-col">
@@ -130,7 +221,6 @@ function App() {
 
         {/* Main area */}
         <div className="flex-1 flex min-w-0">
-          {/* Session Overview or Empty State */}
           <div className={`${showDebug ? "w-1/2" : "w-full"} h-full border-r border-zinc-700`}>
             {activeSession && activeProject ? (
               <SessionOverview
@@ -148,6 +238,7 @@ function App() {
                   projectName: activeProject.name,
                   cwd: activeSession.cwd,
                 })}
+                onOpenWorkspace={handleOpenWorkspace}
               />
             ) : (
               <EmptyState />
@@ -185,9 +276,10 @@ interface SessionOverviewProps {
   project: Project;
   onOpenChat: () => void;
   onNewChat: () => void;
+  onOpenWorkspace: () => void;
 }
 
-function SessionOverview({ session, project, onOpenChat, onNewChat }: SessionOverviewProps) {
+function SessionOverview({ session, project, onOpenChat, onNewChat, onOpenWorkspace }: SessionOverviewProps) {
   const [openWindowCount, setOpenWindowCount] = useState(0);
   const [isClosingWindows, setIsClosingWindows] = useState(false);
 
@@ -202,18 +294,6 @@ function SessionOverview({ session, project, onOpenChat, onNewChat }: SessionOve
     const interval = setInterval(updateCount, 2000);
     return () => clearInterval(interval);
   }, [session.id]);
-
-  const handleOpenMultiple = async (count: number) => {
-    await openMultipleChatWindows({
-      sessionId: session.id,
-      sessionName: session.name,
-      projectName: project.name,
-      cwd: session.cwd,
-    }, count);
-    // Update count after opening
-    const newCount = await getSessionChatWindowCount(session.id);
-    setOpenWindowCount(newCount);
-  };
 
   const handleCloseAll = async () => {
     setIsClosingWindows(true);
@@ -266,41 +346,15 @@ function SessionOverview({ session, project, onOpenChat, onNewChat }: SessionOve
           New Chat
           <span className="text-xs opacity-70 ml-1">(Cmd+N)</span>
         </button>
-
-        {/* Multi-window dropdown */}
-        <div className="relative group">
-          <button
-            className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM14 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
-            </svg>
-            Open Multiple
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-          <div className="absolute top-full left-0 mt-1 hidden group-hover:block bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-10 min-w-[140px]">
-            <button
-              onClick={() => handleOpenMultiple(2)}
-              className="w-full px-4 py-2 text-left text-sm text-zinc-300 hover:bg-zinc-700 rounded-t-lg"
-            >
-              2 Windows
-            </button>
-            <button
-              onClick={() => handleOpenMultiple(3)}
-              className="w-full px-4 py-2 text-left text-sm text-zinc-300 hover:bg-zinc-700"
-            >
-              3 Windows
-            </button>
-            <button
-              onClick={() => handleOpenMultiple(4)}
-              className="w-full px-4 py-2 text-left text-sm text-zinc-300 hover:bg-zinc-700 rounded-b-lg"
-            >
-              4 Windows
-            </button>
-          </div>
-        </div>
+        <button
+          onClick={onOpenWorkspace}
+          className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg transition-colors"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+          </svg>
+          Workspace
+        </button>
       </div>
 
       {/* Window Management - only show if windows are open */}

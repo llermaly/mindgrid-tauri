@@ -10,10 +10,17 @@ function Router() {
   const path = window.location.pathname;
   const params = new URLSearchParams(window.location.search);
   const sessionId = params.get("sessionId");
+  const mode = params.get("mode");
 
-  console.log("[Router] path:", path, "sessionId:", sessionId);
+  console.log("[Router] path:", path, "sessionId:", sessionId, "mode:", mode);
 
-  // Chat window route - either via /chat path or via sessionId query param
+  // Workspace window - load App which handles workspace mode internally
+  if (mode === "workspace") {
+    console.log("[Router] Loading App in workspace mode for session:", sessionId);
+    return <App />;
+  }
+
+  // Chat window route - either via /chat path or via sessionId query param (but not workspace)
   if (path === "/chat" || sessionId) {
     const isNewChat = params.get("newChat") === "true";
 

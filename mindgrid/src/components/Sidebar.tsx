@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 import { useSessionStore, type Project, type Session } from "../stores/sessionStore";
 import { debug } from "../stores/debugStore";
 import { GitStatusIndicator } from "./GitStatusIndicator";
-import { openChatWindow, openNewChatInSession } from "../lib/window-manager";
+import { openChatWindow, openNewChatInSession, openMultipleChatWindows } from "../lib/window-manager";
 import { CreateSessionDialog } from "./CreateSessionDialog";
+import { ProjectWizardDialog } from "./ProjectWizardDialog";
+import type { ChatType } from "../lib/presets";
 
 export function Sidebar() {
   const {
@@ -21,37 +22,43 @@ export function Sidebar() {
     refreshGitStatus,
   } = useSessionStore();
 
-  const [isCreatingProject, setIsCreatingProject] = useState(false);
-  const [newProjectName, setNewProjectName] = useState("");
+  const [showProjectWizard, setShowProjectWizard] = useState(false);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [createSessionForProject, setCreateSessionForProject] = useState<Project | null>(null);
 
-  const handleCreateProject = async () => {
+  const handleCreateProjectWithChats = async (
+    projectName: string,
+    projectPath: string,
+    sessionName: string,
+    chatTypes: ChatType[]
+  ) => {
     try {
-      const selected = await open({
-        directory: true,
-        multiple: false,
-        title: "Select Project Folder",
-      });
+      debug.info("Sidebar", "Creating project with wizard", { projectName, projectPath, sessionName, chatTypes });
 
-      if (selected) {
-        const path = selected as string;
-        const name = newProjectName || path.split("/").pop() || "Untitled";
+      // Create the project
+      const project = await createProject(projectName, projectPath);
+      debug.info("Sidebar", "Project created", { id: project.id });
 
-        debug.info("Sidebar", "Creating project", { name, path });
-        const project = await createProject(name, path);
-        debug.info("Sidebar", "Project created", { id: project.id });
+      setExpandedProjects((prev) => new Set([...prev, project.id]));
 
-        setExpandedProjects((prev) => new Set([...prev, project.id]));
-        await createSession(project.id, "Session 1", path);
-        debug.info("Sidebar", "Session created");
+      // Create ONE session for this project
+      const session = await createSession(project.id, sessionName, projectPath);
+      debug.info("Sidebar", "Session created", { id: session.id, name: sessionName });
 
-        setNewProjectName("");
-        setIsCreatingProject(false);
+      // Open chat windows for each selected chat type
+      if (chatTypes.length > 0) {
+        debug.info("Sidebar", "Opening chat windows", { count: chatTypes.length });
+        await openMultipleChatWindows({
+          sessionId: session.id,
+          sessionName: session.name,
+          projectName: project.name,
+          cwd: session.cwd,
+        }, chatTypes.length);
       }
     } catch (err) {
       debug.error("Sidebar", "Failed to create project", err);
       console.error("Failed to create project:", err);
+      throw err;
     }
   };
 
@@ -85,7 +92,7 @@ export function Sidebar() {
       <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-700">
         <span className="text-sm font-medium text-zinc-300">Projects</span>
         <button
-          onClick={() => setIsCreatingProject(true)}
+          onClick={() => setShowProjectWizard(true)}
           className="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200"
           title="New Project"
         >
@@ -94,34 +101,6 @@ export function Sidebar() {
           </svg>
         </button>
       </div>
-
-      {/* New Project Form */}
-      {isCreatingProject && (
-        <div className="p-3 border-b border-zinc-700 bg-zinc-800">
-          <input
-            type="text"
-            value={newProjectName}
-            onChange={(e) => setNewProjectName(e.target.value)}
-            placeholder="Project name (optional)"
-            className="w-full px-2 py-1 text-sm bg-zinc-700 border border-zinc-600 rounded text-zinc-100 placeholder-zinc-500 mb-2"
-            autoFocus
-          />
-          <div className="flex gap-2">
-            <button
-              onClick={handleCreateProject}
-              className="flex-1 px-2 py-1 text-xs font-medium rounded bg-blue-600 hover:bg-blue-500 text-zinc-100"
-            >
-              Select Folder
-            </button>
-            <button
-              onClick={() => setIsCreatingProject(false)}
-              className="px-2 py-1 text-xs font-medium rounded bg-zinc-700 hover:bg-zinc-600 text-zinc-300"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Project List */}
       <div className="flex-1 overflow-y-auto">
@@ -159,6 +138,13 @@ export function Sidebar() {
         existingSessionCount={createSessionForProject?.sessions.length ?? 0}
         onClose={() => setCreateSessionForProject(null)}
         onCreate={handleCreateSessionConfirm}
+      />
+
+      {/* Project Wizard Dialog */}
+      <ProjectWizardDialog
+        isOpen={showProjectWizard}
+        onClose={() => setShowProjectWizard(false)}
+        onCreate={handleCreateProjectWithChats}
       />
     </div>
   );

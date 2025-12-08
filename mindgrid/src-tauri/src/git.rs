@@ -8,6 +8,66 @@ pub fn is_valid_git_repository(path: &Path) -> bool {
     git_dir.exists() && git_dir.is_dir()
 }
 
+#[derive(Debug, Serialize)]
+pub struct GitRepoInfo {
+    pub name: String,
+    pub path: String,
+}
+
+/// List all git repositories in a directory (non-recursive, just immediate children)
+#[tauri::command]
+pub async fn list_git_repos(parent_directory: String) -> Result<Vec<GitRepoInfo>, String> {
+    let parent = Path::new(&parent_directory);
+
+    if !parent.exists() || !parent.is_dir() {
+        return Err(format!("Directory does not exist: {}", parent_directory));
+    }
+
+    let mut repos = Vec::new();
+
+    let entries = std::fs::read_dir(parent)
+        .map_err(|e| format!("Failed to read directory: {}", e))?;
+
+    for entry in entries {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        let path = entry.path();
+
+        // Skip hidden directories (except we still check them for .git)
+        if let Some(name) = path.file_name() {
+            if name.to_string_lossy().starts_with('.') {
+                continue;
+            }
+        }
+
+        // Only check directories
+        if !path.is_dir() {
+            continue;
+        }
+
+        // Check if it's a git repository
+        if is_valid_git_repository(&path) {
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+
+            repos.push(GitRepoInfo {
+                name,
+                path: path.to_string_lossy().to_string(),
+            });
+        }
+    }
+
+    // Sort by name (case-insensitive)
+    repos.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+
+    Ok(repos)
+}
+
 #[tauri::command]
 pub async fn validate_git_repository(project_path: String) -> Result<bool, String> {
     let path = Path::new(&project_path);
