@@ -1,9 +1,17 @@
 import { useState, useRef, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { Session, PanelType, PanelState } from "../../stores/sessionStore";
-import type { GitStatus } from "../../lib/git-types";
+import type { GitStatus, GitDiffFile, GitDiffResult } from "../../lib/git-types";
 import { getGitStatusConfig } from "../../lib/git-types";
 import { StatusBadge } from "./StatusBadge";
 import type { DashboardSessionStatus } from "./types";
+
+const SESSION_TABS = [
+  { id: "overview", label: "Overview" },
+  { id: "git", label: "Git Changes" },
+  { id: "messages", label: "Messages" },
+  { id: "info", label: "Session Info" },
+];
 
 interface SessionDetailViewProps {
   session: Session;
@@ -42,8 +50,11 @@ export function SessionDetailView({
   onDeleteSession,
   onRefreshGitStatus,
 }: SessionDetailViewProps) {
+  const [activeTab, setActiveTab] = useState<"overview" | "git" | "messages" | "info">("overview");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [diffFiles, setDiffFiles] = useState<GitDiffFile[]>([]);
+  const [diffLoading, setDiffLoading] = useState(false);
   const deleteButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -51,6 +62,29 @@ export function SessionDetailView({
       deleteButtonRef.current.focus();
     }
   }, [showDeleteModal]);
+
+  // Fetch diff files when git tab is active or when git status changes
+  useEffect(() => {
+    if (activeTab === "git" && session.cwd) {
+      fetchDiffFiles();
+    }
+  }, [activeTab, session.gitStatus, session.cwd]);
+
+  const fetchDiffFiles = async () => {
+    if (!session.cwd) return;
+    setDiffLoading(true);
+    try {
+      const result = await invoke<GitDiffResult>("get_git_diff", {
+        workingDirectory: session.cwd,
+      });
+      setDiffFiles(result.files);
+    } catch (error) {
+      console.error("Failed to fetch diff:", error);
+      setDiffFiles([]);
+    } finally {
+      setDiffLoading(false);
+    }
+  };
 
   const handleDelete = async () => {
     setIsDeleting(true);
@@ -134,56 +168,117 @@ export function SessionDetailView({
         </div>
       </div>
 
+      {/* Tab Navigation */}
+      <div className="flex gap-1 px-6 py-2 border-b border-neutral-800">
+        {SESSION_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as typeof activeTab)}
+            className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+              activeTab === tab.id ? "bg-neutral-800 text-white" : "text-neutral-400 hover:text-white hover:bg-neutral-800/50"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       {/* Content */}
       <div className="flex-1 overflow-y-auto scrollbar-thin p-6">
         <div className="max-w-4xl mx-auto space-y-6">
-          {/* Overview Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <StatCard label="Status" value={sessionStatus === "running" ? "Active" : "Idle"} highlight={sessionStatus === "running"} />
-            <StatCard label="Messages" value={totalMessages.toString()} />
-            <StatCard label="Total Cost" value={`$${totalCost.toFixed(4)}`} />
-            <StatCard label="Model" value={session.model || "Default"} />
-          </div>
-
-          {/* Git Worktree Status */}
-          <GitWorktreeCard
-            gitStatus={session.gitStatus}
-            isLoading={session.gitStatusLoading}
-            cwd={session.cwd}
-            onRefresh={onRefreshGitStatus}
-          />
-
-          {/* Chat Panels */}
-          {hasMultiplePanels ? (
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
-              <h3 className="text-sm font-medium text-white mb-4">Chat Panels</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {panels.map(([panelType, state]) => (
-                  <PanelCard key={panelType} panelType={panelType} state={state} />
-                ))}
+          {/* Overview Tab */}
+          {activeTab === "overview" && (
+            <>
+              {/* Overview Stats */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <StatCard label="Status" value={sessionStatus === "running" ? "Active" : "Idle"} highlight={sessionStatus === "running"} />
+                <StatCard label="Messages" value={totalMessages.toString()} />
+                <StatCard label="Total Cost" value={`$${totalCost.toFixed(4)}`} />
+                <StatCard label="Model" value={session.model || "Default"} />
               </div>
-            </div>
-          ) : (
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
-              <h3 className="text-sm font-medium text-white mb-4">Chat Status</h3>
-              <SingleChatCard session={session} />
-            </div>
+
+              {/* Git Worktree Status Summary */}
+              <GitWorktreeCard
+                gitStatus={session.gitStatus}
+                isLoading={session.gitStatusLoading}
+                cwd={session.cwd}
+                onRefresh={onRefreshGitStatus}
+              />
+
+              {/* Chat Panels */}
+              {hasMultiplePanels ? (
+                <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
+                  <h3 className="text-sm font-medium text-white mb-4">Chat Panels</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {panels.map(([panelType, state]) => (
+                      <PanelCard key={panelType} panelType={panelType} state={state} />
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
+                  <h3 className="text-sm font-medium text-white mb-4">Chat Status</h3>
+                  <SingleChatCard session={session} />
+                </div>
+              )}
+
+              {/* Recent Messages Preview */}
+              <RecentMessagesCard messages={session.messages} limit={5} />
+            </>
           )}
 
-          {/* Session Info */}
-          <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
-            <h3 className="text-sm font-medium text-white mb-4">Session Info</h3>
-            <div className="space-y-3 text-sm">
-              <InfoRow label="Working Directory" value={session.cwd} mono />
-              <InfoRow label="Permission Mode" value={session.permissionMode} />
-              <InfoRow label="Commit Mode" value={session.commitMode} />
-              <InfoRow label="Created" value={formatDate(session.createdAt)} />
-              <InfoRow label="Last Updated" value={formatDate(session.updatedAt)} />
-            </div>
-          </div>
+          {/* Git Changes Tab */}
+          {activeTab === "git" && (
+            <GitChangesTab
+              gitStatus={session.gitStatus}
+              isLoading={session.gitStatusLoading || diffLoading}
+              diffFiles={diffFiles}
+              cwd={session.cwd}
+              onRefresh={() => {
+                onRefreshGitStatus();
+                fetchDiffFiles();
+              }}
+            />
+          )}
 
-          {/* Recent Messages Preview */}
-          <RecentMessagesCard messages={session.messages} />
+          {/* Messages Tab */}
+          {activeTab === "messages" && (
+            <FullMessagesTab messages={session.messages} panels={panels} hasMultiplePanels={hasMultiplePanels} />
+          )}
+
+          {/* Session Info Tab */}
+          {activeTab === "info" && (
+            <div className="space-y-6">
+              <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
+                <h3 className="text-sm font-medium text-white mb-4">Session Configuration</h3>
+                <div className="space-y-3 text-sm">
+                  <InfoRow label="Session ID" value={session.id} mono />
+                  <InfoRow label="Working Directory" value={session.cwd} mono />
+                  <InfoRow label="Permission Mode" value={session.permissionMode} />
+                  <InfoRow label="Commit Mode" value={session.commitMode} />
+                  <InfoRow label="Model" value={session.model || "Default"} />
+                </div>
+              </div>
+
+              <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
+                <h3 className="text-sm font-medium text-white mb-4">Timestamps</h3>
+                <div className="space-y-3 text-sm">
+                  <InfoRow label="Created" value={formatDate(session.createdAt)} />
+                  <InfoRow label="Last Updated" value={formatDate(session.updatedAt)} />
+                </div>
+              </div>
+
+              {session.claudeSessionId && (
+                <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
+                  <h3 className="text-sm font-medium text-white mb-4">Claude Session</h3>
+                  <div className="space-y-3 text-sm">
+                    <InfoRow label="Claude Session ID" value={session.claudeSessionId} mono />
+                    {session.ptyId && <InfoRow label="PTY ID" value={session.ptyId} mono />}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -457,8 +552,8 @@ function SingleChatCard({ session }: { session: Session }) {
   );
 }
 
-function RecentMessagesCard({ messages }: { messages: import("../../lib/claude-types").ParsedMessage[] }) {
-  const recentMessages = messages?.slice(-5).reverse() || [];
+function RecentMessagesCard({ messages, limit = 5 }: { messages: import("../../lib/claude-types").ParsedMessage[]; limit?: number }) {
+  const recentMessages = messages?.slice(-limit).reverse() || [];
 
   if (recentMessages.length === 0) {
     return null;
@@ -479,6 +574,220 @@ function RecentMessagesCard({ messages }: { messages: import("../../lib/claude-t
             <p className="text-sm text-neutral-300 line-clamp-2">{msg.content}</p>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// Git Changes Tab Component
+function GitChangesTab({
+  gitStatus,
+  isLoading,
+  diffFiles,
+  cwd,
+  onRefresh,
+}: {
+  gitStatus?: GitStatus | null;
+  isLoading?: boolean;
+  diffFiles: GitDiffFile[];
+  cwd: string;
+  onRefresh: () => void;
+}) {
+  const config = gitStatus ? getGitStatusConfig(gitStatus) : null;
+
+  return (
+    <div className="space-y-6">
+      {/* Git Status Summary */}
+      <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-medium text-white">Git Status</h3>
+          <button
+            onClick={onRefresh}
+            disabled={isLoading}
+            className="p-1.5 hover:bg-neutral-800 rounded text-neutral-400 hover:text-white transition-colors disabled:opacity-50"
+            title="Refresh git status"
+          >
+            <svg className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+        </div>
+
+        {gitStatus ? (
+          <div className="space-y-4">
+            {/* Status Badge */}
+            <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ${config?.bgColor}`}>
+              <GitStatusIcon icon={config?.icon || "help"} className={`w-4 h-4 ${config?.color}`} />
+              <span className={`text-sm font-medium ${config?.color}`}>{config?.label}</span>
+              <span className="text-xs text-neutral-400">{config?.description}</span>
+            </div>
+
+            {/* Git Details Grid */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <GitStatBox label="Branch" value={gitStatus.current_branch || "N/A"} />
+              <GitStatBox label="Main Branch" value={gitStatus.main_branch || "main"} />
+              <GitStatBox label="Ahead" value={gitStatus.ahead?.toString() || "0"} highlight={gitStatus.ahead ? gitStatus.ahead > 0 : false} />
+              <GitStatBox label="Behind" value={gitStatus.behind?.toString() || "0"} warning={gitStatus.behind ? gitStatus.behind > 0 : false} />
+            </div>
+
+            {/* Summary Stats */}
+            {(gitStatus.files_changed || gitStatus.additions || gitStatus.deletions) && (
+              <div className="pt-3 border-t border-neutral-800">
+                <div className="flex items-center gap-6 text-sm">
+                  <span className="text-neutral-300">
+                    {gitStatus.files_changed || 0} file{(gitStatus.files_changed || 0) !== 1 ? "s" : ""} changed
+                  </span>
+                  <span className="text-green-400">+{gitStatus.additions || 0}</span>
+                  <span className="text-red-400">-{gitStatus.deletions || 0}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="text-center py-6">
+            <p className="text-neutral-400">No git status available</p>
+          </div>
+        )}
+      </div>
+
+      {/* Changed Files List */}
+      <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
+        <h3 className="text-sm font-medium text-white mb-4">Changed Files</h3>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <svg className="w-6 h-6 animate-spin text-neutral-500" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+          </div>
+        ) : diffFiles.length > 0 ? (
+          <div className="space-y-2">
+            {diffFiles.map((file, index) => (
+              <FileChangeRow key={index} file={file} />
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8">
+            <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-neutral-800 border border-neutral-700 flex items-center justify-center">
+              <svg className="w-6 h-6 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <p className="text-neutral-400">No changes detected</p>
+            <p className="text-sm text-neutral-500">Working directory is clean</p>
+          </div>
+        )}
+      </div>
+
+      {/* Worktree Path */}
+      <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
+        <h3 className="text-sm font-medium text-white mb-3">Worktree Path</h3>
+        <code className="text-xs text-neutral-300 bg-neutral-800 px-3 py-2 rounded-lg block truncate">{cwd}</code>
+      </div>
+    </div>
+  );
+}
+
+// File Change Row Component
+function FileChangeRow({ file }: { file: GitDiffFile }) {
+  const statusColors: Record<string, { bg: string; text: string; label: string }> = {
+    modified: { bg: "bg-blue-500/20", text: "text-blue-400", label: "M" },
+    added: { bg: "bg-green-500/20", text: "text-green-400", label: "A" },
+    deleted: { bg: "bg-red-500/20", text: "text-red-400", label: "D" },
+    renamed: { bg: "bg-amber-500/20", text: "text-amber-400", label: "R" },
+    untracked: { bg: "bg-purple-500/20", text: "text-purple-400", label: "?" },
+  };
+
+  const status = statusColors[file.status] || statusColors.modified;
+
+  return (
+    <div className="flex items-center gap-3 p-3 bg-neutral-800 rounded-lg">
+      <span className={`w-6 h-6 flex items-center justify-center rounded text-xs font-medium ${status.bg} ${status.text}`}>
+        {status.label}
+      </span>
+      <span className="flex-1 font-mono text-sm text-neutral-300 truncate">{file.path}</span>
+      <div className="flex items-center gap-2 text-xs">
+        {file.additions > 0 && <span className="text-green-400">+{file.additions}</span>}
+        {file.deletions > 0 && <span className="text-red-400">-{file.deletions}</span>}
+      </div>
+    </div>
+  );
+}
+
+// Full Messages Tab Component
+function FullMessagesTab({
+  messages,
+  panels,
+  hasMultiplePanels,
+}: {
+  messages: import("../../lib/claude-types").ParsedMessage[];
+  panels: [PanelType, PanelState][];
+  hasMultiplePanels: boolean;
+}) {
+  const [selectedPanel, setSelectedPanel] = useState<"main" | PanelType>("main");
+
+  const displayMessages = selectedPanel === "main"
+    ? messages
+    : panels.find(([type]) => type === selectedPanel)?.[1]?.messages || [];
+
+  const allMessages = [...(displayMessages || [])].reverse();
+
+  return (
+    <div className="space-y-4">
+      {/* Panel Selector (if has multiple panels) */}
+      {hasMultiplePanels && (
+        <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={() => setSelectedPanel("main")}
+            className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+              selectedPanel === "main" ? "bg-neutral-700 text-white" : "bg-neutral-800 text-neutral-400 hover:text-white"
+            }`}
+          >
+            Main ({messages?.length || 0})
+          </button>
+          {panels.map(([panelType, state]) => (
+            <button
+              key={panelType}
+              onClick={() => setSelectedPanel(panelType)}
+              className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                selectedPanel === panelType ? "bg-neutral-700 text-white" : "bg-neutral-800 text-neutral-400 hover:text-white"
+              }`}
+            >
+              {PANEL_LABELS[panelType]} ({state.messages?.length || 0})
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Messages List */}
+      <div className="bg-neutral-900 border border-neutral-800 rounded-xl">
+        {allMessages.length === 0 ? (
+          <div className="text-center py-12">
+            <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-neutral-800 border border-neutral-700 flex items-center justify-center">
+              <svg className="w-6 h-6 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+            </div>
+            <p className="text-neutral-400">No messages yet</p>
+            <p className="text-sm text-neutral-500">Start a conversation to see messages here</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-neutral-800">
+            {allMessages.map((msg) => (
+              <div key={msg.id} className="p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                    msg.role === "user" ? "bg-blue-500/20 text-blue-400" : "bg-green-500/20 text-green-400"
+                  }`}>
+                    {msg.role === "user" ? "You" : "Claude"}
+                  </span>
+                  <span className="text-xs text-neutral-500">{formatDate(msg.timestamp)}</span>
+                </div>
+                <p className="text-sm text-neutral-300 whitespace-pre-wrap">{msg.content}</p>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
