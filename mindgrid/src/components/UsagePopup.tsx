@@ -17,14 +17,14 @@ export function UsagePopup({ usageData, position }: UsagePopupProps) {
     >
       <div className="bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl p-3 text-xs pointer-events-auto min-w-[280px]">
         <div className="font-medium text-zinc-200 mb-2 border-b border-zinc-700 pb-2">
-          Account Usage Limits
+          Claude Usage Limits
         </div>
 
         <div className="space-y-2">
           {usageData.currentSession && (
             <div className="flex flex-col gap-1">
               <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Current Session</span>
+                <span className="text-zinc-400">Session (5h)</span>
                 <span className={`font-medium ${
                   usageData.currentSession.percentage > 80 ? 'text-red-400' :
                   usageData.currentSession.percentage > 50 ? 'text-yellow-400' : 'text-green-400'
@@ -50,7 +50,7 @@ export function UsagePopup({ usageData, position }: UsagePopupProps) {
           {usageData.currentWeekAll && (
             <div className="flex flex-col gap-1">
               <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Current Week (All Models)</span>
+                <span className="text-zinc-400">Weekly (All Models)</span>
                 <span className={`font-medium ${
                   usageData.currentWeekAll.percentage > 80 ? 'text-red-400' :
                   usageData.currentWeekAll.percentage > 50 ? 'text-yellow-400' : 'text-green-400'
@@ -76,7 +76,7 @@ export function UsagePopup({ usageData, position }: UsagePopupProps) {
           {usageData.currentWeekSonnet && (
             <div className="flex flex-col gap-1">
               <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Current Week (Sonnet Only)</span>
+                <span className="text-zinc-400">Weekly (Sonnet)</span>
                 <span className={`font-medium ${
                   usageData.currentWeekSonnet.percentage > 80 ? 'text-red-400' :
                   usageData.currentWeekSonnet.percentage > 50 ? 'text-yellow-400' : 'text-green-400'

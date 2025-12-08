@@ -7,8 +7,9 @@ import { debug } from "../stores/debugStore";
 import { ModelSelector } from "./ModelSelector";
 import { ContextUsagePopup } from "./ContextUsagePopup";
 import { UsagePopup } from "./UsagePopup";
+import { CodexUsagePopup } from "./CodexUsagePopup";
 import { useCodexRunner } from "../hooks/useCodexRunner";
-import { useClaudeUsage } from "../hooks/useClaudeUsage";
+import { useUsageStore } from "../stores/usageStore";
 import { getModelById } from "../lib/models";
 
 interface PrInfo {
@@ -306,11 +307,26 @@ export function ChatUI({
     return "claude";
   }, [model]);
 
-  const { usageData: claudeUsageData, criticalUsage: claudeCriticalUsage, error: claudeUsageError } = useClaudeUsage();
+  // Get usage data from global store
+  const {
+    claudeUsageData,
+    claudeLoading,
+    claudeError,
+    codexUsageData,
+    codexLoading,
+    codexError,
+    getClaudeCriticalUsage,
+    getCodexCriticalUsage,
+  } = useUsageStore();
 
-  // Use Claude usage data (Codex usage not yet implemented)
-  const criticalUsage = claudeCriticalUsage;
-  const usageError = claudeUsageError;
+  // Get critical usage for display
+  const claudeCriticalUsage = getClaudeCriticalUsage();
+  const codexCriticalUsage = getCodexCriticalUsage();
+
+  // Use appropriate usage data based on active agent
+  const criticalUsage = activeAgent === "codex" ? codexCriticalUsage : claudeCriticalUsage;
+  const usageLoading = activeAgent === "codex" ? codexLoading : claudeLoading;
+  const usageError = activeAgent === "codex" ? codexError : claudeError;
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -538,7 +554,22 @@ export function ChatUI({
               }}
               onMouseLeave={() => setShowUsagePopup(false)}
             >
-              {criticalUsage ? (
+              {usageLoading ? (
+                <span
+                  className="flex items-center gap-1 px-1.5 py-0.5 rounded text-xs text-zinc-500"
+                  title="Loading usage data..."
+                >
+                  <svg className="w-3 h-3 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M13 10V3L4 14h7v7l9-11h-7z"
+                    />
+                  </svg>
+                  <span className="animate-pulse">...</span>
+                </span>
+              ) : criticalUsage ? (
                 <span
                   className={`flex items-center gap-1 cursor-help px-1.5 py-0.5 rounded hover:bg-zinc-800 transition-colors text-xs ${
                     criticalUsage.percentage > 80 ? 'text-red-400' : criticalUsage.percentage > 50 ? 'text-yellow-400' : 'text-zinc-400'
@@ -570,12 +601,34 @@ export function ChatUI({
                   </svg>
                   --
                 </span>
-              ) : null}
-              {showUsagePopup && claudeUsageData && (
-                <UsagePopup
-                  usageData={claudeUsageData}
-                  position={usagePopupPos}
-                />
+              ) : (
+                <span
+                  className="flex items-center gap-1 px-1.5 py-0.5 rounded text-xs text-zinc-600"
+                  title="No usage data"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M13 10V3L4 14h7v7l9-11h-7z"
+                    />
+                  </svg>
+                  --
+                </span>
+              )}
+              {showUsagePopup && (
+                activeAgent === "codex" && codexUsageData ? (
+                  <CodexUsagePopup
+                    usageData={codexUsageData}
+                    position={usagePopupPos}
+                  />
+                ) : claudeUsageData ? (
+                  <UsagePopup
+                    usageData={claudeUsageData}
+                    position={usagePopupPos}
+                  />
+                ) : null
               )}
             </div>
             <button

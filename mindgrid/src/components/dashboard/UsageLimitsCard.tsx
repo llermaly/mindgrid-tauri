@@ -1,16 +1,23 @@
 import { useState } from "react";
-import { useClaudeUsage } from "../../hooks/useClaudeUsage";
-import { useCodexUsage } from "../../hooks/useCodexUsage";
+import { useUsageStore } from "../../stores/usageStore";
 
 export function UsageLimitsCard() {
-  const { usageData: claudeData, error: claudeError, isLoading: claudeLoading, refresh: refreshClaude } = useClaudeUsage();
-  const { usageData: codexData, error: codexError, isLoading: codexLoading, refresh: refreshCodex } = useCodexUsage();
+  const {
+    claudeUsageData,
+    claudeLoading,
+    claudeError,
+    codexUsageData,
+    codexLoading,
+    codexError,
+    fetchAll,
+  } = useUsageStore();
+
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      await Promise.all([refreshClaude(), refreshCodex()]);
+      await fetchAll();
     } finally {
       setIsRefreshing(false);
     }
@@ -61,64 +68,66 @@ export function UsageLimitsCard() {
           <div className="flex items-center gap-2 group relative">
             <div className="w-2 h-2 rounded-full bg-purple-500" />
             <span className="text-xs font-medium text-neutral-300 cursor-help">Claude</span>
-            {claudeData?.rawOutput && (
+            {claudeUsageData?.rawOutput && (
               <div className="absolute left-0 top-full mt-1 z-50 hidden group-hover:block bg-neutral-800 border border-neutral-700 rounded p-2 max-w-md max-h-64 overflow-auto shadow-lg">
-                <pre className="text-[10px] text-neutral-400 whitespace-pre-wrap font-mono">{claudeData.rawOutput}</pre>
+                <pre className="text-[10px] text-neutral-400 whitespace-pre-wrap font-mono">{claudeUsageData.rawOutput}</pre>
               </div>
             )}
           </div>
 
-          {claudeError ? (
-            <div className="text-xs text-neutral-500 pl-4">
-              {claudeError.includes('command not found') ? 'Claude CLI not found' : `Error: ${claudeError}`}
-            </div>
-          ) : !claudeData ? (
+          {claudeLoading ? (
             <div className="text-xs text-neutral-500 pl-4 flex items-center gap-2">
               <div className="w-3 h-3 border-2 border-neutral-600 border-t-neutral-400 rounded-full animate-spin" />
               Loading...
             </div>
+          ) : claudeError ? (
+            <div className="text-xs text-neutral-500 pl-4">
+              {claudeError.includes('command not found') ? 'Claude CLI not found' : `Error: ${claudeError}`}
+            </div>
+          ) : !claudeUsageData ? (
+            <div className="text-xs text-neutral-500 pl-4">No data</div>
           ) : (
             <div className="space-y-3 pl-4">
-              {!claudeData.currentSession && !claudeData.currentWeekAll && !claudeData.currentWeekSonnet && !claudeData.extraUsage && (
+              {!claudeUsageData.currentSession && !claudeUsageData.currentWeekAll && !claudeUsageData.currentWeekSonnet && !claudeUsageData.extraUsage && (
                 <div className="text-xs text-neutral-500">No usage data available (hover Claude label to see raw output)</div>
               )}
 
-              {claudeData.currentSession && (
+              {claudeUsageData.currentSession && (
                 <UsageLimitBar
                   label="Session (5h)"
-                  percentage={claudeData.currentSession.percentage}
-                  resetTime={claudeData.currentSession.resetTime}
+                  percentage={claudeUsageData.currentSession.percentage}
+                  resetTime={claudeUsageData.currentSession.resetTime}
                 />
               )}
 
-              {claudeData.currentWeekAll && (
+              {claudeUsageData.currentWeekAll && (
                 <UsageLimitBar
                   label="Weekly (All Models)"
-                  percentage={claudeData.currentWeekAll.percentage}
-                  resetTime={claudeData.currentWeekAll.resetTime}
+                  percentage={claudeUsageData.currentWeekAll.percentage}
+                  resetTime={claudeUsageData.currentWeekAll.resetTime}
                 />
               )}
 
-              {claudeData.currentWeekSonnet && (
+              {claudeUsageData.currentWeekSonnet && (
                 <UsageLimitBar
                   label="Weekly (Sonnet)"
-                  percentage={claudeData.currentWeekSonnet.percentage}
-                  resetTime={claudeData.currentWeekSonnet.resetTime}
+                  percentage={claudeUsageData.currentWeekSonnet.percentage}
+                  resetTime={claudeUsageData.currentWeekSonnet.resetTime}
                 />
               )}
 
-              {claudeData.extraUsage && (
+              {claudeUsageData.extraUsage && (
                 <div className="space-y-1.5 pt-2 border-t border-neutral-700/50">
                   <UsageLimitBar
                     label="Extra Usage"
-                    percentage={claudeData.extraUsage.percentage}
-                    resetTime={claudeData.extraUsage.resetTime}
+                    percentage={claudeUsageData.extraUsage.percentage}
+                    resetTime={claudeUsageData.extraUsage.resetTime}
                   />
-                  {claudeData.extraUsage.spent !== undefined && claudeData.extraUsage.limit !== undefined && (
+                  {claudeUsageData.extraUsage.spent !== undefined && claudeUsageData.extraUsage.limit !== undefined && (
                     <div className="flex items-center justify-between text-[11px]">
                       <span className="text-neutral-400">Spent</span>
-                      <span className={`font-semibold ${claudeData.extraUsage.spent > claudeData.extraUsage.limit ? 'text-red-400' : 'text-neutral-200'}`}>
-                        ${claudeData.extraUsage.spent.toFixed(2)} / ${claudeData.extraUsage.limit.toFixed(2)}
+                      <span className={`font-semibold ${claudeUsageData.extraUsage.spent > claudeUsageData.extraUsage.limit ? 'text-red-400' : 'text-neutral-200'}`}>
+                        ${claudeUsageData.extraUsage.spent.toFixed(2)} / ${claudeUsageData.extraUsage.limit.toFixed(2)}
                       </span>
                     </div>
                   )}
@@ -135,7 +144,12 @@ export function UsageLimitsCard() {
             <span className="text-xs font-medium text-neutral-300">Codex</span>
           </div>
 
-          {codexError ? (
+          {codexLoading ? (
+            <div className="text-xs text-neutral-500 pl-4 flex items-center gap-2">
+              <div className="w-3 h-3 border-2 border-neutral-600 border-t-neutral-400 rounded-full animate-spin" />
+              Loading...
+            </div>
+          ) : codexError ? (
             <div className="text-xs text-neutral-500 pl-4">
               <details className="cursor-pointer">
                 <summary className="hover:text-neutral-300">
@@ -144,42 +158,39 @@ export function UsageLimitsCard() {
                 <pre className="mt-2 text-[10px] text-neutral-400 whitespace-pre-wrap font-mono bg-neutral-800 border border-neutral-700 rounded p-2 max-w-md max-h-64 overflow-auto">{codexError}</pre>
               </details>
             </div>
-          ) : !codexData ? (
-            <div className="text-xs text-neutral-500 pl-4 flex items-center gap-2">
-              <div className="w-3 h-3 border-2 border-neutral-600 border-t-neutral-400 rounded-full animate-spin" />
-              Loading...
-            </div>
+          ) : !codexUsageData ? (
+            <div className="text-xs text-neutral-500 pl-4">No data</div>
           ) : (
             <div className="space-y-3 pl-4">
-              {!codexData.fiveHourLimit && !codexData.weeklyLimit && (
+              {!codexUsageData.fiveHourLimit && !codexUsageData.weeklyLimit && (
                 <div className="text-xs text-neutral-500">
                   <details className="cursor-pointer">
                     <summary className="hover:text-neutral-300">No usage data available (click for raw output)</summary>
-                    <pre className="mt-2 text-[10px] text-neutral-400 whitespace-pre-wrap font-mono bg-neutral-800 border border-neutral-700 rounded p-2 max-w-md max-h-64 overflow-auto">{codexData.rawOutput}</pre>
+                    <pre className="mt-2 text-[10px] text-neutral-400 whitespace-pre-wrap font-mono bg-neutral-800 border border-neutral-700 rounded p-2 max-w-md max-h-64 overflow-auto">{codexUsageData.rawOutput}</pre>
                   </details>
                 </div>
               )}
 
-              {codexData.fiveHourLimit && (
+              {codexUsageData.fiveHourLimit && (
                 <UsageLimitBar
                   label="Session (5h)"
-                  percentage={100 - codexData.fiveHourLimit.percentLeft}
-                  resetTime={codexData.fiveHourLimit.resetTime}
+                  percentage={100 - codexUsageData.fiveHourLimit.percentLeft}
+                  resetTime={codexUsageData.fiveHourLimit.resetTime}
                 />
               )}
 
-              {codexData.weeklyLimit && (
+              {codexUsageData.weeklyLimit && (
                 <UsageLimitBar
                   label="Weekly"
-                  percentage={100 - codexData.weeklyLimit.percentLeft}
-                  resetTime={codexData.weeklyLimit.resetTime}
+                  percentage={100 - codexUsageData.weeklyLimit.percentLeft}
+                  resetTime={codexUsageData.weeklyLimit.resetTime}
                 />
               )}
 
-              {(codexData.fiveHourLimit || codexData.weeklyLimit) && (
+              {(codexUsageData.fiveHourLimit || codexUsageData.weeklyLimit) && (
                 <details className="cursor-pointer text-xs text-neutral-500">
                   <summary className="hover:text-neutral-300">Raw output</summary>
-                  <pre className="mt-2 text-[10px] text-neutral-400 whitespace-pre-wrap font-mono bg-neutral-800 border border-neutral-700 rounded p-2 max-w-md max-h-64 overflow-auto">{codexData.rawOutput}</pre>
+                  <pre className="mt-2 text-[10px] text-neutral-400 whitespace-pre-wrap font-mono bg-neutral-800 border border-neutral-700 rounded p-2 max-w-md max-h-64 overflow-auto">{codexUsageData.rawOutput}</pre>
                 </details>
               )}
             </div>

@@ -106,18 +106,25 @@ export function parseUsageOutput(output: string): UsageData {
 }
 
 /**
- * Get the most critical usage metric for display
- * Returns the highest percentage usage and its label
+ * Get the critical usage metric for display
+ * Prioritizes session limit, falls back to weekly if session not available
  */
 export function getCriticalUsage(data: UsageData): { percentage: number; label: string; resetTime?: string } {
-  const metrics = [
-    { percentage: data.currentSession?.percentage || 0, label: 'Session', resetTime: data.currentSession?.resetTime },
-    { percentage: data.currentWeekAll?.percentage || 0, label: 'Week (All)', resetTime: data.currentWeekAll?.resetTime },
-    { percentage: data.currentWeekSonnet?.percentage || 0, label: 'Week (Sonnet)', resetTime: data.currentWeekSonnet?.resetTime },
-    { percentage: data.extraUsage?.percentage || 0, label: 'Extra', resetTime: data.extraUsage?.resetTime },
-  ];
-
-  return metrics.reduce((max, current) =>
-    current.percentage > max.percentage ? current : max
-  );
+  // Prioritize session limit
+  if (data.currentSession) {
+    return { percentage: data.currentSession.percentage, label: 'Session', resetTime: data.currentSession.resetTime };
+  }
+  // Fall back to weekly (all models)
+  if (data.currentWeekAll) {
+    return { percentage: data.currentWeekAll.percentage, label: 'Weekly', resetTime: data.currentWeekAll.resetTime };
+  }
+  // Fall back to weekly (sonnet)
+  if (data.currentWeekSonnet) {
+    return { percentage: data.currentWeekSonnet.percentage, label: 'Weekly', resetTime: data.currentWeekSonnet.resetTime };
+  }
+  // Fall back to extra usage
+  if (data.extraUsage) {
+    return { percentage: data.extraUsage.percentage, label: 'Extra', resetTime: data.extraUsage.resetTime };
+  }
+  return { percentage: 0, label: 'Unknown' };
 }

@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { PRESETS, type ChatType } from "../../lib/presets";
 import { openChatWindow, openMultipleChatWindows } from "../../lib/window-manager";
 import { useSessionStore, type Project, type Session } from "../../stores/sessionStore";
+import { useUsageStore } from "../../stores/usageStore";
 import { ProjectWizardDialog } from "../ProjectWizardDialog";
 import { ProjectCard } from "./ProjectCard";
 import { ProjectDetailView } from "./ProjectDetailView";
@@ -22,10 +23,21 @@ export function Dashboard() {
     refreshGitStatus,
   } = useSessionStore();
 
+  const fetchAll = useUsageStore((state) => state.fetchAll);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<DashboardView>("all");
   const [showProjectWizard, setShowProjectWizard] = useState(false);
+
+  // Fetch usage data on mount and refresh every 30 seconds
+  useEffect(() => {
+    fetchAll();
+    const interval = setInterval(() => {
+      fetchAll();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [fetchAll]);
 
   const presetMap = useMemo(() => {
     const map: Record<string, (typeof PRESETS)[number]> = {};
