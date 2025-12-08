@@ -83,7 +83,7 @@ export function UsageLimitsCard() {
             </button>
           </div>
 
-          {claudeLoading ? (
+          {claudeLoading && !claudeUsageData ? (
             <div className="text-xs text-neutral-500 pl-4 flex items-center gap-2">
               <div className="w-3 h-3 border-2 border-neutral-600 border-t-neutral-400 rounded-full animate-spin" />
               Loading...
@@ -174,7 +174,7 @@ export function UsageLimitsCard() {
             </button>
           </div>
 
-          {codexLoading ? (
+          {codexLoading && !codexUsageData ? (
             <div className="text-xs text-neutral-500 pl-4 flex items-center gap-2">
               <div className="w-3 h-3 border-2 border-neutral-600 border-t-neutral-400 rounded-full animate-spin" />
               Loading...
