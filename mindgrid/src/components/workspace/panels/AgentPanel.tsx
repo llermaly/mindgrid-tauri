@@ -16,6 +16,7 @@ interface AgentPanelProps {
   onClaudeMessage?: (message: ParsedMessage) => void;
   onPermissionModeChange?: (mode: PermissionMode) => void;
   onCommitModeChange?: (mode: CommitMode) => void;
+  onModelChange?: (model: string) => void;
   onClearSession?: () => void;
   onGitPush?: () => Promise<{ success: boolean; error?: string }>;
   onGetPrInfo?: () => Promise<{ number: number; title: string; state: string; url: string } | null>;
@@ -37,6 +38,7 @@ export function AgentPanel({
   onClaudeMessage,
   onPermissionModeChange,
   onCommitModeChange,
+  onModelChange,
   onClearSession,
   onGitPush,
   onGetPrInfo,
@@ -59,6 +61,7 @@ export function AgentPanel({
         onClaudeMessage={onClaudeMessage}
         onPermissionModeChange={onPermissionModeChange}
         onCommitModeChange={onCommitModeChange}
+        onModelChange={onModelChange}
         onClearSession={onClearSession}
         onGitPush={onGitPush}
         onGetPrInfo={onGetPrInfo}

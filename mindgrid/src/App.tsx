@@ -40,6 +40,7 @@ function App() {
     initialize,
     isInitialized,
     isLoading,
+    setSessionModel,
   } = useSessionStore();
 
   // Initialize store on mount
@@ -109,6 +110,7 @@ function App() {
             claudeSessionId={session.claudeSessionId}
             messages={session.messages}
             model={session.model}
+            onModelChange={(model) => setSessionModel(session.id, model)}
           />
         );
       case 'terminal':

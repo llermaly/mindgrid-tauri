@@ -5,6 +5,7 @@ import { GitStatusIndicator } from "./GitStatusIndicator";
 import { openChatWindow, openNewChatInSession, openMultipleChatWindows } from "../lib/window-manager";
 import { CreateSessionDialog } from "./CreateSessionDialog";
 import { ProjectWizardDialog } from "./ProjectWizardDialog";
+import { ModelSelector } from "./ModelSelector";
 import type { ChatType } from "../lib/presets";
 
 export function Sidebar() {
@@ -20,6 +21,7 @@ export function Sidebar() {
     deleteSession,
     updateSession,
     refreshGitStatus,
+    setProjectDefaultModel,
   } = useSessionStore();
 
   const [showProjectWizard, setShowProjectWizard] = useState(false);
@@ -126,6 +128,7 @@ export function Sidebar() {
               onDeleteSession={deleteSession}
               onRenameSession={(id, name) => updateSession(id, { name })}
               onRefreshGitStatus={refreshGitStatus}
+              onSetDefaultModel={(model) => setProjectDefaultModel(project.id, model)}
             />
           ))
         )}
@@ -163,6 +166,7 @@ interface ProjectItemProps {
   onDeleteSession: (id: string) => Promise<void>;
   onRenameSession: (id: string, name: string) => void;
   onRefreshGitStatus: (sessionId: string) => void;
+  onSetDefaultModel: (model: string | null) => void;
 }
 
 function ProjectItem({
@@ -178,6 +182,7 @@ function ProjectItem({
   onDeleteSession,
   onRenameSession,
   onRefreshGitStatus,
+  onSetDefaultModel,
 }: ProjectItemProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -262,7 +267,7 @@ function ProjectItem({
               </svg>
             </button>
             {showMenu && (
-              <div className="absolute right-0 mt-1 w-36 bg-zinc-800 border border-zinc-700 rounded shadow-lg z-10">
+              <div className="absolute right-0 mt-1 w-48 bg-zinc-800 border border-zinc-700 rounded shadow-lg z-10">
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -276,9 +281,21 @@ function ProjectItem({
                   </svg>
                   New Session
                 </button>
+                <div className="px-3 py-2 border-t border-zinc-700">
+                  <div className="text-xs text-zinc-500 mb-1.5">Default Model</div>
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <ModelSelector
+                      value={project.defaultModel}
+                      onChange={(model) => {
+                        onSetDefaultModel(model);
+                      }}
+                      size="sm"
+                    />
+                  </div>
+                </div>
                 <button
                   onClick={handleDeleteClick}
-                  className="w-full px-3 py-2 text-left text-xs text-zinc-400 hover:bg-zinc-700 flex items-center gap-2"
+                  className="w-full px-3 py-2 text-left text-xs text-zinc-400 hover:bg-zinc-700 flex items-center gap-2 border-t border-zinc-700"
                 >
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />

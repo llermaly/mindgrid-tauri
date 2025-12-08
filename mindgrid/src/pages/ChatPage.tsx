@@ -21,6 +21,7 @@ export function ChatPage({ sessionId, isNewChat }: ChatPageProps) {
     clearSession,
     setPermissionMode,
     setCommitMode,
+    setSessionModel,
     checkpointCommit,
     gitPush,
     getPrInfo,
@@ -136,6 +137,7 @@ export function ChatPage({ sessionId, isNewChat }: ChatPageProps) {
           onClaudeMessage={handleClaudeMessage}
           onPermissionModeChange={(mode) => setPermissionMode(sessionId, mode)}
           onCommitModeChange={(mode) => setCommitMode(sessionId, mode)}
+          onModelChange={(model) => setSessionModel(sessionId, model)}
           onClearSession={() => clearSession(sessionId)}
           onGitPush={() => gitPush(sessionId)}
           onGetPrInfo={() => getPrInfo(sessionId)}

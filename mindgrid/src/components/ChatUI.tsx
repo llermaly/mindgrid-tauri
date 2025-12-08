@@ -4,6 +4,7 @@ import { useClaudePty } from "../hooks/useClaudePty";
 import type { ClaudeEvent, ParsedMessage, PermissionMode, CommitMode } from "../lib/claude-types";
 import { COMMIT_MODE_INFO } from "../lib/claude-types";
 import { debug } from "../stores/debugStore";
+import { ModelSelector } from "./ModelSelector";
 
 interface PrInfo {
   number: number;
@@ -27,6 +28,7 @@ interface ChatUIProps {
   onClaudeMessage?: (message: ParsedMessage) => void;
   onPermissionModeChange?: (mode: PermissionMode) => void;
   onCommitModeChange?: (mode: CommitMode) => void;
+  onModelChange?: (model: string) => void;
   onClearSession?: () => void;
   onGitPush?: () => Promise<{ success: boolean; error?: string }>;
   onGetPrInfo?: () => Promise<PrInfo | null>;
@@ -147,6 +149,7 @@ export function ChatUI({
   onClaudeMessage,
   onPermissionModeChange,
   onCommitModeChange,
+  onModelChange,
   onClearSession,
   onGitPush,
   onGetPrInfo,
@@ -352,10 +355,12 @@ export function ChatUI({
             <div className={`w-2 h-2 rounded-full ${isRunning ? "bg-green-500 animate-pulse" : "bg-zinc-600"}`} />
             <span className="text-sm font-medium text-zinc-200">Claude</span>
           </div>
-          {model && (
-            <span className="text-xs px-2 py-0.5 rounded bg-zinc-700 text-zinc-400">
-              {model}
-            </span>
+          {onModelChange && (
+            <ModelSelector
+              value={model || null}
+              onChange={onModelChange}
+              size="sm"
+            />
           )}
 
           {/* Permission Mode Selector */}

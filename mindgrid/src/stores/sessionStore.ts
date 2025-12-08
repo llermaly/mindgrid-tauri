@@ -29,6 +29,7 @@ export interface Project {
   name: string;
   path: string;
   sessions: string[]; // Session IDs
+  defaultModel: string | null; // Default model for new sessions
   createdAt: number;
   updatedAt: number;
 }
@@ -80,6 +81,8 @@ interface SessionState {
   clearSession: (sessionId: string) => Promise<void>;
   setPermissionMode: (sessionId: string, mode: PermissionMode) => void;
   setCommitMode: (sessionId: string, mode: CommitMode) => void;
+  setSessionModel: (sessionId: string, model: string) => void;
+  setProjectDefaultModel: (projectId: string, model: string | null) => void;
 
   // Commit actions
   checkpointCommit: (sessionId: string, message?: string) => Promise<boolean>;
@@ -186,6 +189,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       name,
       path,
       sessions: [],
+      defaultModel: null, // Will use system default
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -297,6 +301,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       debug.error("SessionStore", "Failed to create worktree", err);
     }
 
+    // Get project's default model
+    const projectForModel = get().projects[projectId];
+    const defaultModel = projectForModel?.defaultModel || null;
+
     const session: Session = {
       id,
       name,
@@ -306,7 +314,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       messages: [],
       isRunning: false,
       totalCost: 0,
-      model: null,
+      model: defaultModel, // Inherit from project default
       cwd: sessionCwd,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -662,6 +670,41 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         },
       };
     });
+  },
+
+  setSessionModel: (sessionId, model) => {
+    debug.info("SessionStore", "Setting session model", { sessionId, model });
+    set((state) => {
+      const session = state.sessions[sessionId];
+      if (!session) return state;
+      return {
+        sessions: {
+          ...state.sessions,
+          [sessionId]: { ...session, model, updatedAt: Date.now() },
+        },
+      };
+    });
+
+    // Persist to database
+    const session = get().sessions[sessionId];
+    if (session) {
+      db.saveSession({ ...session, messages: [] });
+    }
+  },
+
+  setProjectDefaultModel: async (projectId, model) => {
+    debug.info("SessionStore", "Setting project default model", { projectId, model });
+    const project = get().projects[projectId];
+    if (!project) return;
+
+    const updated = { ...project, defaultModel: model, updatedAt: Date.now() };
+
+    set((state) => ({
+      projects: { ...state.projects, [projectId]: updated },
+    }));
+
+    // Persist to database
+    await db.saveProject(updated);
   },
 
   checkpointCommit: async (sessionId, message) => {
