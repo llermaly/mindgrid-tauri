@@ -861,6 +861,7 @@ pub async fn git_commit(
     working_directory: String,
     message: String,
     no_verify: bool,
+    add_signature: Option<bool>,
 ) -> Result<CommitResult, String> {
     // First check if there are staged changes
     let status_output = tokio::process::Command::new("git")
@@ -880,8 +881,15 @@ pub async fn git_commit(
         });
     }
 
+    // Build commit message with optional signature
+    let full_message = if add_signature.unwrap_or(false) {
+        format!("{}\n\n🔷 Built with [MindGrid](https://github.com/llermaly/mindgrid-tauri)\n\nCo-Authored-By: MindGrid <mindgrid@users.noreply.github.com>", message)
+    } else {
+        message
+    };
+
     // Build commit command
-    let mut args = vec!["commit", "-m", &message];
+    let mut args = vec!["commit", "-m", &full_message];
     if no_verify {
         args.push("--no-verify");
     }
@@ -929,6 +937,7 @@ pub async fn git_commit(
 pub async fn git_checkpoint_commit(
     working_directory: String,
     message: String,
+    add_signature: Option<bool>,
 ) -> Result<CommitResult, String> {
     // First check if there are any changes at all
     let status_output = tokio::process::Command::new("git")
@@ -952,7 +961,7 @@ pub async fn git_checkpoint_commit(
     git_add_all(working_directory.clone()).await?;
 
     // Commit with --no-verify to bypass hooks
-    git_commit(working_directory, message, true).await
+    git_commit(working_directory, message, true, add_signature).await
 }
 
 /// Check if there are uncommitted changes
@@ -1025,6 +1034,20 @@ pub struct MergeResult {
     pub success: bool,
     pub message: Option<String>,
     pub error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ConflictCheckResult {
+    pub has_conflicts: bool,
+    pub conflicting_files: Option<Vec<String>>,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PrSuggestion {
+    pub title: String,
+    pub body: String,
+    pub commit_count: usize,
 }
 
 /// Push the current branch to remote
@@ -1254,6 +1277,69 @@ pub async fn git_get_pr_info(working_directory: String) -> Result<Option<PullReq
     }
 }
 
+/// Generate a smart PR title and body based on commits
+#[tauri::command]
+pub async fn git_generate_pr_info(
+    working_directory: String,
+) -> Result<PrSuggestion, String> {
+    // Get commit messages since divergence from main
+    let main_branch = detect_main_branch(&working_directory).await
+        .unwrap_or_else(|| "main".to_string());
+
+    let log_output = tokio::process::Command::new("git")
+        .arg("-C")
+        .arg(&working_directory)
+        .args(["log", &format!("{}..HEAD", main_branch), "--pretty=format:%s"])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to get commit log: {}", e))?;
+
+    let commits: Vec<String> = if log_output.status.success() {
+        String::from_utf8_lossy(&log_output.stdout)
+            .lines()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    } else {
+        vec![]
+    };
+
+    // Generate title from commits
+    let title = if commits.len() == 1 {
+        commits[0].clone()
+    } else if commits.len() > 1 {
+        // Try to find a common theme or use first commit
+        let first = &commits[0];
+        if first.len() > 50 {
+            format!("{}...", &first[..50])
+        } else {
+            first.clone()
+        }
+    } else {
+        "Update".to_string()
+    };
+
+    // Generate body with commit list
+    let body = if commits.is_empty() {
+        "No commits found".to_string()
+    } else if commits.len() == 1 {
+        format!("## Changes\n\n{}\n\n---\n🔷 Created with MindGrid", commits[0])
+    } else {
+        let commit_list = commits
+            .iter()
+            .map(|c| format!("- {}", c))
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!("## Changes\n\n{}\n\n---\n🔷 Created with MindGrid", commit_list)
+    };
+
+    Ok(PrSuggestion {
+        title,
+        body,
+        commit_count: commits.len(),
+    })
+}
+
 /// Create a PR for the current branch using gh CLI
 #[tauri::command]
 pub async fn git_create_pr(
@@ -1424,6 +1510,89 @@ pub async fn git_merge_to_main(
     })
 }
 
+/// Check for merge conflicts before merging
+#[tauri::command]
+pub async fn git_check_merge_conflicts(
+    working_directory: String,
+) -> Result<ConflictCheckResult, String> {
+    let path = Path::new(&working_directory);
+
+    if !path.exists() || !path.is_dir() {
+        return Err("Directory does not exist".to_string());
+    }
+
+    // Get current branch
+    let branch_output = tokio::process::Command::new("git")
+        .arg("-C")
+        .arg(&working_directory)
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to get branch: {}", e))?;
+
+    if !branch_output.status.success() {
+        return Err("Failed to get current branch".to_string());
+    }
+
+    let current_branch = String::from_utf8_lossy(&branch_output.stdout).trim().to_string();
+
+    // Detect main branch
+    let main_branch = detect_main_branch(&working_directory).await
+        .unwrap_or_else(|| "main".to_string());
+
+    // Try merge with --no-commit --no-ff to check for conflicts
+    let merge_test = tokio::process::Command::new("git")
+        .arg("-C")
+        .arg(&working_directory)
+        .args(["merge", "--no-commit", "--no-ff", &current_branch])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to test merge: {}", e))?;
+
+    let has_conflicts = !merge_test.status.success();
+    let output_text = String::from_utf8_lossy(&merge_test.stderr).to_string();
+
+    // Abort the test merge
+    let _ = tokio::process::Command::new("git")
+        .arg("-C")
+        .arg(&working_directory)
+        .args(["merge", "--abort"])
+        .output()
+        .await;
+
+    let mut conflicting_files = Vec::new();
+    if has_conflicts {
+        // Parse conflicting files from output or run ls-files
+        let files_output = tokio::process::Command::new("git")
+            .arg("-C")
+            .arg(&working_directory)
+            .args(["diff", "--name-only", "--diff-filter=U"])
+            .output()
+            .await
+            .ok();
+
+        if let Some(output) = files_output {
+            if output.status.success() {
+                conflicting_files = String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .filter(|l| !l.is_empty())
+                    .map(|s| s.to_string())
+                    .collect();
+            }
+        }
+    }
+
+    Ok(ConflictCheckResult {
+        has_conflicts,
+        conflicting_files: if conflicting_files.is_empty() { None } else { Some(conflicting_files) },
+        message: if has_conflicts {
+            Some("Merge would result in conflicts".to_string())
+        } else {
+            Some("No conflicts detected".to_string())
+        },
+    })
+}
+
 /// Merge PR using gh CLI (uses GitHub's merge)
 #[tauri::command]
 pub async fn git_merge_pr(
@@ -1438,6 +1607,26 @@ pub async fn git_merge_pr(
             error: Some("gh CLI not found. Install with: brew install gh".to_string()),
         }),
     };
+
+    // Check for conflicts before attempting merge
+    let conflict_check = git_check_merge_conflicts(working_directory.clone()).await?;
+
+    if conflict_check.has_conflicts {
+        let mut error_msg = "Cannot merge: conflicts detected.".to_string();
+        if let Some(files) = &conflict_check.conflicting_files {
+            error_msg.push_str(&format!("\n\nConflicting files:\n"));
+            for file in files {
+                error_msg.push_str(&format!("  • {}\n", file));
+            }
+        }
+        error_msg.push_str("\n\nPlease resolve conflicts manually or use Claude to help fix them.");
+
+        return Ok(MergeResult {
+            success: false,
+            message: None,
+            error: Some(error_msg),
+        });
+    }
 
     let mut args = vec!["pr", "merge", "--delete-branch"];
 
