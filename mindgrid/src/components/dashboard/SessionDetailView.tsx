@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Session, PanelType, PanelState } from "../../stores/sessionStore";
-import type { GitStatus, GitDiffFile, GitDiffResult } from "../../lib/git-types";
+import { useSessionStore } from "../../stores/sessionStore";
+import type { GitStatus, GitDiffFile, GitDiffResult, GitFileDiff } from "../../lib/git-types";
 import { getGitStatusConfig } from "../../lib/git-types";
 import { StatusBadge } from "./StatusBadge";
 import type { DashboardSessionStatus } from "./types";
+import { MonacoDiffViewer } from "../diff/MonacoDiffViewer";
 
 const SESSION_TABS = [
   { id: "overview", label: "Overview" },
@@ -55,7 +57,18 @@ export function SessionDetailView({
   const [isDeleting, setIsDeleting] = useState(false);
   const [diffFiles, setDiffFiles] = useState<GitDiffFile[]>([]);
   const [diffLoading, setDiffLoading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<GitDiffFile | null>(null);
+  const [fileDiff, setFileDiff] = useState<GitFileDiff | null>(null);
+  const [fileDiffLoading, setFileDiffLoading] = useState(false);
+  const [fileDiffError, setFileDiffError] = useState<string | null>(null);
+  const [diffViewType, setDiffViewType] = useState<'split' | 'inline'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('diffViewType') as 'split' | 'inline') || 'split';
+    }
+    return 'split';
+  });
   const deleteButtonRef = useRef<HTMLButtonElement>(null);
+  const lastFetchedPathRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (showDeleteModal && deleteButtonRef.current) {
@@ -69,6 +82,27 @@ export function SessionDetailView({
       fetchDiffFiles();
     }
   }, [activeTab, session.gitStatus, session.cwd]);
+
+  useEffect(() => {
+    if (diffFiles.length === 0) {
+      setSelectedFile(null);
+      setFileDiff(null);
+      lastFetchedPathRef.current = null;
+      return;
+    }
+
+    const existing = selectedFile && diffFiles.find((f) => f.path === selectedFile.path);
+    if (!existing) {
+      setSelectedFile(diffFiles[0]);
+      setFileDiff(null);
+      lastFetchedPathRef.current = null;
+    }
+  }, [diffFiles, selectedFile]);
+
+  useEffect(() => {
+    if (activeTab !== "git" || !selectedFile) return;
+    fetchFileDiff(selectedFile);
+  }, [activeTab, selectedFile]);
 
   const fetchDiffFiles = async () => {
     if (!session.cwd) return;
@@ -84,6 +118,34 @@ export function SessionDetailView({
     } finally {
       setDiffLoading(false);
     }
+  };
+
+  const fetchFileDiff = async (file: GitDiffFile) => {
+    if (!session.cwd) return;
+    if (lastFetchedPathRef.current === `${file.status}-${file.path}` && fileDiff) {
+      return;
+    }
+    setFileDiffLoading(true);
+    setFileDiffError(null);
+    try {
+      const result = await invoke<GitFileDiff>("get_git_file_diff", {
+        workingDirectory: session.cwd,
+        filePath: file.path,
+        status: file.status,
+      });
+      lastFetchedPathRef.current = `${file.status}-${file.path}`;
+      setFileDiff(result);
+    } catch (error) {
+      setFileDiff(null);
+      setFileDiffError(error instanceof Error ? error.message : "Failed to load diff");
+    } finally {
+      setFileDiffLoading(false);
+    }
+  };
+
+  const handleDiffViewTypeChange = (type: 'split' | 'inline') => {
+    setDiffViewType(type);
+    localStorage.setItem('diffViewType', type);
   };
 
   const handleDelete = async () => {
@@ -106,7 +168,17 @@ export function SessionDetailView({
     }
   };
 
-  const sessionStatus: DashboardSessionStatus = session.isRunning ? "running" : "idle";
+  const isSessionActive = useSessionStore((state) => state.isSessionActive);
+  const isActive = isSessionActive(session.id);
+
+  // Determine status based on whether chat window is open and if Claude is running
+  let sessionStatus: DashboardSessionStatus;
+  if (isActive) {
+    sessionStatus = session.isRunning ? "running" : "waiting";
+  } else {
+    sessionStatus = "idle";
+  }
+
   const panels = session.panelStates ? Object.entries(session.panelStates) as [PanelType, PanelState][] : [];
   const hasMultiplePanels = panels.length > 0;
 
@@ -147,9 +219,9 @@ export function SessionDetailView({
             className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium text-white flex items-center gap-2 transition-colors"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
             </svg>
-            Open Chat
+            Open Workspace
           </button>
           <button
             onClick={() => setShowDeleteModal(true)}
@@ -191,7 +263,11 @@ export function SessionDetailView({
             <>
               {/* Overview Stats */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <StatCard label="Status" value={sessionStatus === "running" ? "Active" : "Idle"} highlight={sessionStatus === "running"} />
+                <StatCard
+                  label="Status"
+                  value={isActive ? (sessionStatus === "running" ? "Active (Running)" : "Active (Waiting)") : "Idle"}
+                  highlight={isActive}
+                />
                 <StatCard label="Messages" value={totalMessages.toString()} />
                 <StatCard label="Total Cost" value={`$${totalCost.toFixed(4)}`} />
                 <StatCard label="Model" value={session.model || "Default"} />
@@ -234,9 +310,23 @@ export function SessionDetailView({
               isLoading={session.gitStatusLoading || diffLoading}
               diffFiles={diffFiles}
               cwd={session.cwd}
+              selectedFile={selectedFile}
+              diffPatch={fileDiff}
+              diffPatchLoading={fileDiffLoading}
+              diffPatchError={fileDiffError}
+              onSelectFile={(file) => {
+                setSelectedFile(file);
+                setFileDiff(null);
+                lastFetchedPathRef.current = null;
+              }}
+              diffViewType={diffViewType}
+              onDiffViewTypeChange={handleDiffViewTypeChange}
               onRefresh={() => {
                 onRefreshGitStatus();
                 fetchDiffFiles();
+                if (selectedFile) {
+                  fetchFileDiff(selectedFile);
+                }
               }}
             />
           )}
@@ -585,15 +675,38 @@ function GitChangesTab({
   isLoading,
   diffFiles,
   cwd,
+  selectedFile,
+  diffPatch,
+  diffPatchLoading,
+  diffPatchError,
+  onSelectFile,
   onRefresh,
+  diffViewType,
+  onDiffViewTypeChange,
 }: {
   gitStatus?: GitStatus | null;
   isLoading?: boolean;
   diffFiles: GitDiffFile[];
   cwd: string;
+  selectedFile: GitDiffFile | null;
+  diffPatch: GitFileDiff | null;
+  diffPatchLoading: boolean;
+  diffPatchError: string | null;
+  onSelectFile: (file: GitDiffFile) => void;
   onRefresh: () => void;
+  diffViewType: 'split' | 'inline';
+  onDiffViewTypeChange: (type: 'split' | 'inline') => void;
 }) {
   const config = gitStatus ? getGitStatusConfig(gitStatus) : null;
+
+  const handleOpenInVSCode = async () => {
+    if (!cwd) return;
+    try {
+      await invoke("open_in_editor", { path: cwd });
+    } catch (error) {
+      console.error("Failed to open in VS Code:", error);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -663,7 +776,12 @@ function GitChangesTab({
         ) : diffFiles.length > 0 ? (
           <div className="space-y-2">
             {diffFiles.map((file, index) => (
-              <FileChangeRow key={index} file={file} />
+              <FileChangeRow
+                key={index}
+                file={file}
+                selected={selectedFile?.path === file.path}
+                onSelect={onSelectFile}
+              />
             ))}
           </div>
         ) : (
@@ -679,17 +797,72 @@ function GitChangesTab({
         )}
       </div>
 
+      {/* Diff Viewer */}
+      <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-medium text-white">File Diff</h3>
+          {/* View Type Toggle */}
+          <div className="flex items-center gap-1 bg-neutral-800 rounded-lg p-0.5">
+            <button
+              onClick={() => onDiffViewTypeChange('split')}
+              className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${
+                diffViewType === 'split'
+                  ? 'bg-neutral-700 text-white'
+                  : 'text-neutral-400 hover:text-white'
+              }`}
+            >
+              Split
+            </button>
+            <button
+              onClick={() => onDiffViewTypeChange('inline')}
+              className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${
+                diffViewType === 'inline'
+                  ? 'bg-neutral-700 text-white'
+                  : 'text-neutral-400 hover:text-white'
+              }`}
+            >
+              Inline
+            </button>
+          </div>
+        </div>
+        <DiffViewerSection
+          file={selectedFile}
+          diffData={diffPatch}
+          isLoading={diffPatchLoading}
+          error={diffPatchError}
+          viewType={diffViewType}
+        />
+      </div>
+
       {/* Worktree Path */}
       <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
-        <h3 className="text-sm font-medium text-white mb-3">Worktree Path</h3>
-        <code className="text-xs text-neutral-300 bg-neutral-800 px-3 py-2 rounded-lg block truncate">{cwd}</code>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-medium text-white">Worktree Path</h3>
+          <button
+            onClick={handleOpenInVSCode}
+            className="p-1.5 hover:bg-neutral-800 rounded text-neutral-400 hover:text-blue-400 transition-colors"
+            title="Open in VS Code"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+          </button>
+        </div>
+        <button
+          onClick={handleOpenInVSCode}
+          className="w-full text-left group"
+        >
+          <code className="text-xs text-neutral-300 bg-neutral-800 px-3 py-2 rounded-lg block truncate group-hover:bg-neutral-700 group-hover:text-blue-400 transition-colors cursor-pointer">
+            {cwd}
+          </code>
+        </button>
       </div>
     </div>
   );
 }
 
 // File Change Row Component
-function FileChangeRow({ file }: { file: GitDiffFile }) {
+function FileChangeRow({ file, onSelect, selected }: { file: GitDiffFile; onSelect: (file: GitDiffFile) => void; selected: boolean }) {
   const statusColors: Record<string, { bg: string; text: string; label: string }> = {
     modified: { bg: "bg-blue-500/20", text: "text-blue-400", label: "M" },
     added: { bg: "bg-green-500/20", text: "text-green-400", label: "A" },
@@ -701,7 +874,12 @@ function FileChangeRow({ file }: { file: GitDiffFile }) {
   const status = statusColors[file.status] || statusColors.modified;
 
   return (
-    <div className="flex items-center gap-3 p-3 bg-neutral-800 rounded-lg">
+    <button
+      onClick={() => onSelect(file)}
+      className={`w-full flex items-center gap-3 p-3 rounded-lg border ${
+        selected ? "bg-neutral-800 border-blue-500/40" : "bg-neutral-800/70 border-neutral-800 hover:border-neutral-700"
+      } transition-colors text-left`}
+    >
       <span className={`w-6 h-6 flex items-center justify-center rounded text-xs font-medium ${status.bg} ${status.text}`}>
         {status.label}
       </span>
@@ -710,6 +888,88 @@ function FileChangeRow({ file }: { file: GitDiffFile }) {
         {file.additions > 0 && <span className="text-green-400">+{file.additions}</span>}
         {file.deletions > 0 && <span className="text-red-400">-{file.deletions}</span>}
       </div>
+    </button>
+  );
+}
+
+function DiffViewerSection({
+  file,
+  diffData,
+  isLoading,
+  error,
+  viewType,
+}: {
+  file: GitDiffFile | null;
+  diffData: GitFileDiff | null;
+  isLoading: boolean;
+  error: string | null;
+  viewType: 'split' | 'inline';
+}) {
+  if (!file) {
+    return (
+      <div className="text-sm text-neutral-500 flex items-center gap-2">
+        <svg className="w-4 h-4 text-neutral-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        Select a file to view its diff
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-neutral-400">
+        <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+        </svg>
+        Loading diff for <span className="font-mono text-neutral-200">{file.path}</span>...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+        Failed to load diff: {error}
+      </div>
+    );
+  }
+
+  if (!diffData) {
+    return (
+      <div className="text-sm text-neutral-500">
+        No diff available for <span className="font-mono text-neutral-300">{file.path}</span>.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {/* File header */}
+      <div className="px-3 py-2 bg-neutral-800/70 rounded-t-lg flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+            file.status === 'added' ? 'bg-green-500/20 text-green-400' :
+            file.status === 'deleted' ? 'bg-red-500/20 text-red-400' :
+            file.status === 'untracked' ? 'bg-purple-500/20 text-purple-400' :
+            'bg-blue-500/20 text-blue-400'
+          }`}>
+            {file.status}
+          </span>
+          <span className="font-mono text-sm text-neutral-200 truncate">{file.path}</span>
+        </div>
+        <div className="flex items-center gap-2 text-xs">
+          {file.additions > 0 && <span className="text-green-400">+{file.additions}</span>}
+          {file.deletions > 0 && <span className="text-red-400">-{file.deletions}</span>}
+        </div>
+      </div>
+
+      {/* Monaco Diff Editor */}
+      <MonacoDiffViewer
+        file={diffData}
+        viewType={viewType}
+      />
     </div>
   );
 }

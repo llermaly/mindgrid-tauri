@@ -30,6 +30,15 @@ export interface GitDiffResult {
   total_deletions: number;
 }
 
+export interface GitFileDiff {
+  path: string;
+  status: string;
+  patch: string;
+  old_value: string;
+  new_value: string;
+  is_binary: boolean;
+}
+
 export interface GitErrorDetails {
   title: string;
   message: string;

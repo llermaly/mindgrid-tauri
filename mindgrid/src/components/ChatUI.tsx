@@ -71,6 +71,7 @@ const MESSAGE_STYLES: Record<string, { bg: string; color: string; label: string 
   assistant: { bg: "bg-zinc-800/50", color: "text-zinc-300", label: "Assistant" },
   system: { bg: "bg-yellow-500/10", color: "text-yellow-400", label: "System" },
   tool: { bg: "bg-cyan-500/10", color: "text-cyan-400", label: "Tool" },
+  thinking: { bg: "bg-purple-500/10", color: "text-purple-300", label: "Thinking" },
 };
 
 type MarkdownBlock =
@@ -302,7 +303,8 @@ function MarkdownContent({ content }: { content: string }) {
 
 function MessageItem({ message }: { message: ParsedMessage }) {
   const [isExpanded, setIsExpanded] = useState(message.role !== "tool");
-  const style = MESSAGE_STYLES[message.role] || MESSAGE_STYLES.assistant;
+  const styleKey = message.isThinking ? "thinking" : message.role;
+  const style = MESSAGE_STYLES[styleKey] || MESSAGE_STYLES.assistant;
 
   const isToolUse = message.toolName && message.toolInput;
   const isToolResult = message.toolResult !== undefined;
@@ -365,14 +367,20 @@ function MessageItem({ message }: { message: ParsedMessage }) {
 
           {!isToolUse && !isToolResult && message.content && (
             isAssistant ? (
-              <div className="relative rounded-xl border border-emerald-900/60 bg-black/20 p-3 overflow-hidden shadow-[0_18px_40px_-28px_rgba(16,185,129,0.55)]">
-                <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-emerald-500/10 to-transparent blur-xl pointer-events-none" />
-                <div className="relative">
-                  <MarkdownContent content={message.content} />
+              message.isThinking ? (
+                <div className="text-sm text-purple-200 italic whitespace-pre-wrap">
+                  {message.content}
                 </div>
-              </div>
+              ) : (
+                <div className="relative rounded-xl border border-emerald-900/60 bg-black/20 p-3 overflow-hidden shadow-[0_18px_40px_-28px_rgba(16,185,129,0.55)]">
+                  <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-emerald-500/10 to-transparent blur-xl pointer-events-none" />
+                  <div className="relative">
+                    <MarkdownContent content={message.content} />
+                  </div>
+                </div>
+              )
             ) : (
-              <div className="text-sm text-zinc-300 whitespace-pre-wrap">
+              <div className={`text-sm whitespace-pre-wrap ${message.isThinking ? "text-purple-200 italic" : "text-zinc-300"}`}>
                 {message.content}
               </div>
             )
@@ -528,7 +536,10 @@ export function ChatUI({
 
   const { isRunning, spawnClaude, sendMessage, kill } = useClaudePty({
     onEvent: handleClaudeEvent,
-    onMessage: onClaudeMessage,
+    onMessage: (message) => {
+      if (!thinkingMode && message.isThinking) return;
+      onClaudeMessage?.(message);
+    },
     onRawOutput: (data) => {
       // Pipe raw PTY output to debug panel for troubleshooting Claude replies
       debug.pty("ClaudeRaw", "PTY output", data.slice(0, 500));
@@ -545,14 +556,9 @@ export function ChatUI({
 
   const { runCodex, isRunning: isCodexRunning } = useCodexRunner({
     cwd,
-    onComplete: (content) => {
-      const assistantMessage: ParsedMessage = {
-        id: `codex-${Date.now()}`,
-        role: "assistant",
-        content: content || "(no output)",
-        timestamp: Date.now(),
-      };
-      onClaudeMessage?.(assistantMessage);
+    onMessage: (message) => {
+      if (!thinkingMode && message.isThinking) return;
+      onClaudeMessage?.(message);
     },
     onError: (err) => {
       const assistantMessage: ParsedMessage = {
@@ -571,6 +577,8 @@ export function ChatUI({
     if (provider === "openai") return "codex";
     return "claude";
   }, [model]);
+
+  const isAnswering = activeAgent === "codex" ? isCodexRunning : isRunning;
 
   // Get usage data from global store
   const {
@@ -592,13 +600,23 @@ export function ChatUI({
   const criticalUsage = activeAgent === "codex" ? codexCriticalUsage : claudeCriticalUsage;
   const usageLoading = activeAgent === "codex" ? codexLoading : claudeLoading;
   const usageError = activeAgent === "codex" ? codexError : claudeError;
-  const isAnswering = activeAgent === "codex" ? isCodexRunning : isRunning;
   const agentLabel = activeAgent === "codex" ? "Codex" : "Claude";
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    if (!filtersExpanded) return;
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setFiltersExpanded(false);
+      }
+    };
+    window.addEventListener("keydown", handleEsc);
+    return () => window.removeEventListener("keydown", handleEsc);
+  }, [filtersExpanded]);
 
   // Rough context usage estimate based on message count
   useEffect(() => {
@@ -635,14 +653,17 @@ export function ChatUI({
   const handleSend = useCallback(async () => {
     if (!input.trim()) return;
 
-    const message = input.trim();
+    const baseMessage = input.trim();
+    const message = thinkingMode
+      ? `${baseMessage}\n\n(Think through the problem and share a brief reasoning summary before the final answer.)`
+      : `${baseMessage}\n\n(Do not include thinking or reasoning steps; reply concisely with just the answer/output.)`;
     setInput("");
 
     // Immediately add user message to UI (don't wait for Claude to echo it)
     const userMessage: ParsedMessage = {
       id: `user-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       role: "user",
-      content: message,
+      content: baseMessage,
       timestamp: Date.now(),
     };
 
@@ -655,7 +676,7 @@ export function ChatUI({
     } else {
       await sendMessage(message);
     }
-  }, [input, sendMessage, onClaudeMessage, activeAgent, runCodex, model]);
+  }, [input, sendMessage, onClaudeMessage, activeAgent, runCodex, model, thinkingMode]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -672,8 +693,8 @@ export function ChatUI({
   const filteredMessages = useMemo(() => {
     if (activeFilters.includes('all')) return messages;
     return messages.filter((m) => {
-      if (activeFilters.includes('thinking') && m.role === 'assistant' && m.content?.toLowerCase().includes('thinking')) return true;
-      if (activeFilters.includes('text') && m.role === 'assistant') return true;
+      if (activeFilters.includes('thinking') && m.isThinking) return true;
+      if (activeFilters.includes('text') && m.role === 'assistant' && !m.isThinking) return true;
       if (activeFilters.includes('tool') && m.role === 'tool') return true;
       if (activeFilters.includes('user') && m.role === 'user') return true;
       return false;
@@ -1337,7 +1358,7 @@ export function ChatUI({
               className="ml-auto px-2 py-1 text-xs text-neutral-500 hover:text-white"
               title="Hide filters"
             >
-              ✕
+              x
             </button>
           </>
         ) : (

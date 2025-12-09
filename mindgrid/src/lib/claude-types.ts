@@ -256,6 +256,7 @@ export interface ParsedMessage {
   usage?: Usage;
   cost?: number;
   isPartial?: boolean;
+  isThinking?: boolean;
 }
 
 // Session state

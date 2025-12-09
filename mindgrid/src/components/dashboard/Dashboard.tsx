@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { PRESETS, type ChatType } from "../../lib/presets";
-import { openChatWindow, openMultipleChatWindows } from "../../lib/window-manager";
+import { openMultipleChatWindows, openWorkspaceWindow } from "../../lib/window-manager";
 import { useSessionStore, type Project, type Session } from "../../stores/sessionStore";
 import { useUsageStore } from "../../stores/usageStore";
 import { getWorktreeInfo } from "../../lib/dev-mode";
@@ -28,6 +28,8 @@ export function Dashboard() {
     refreshGitStatus,
     deleteProject,
     deleteSession,
+    refreshActiveChatSessions,
+    isSessionActive,
   } = useSessionStore();
 
   const fetchAll = useUsageStore((state) => state.fetchAll);
@@ -38,6 +40,8 @@ export function Dashboard() {
   const [activeView, setActiveView] = useState<DashboardView>("all");
   const [showProjectWizard, setShowProjectWizard] = useState(false);
   const [showCreateSessionDialog, setShowCreateSessionDialog] = useState(false);
+  const [activityFilterProject, setActivityFilterProject] = useState<string | null>(null);
+  const [activityFilterSession, setActivityFilterSession] = useState<string | null>(null);
   const [createSessionForProjectId, setCreateSessionForProjectId] = useState<string | null>(null);
   const [worktreeName, setWorktreeName] = useState<string | null>(null);
 
@@ -55,6 +59,15 @@ export function Dashboard() {
     return () => clearInterval(interval);
   }, [fetchAll]);
 
+  // Refresh active chat sessions on mount and every 5 seconds
+  useEffect(() => {
+    refreshActiveChatSessions();
+    const interval = setInterval(() => {
+      refreshActiveChatSessions();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [refreshActiveChatSessions]);
+
   const presetMap = useMemo(() => {
     const map: Record<string, (typeof PRESETS)[number]> = {};
     PRESETS.forEach((preset) => {
@@ -63,7 +76,7 @@ export function Dashboard() {
     return map;
   }, []);
 
-  const enhancedProjects = useMemo(() => buildDashboardProjects(Object.values(projects), sessions), [projects, sessions]);
+  const enhancedProjects = useMemo(() => buildDashboardProjects(Object.values(projects), sessions, isSessionActive), [projects, sessions, isSessionActive]);
   const activeProjects = enhancedProjects.filter((project) => !project.isArchived);
   const filteredProjects = activeProjects.filter((project) =>
     project.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -77,12 +90,29 @@ export function Dashboard() {
   );
 
   const recentActivity = useMemo(
-    () =>
-      activeProjects
+    () => {
+      let activities = activeProjects
         .flatMap((project) => project.chatHistory.map((item) => ({ ...item, project })))
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 20),
-    [activeProjects]
+        .sort((a, b) => b.timestamp - a.timestamp);
+
+      // Apply filters
+      if (activityFilterProject) {
+        activities = activities.filter(item => item.project.id === activityFilterProject);
+      }
+      if (activityFilterSession) {
+        activities = activities.filter(item => {
+          // Find the session that contains this activity
+          const session = Object.values(sessions).find(s =>
+            s.projectId === item.project.id &&
+            s.messages.some(m => m.id === item.id.split('-')[1])
+          );
+          return session?.id === activityFilterSession;
+        });
+      }
+
+      return activities.slice(0, 50);
+    },
+    [activeProjects, activityFilterProject, activityFilterSession, sessions]
   );
 
   const isSettingsView = activeView === "settings";
@@ -101,7 +131,7 @@ export function Dashboard() {
     const liveSession = sessions[sessionId];
     const project = liveSession ? Object.values(projects).find(p => p.id === liveSession.projectId) : null;
     if (liveSession && project) {
-      void openChatWindow({
+      void openWorkspaceWindow({
         sessionId: liveSession.id,
         sessionName: liveSession.name,
         projectName: project.name,
@@ -411,6 +441,50 @@ export function Dashboard() {
                   <>
                     <div className="flex items-center justify-between mb-6">
                       <h1 className="text-2xl font-semibold text-white">Recent Activity</h1>
+                      <div className="flex items-center gap-3">
+                        <select
+                          value={activityFilterProject || ""}
+                          onChange={(e) => {
+                            setActivityFilterProject(e.target.value || null);
+                            setActivityFilterSession(null);
+                          }}
+                          className="px-3 py-1.5 bg-neutral-800 border border-neutral-700 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500"
+                        >
+                          <option value="">All Projects</option>
+                          {activeProjects.map((project) => (
+                            <option key={project.id} value={project.id}>
+                              {project.name}
+                            </option>
+                          ))}
+                        </select>
+                        {activityFilterProject && (
+                          <select
+                            value={activityFilterSession || ""}
+                            onChange={(e) => setActivityFilterSession(e.target.value || null)}
+                            className="px-3 py-1.5 bg-neutral-800 border border-neutral-700 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500"
+                          >
+                            <option value="">All Sessions</option>
+                            {activeProjects
+                              .find((p) => p.id === activityFilterProject)
+                              ?.sessions.map((session) => (
+                                <option key={session.id} value={session.id}>
+                                  {session.name}
+                                </option>
+                              ))}
+                          </select>
+                        )}
+                        {(activityFilterProject || activityFilterSession) && (
+                          <button
+                            onClick={() => {
+                              setActivityFilterProject(null);
+                              setActivityFilterSession(null);
+                            }}
+                            className="px-3 py-1.5 bg-neutral-700 hover:bg-neutral-600 rounded-lg text-sm text-neutral-300 transition-colors"
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     {recentActivity.length === 0 ? (
@@ -658,21 +732,35 @@ function StatusDot({ status }: { status: DashboardSession["status"] }) {
   return <span className={`w-2 h-2 rounded-full ${className}`} />;
 }
 
-function buildDashboardProjects(projects: Project[], sessions: Record<string, Session>): DashboardProject[] {
+function buildDashboardProjects(
+  projects: Project[],
+  sessions: Record<string, Session>,
+  isSessionActive: (sessionId: string) => boolean
+): DashboardProject[] {
   return projects.map((project) => {
     const projectSessions = (project.sessions || [])
       .map((id) => sessions[id])
       .filter(Boolean)
       .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 
-    const dashboardSessions: DashboardSession[] = projectSessions.map((session) => ({
-      id: session.id,
-      name: session.name,
-      status: session.isRunning ? "running" : "idle",
-      agents: deriveAgents(session),
-      updatedAt: session.updatedAt || session.createdAt || Date.now(),
-      initialPrompt: session.initialPrompt,
-    }));
+    const dashboardSessions: DashboardSession[] = projectSessions.map((session) => {
+      // Determine status: active if chat window is open, otherwise check if running
+      let status: DashboardSessionStatus;
+      if (isSessionActive(session.id)) {
+        status = session.isRunning ? "running" : "waiting";
+      } else {
+        status = session.messages.length > 0 ? "idle" : "idle";
+      }
+
+      return {
+        id: session.id,
+        name: session.name,
+        status,
+        agents: deriveAgents(session),
+        updatedAt: session.updatedAt || session.createdAt || Date.now(),
+        initialPrompt: session.initialPrompt,
+      };
+    });
 
     const chatHistory: DashboardActivity[] = projectSessions
       .map((session) => {

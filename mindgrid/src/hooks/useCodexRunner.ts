@@ -1,21 +1,22 @@
 import { useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { CodexStreamParser } from "../lib/codexStreamParser";
+import type { ParsedMessage } from "../lib/claude-types";
 
 interface UseCodexRunnerOptions {
   cwd?: string;
-  onComplete?: (content: string) => void;
+  onMessage?: (message: ParsedMessage) => void;
   onError?: (error: string) => void;
 }
 
 export function useCodexRunner(options: UseCodexRunnerOptions = {}) {
-  const { cwd, onComplete, onError } = options;
+  const { cwd, onMessage, onError } = options;
   const [isRunning, setIsRunning] = useState(false);
-  const parser = new CodexStreamParser();
 
   const runCodex = useCallback(
     async (prompt: string, model?: string) => {
       if (!prompt.trim()) return;
+      const parser = new CodexStreamParser();
       setIsRunning(true);
       try {
         const output = await invoke<string>("run_codex", {
@@ -24,7 +25,18 @@ export function useCodexRunner(options: UseCodexRunnerOptions = {}) {
           cwd,
         });
         const parsed = parseCodexOutput(parser, output || "");
-        onComplete?.(parsed);
+        if (parsed.length === 0) {
+          onMessage?.({
+            id: `codex-${Date.now()}`,
+            role: "assistant",
+            content: "(no output)",
+            timestamp: Date.now(),
+          });
+        } else {
+          for (const message of parsed) {
+            onMessage?.(message);
+          }
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         onError?.(message);
@@ -32,22 +44,37 @@ export function useCodexRunner(options: UseCodexRunnerOptions = {}) {
         setIsRunning(false);
       }
     },
-    [cwd, onComplete, onError]
+    [cwd, onMessage, onError]
   );
 
   return { runCodex, isRunning };
 }
 
-function parseCodexOutput(parser: CodexStreamParser, raw: string): string {
-  if (!raw.trim()) return "";
+function parseCodexOutput(parser: CodexStreamParser, raw: string): ParsedMessage[] {
+  if (!raw.trim()) return [];
 
   const lines = raw.split(/\r?\n/).filter((l) => l.trim().length > 0);
-  let last: string | undefined;
+  let counter = 0;
+  const timestampBase = Date.now();
   for (const line of lines) {
-    const out = parser.feed(line);
-    if (out !== undefined) {
-      last = out;
-    }
+    parser.feed(line);
   }
-  return last || "";
+
+  return parser.toMessages().map((m) => ({
+    id: `codex-${++counter}`,
+    role: m.role,
+    content: m.content,
+    timestamp: timestampBase + counter,
+    toolName: m.toolName,
+    toolResult: m.toolResult,
+    isError: m.isError,
+    isThinking: m.isThinking,
+    usage: m.usage
+      ? {
+          input_tokens: m.usage.input_tokens ?? 0,
+          output_tokens: m.usage.output_tokens ?? 0,
+          cache_read_input_tokens: m.usage.cached_input_tokens,
+        }
+      : undefined,
+  }));
 }

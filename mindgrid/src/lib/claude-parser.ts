@@ -11,7 +11,10 @@ export class ClaudeStreamParser {
   private onDebug?: DebugCallback;
   private messageCounter = 0;
   private currentAssistantId: string | null = null;
+  private currentThinkingId: string | null = null;
   private textBlocks = new Map<number, string>();
+  private thinkingBlocks = new Map<number, string>();
+  private blockTypes = new Map<number, string>();
   private toolBlocks = new Map<
     number,
     {
@@ -125,8 +128,11 @@ export class ClaudeStreamParser {
 
   private resetStreamState(): void {
     this.textBlocks.clear();
+    this.thinkingBlocks.clear();
+    this.blockTypes.clear();
     this.toolBlocks.clear();
     this.currentAssistantId = null;
+    this.currentThinkingId = null;
     this.currentUsage = null;
   }
 
@@ -165,6 +171,13 @@ export class ClaudeStreamParser {
       .join("");
   }
 
+  private buildThinkingText(): string {
+    return Array.from(this.thinkingBlocks.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([, text]) => text)
+      .join("");
+  }
+
   private emitAssistantMessage(content: string, usage?: Usage | null, id?: string): void {
     if (!content) return;
 
@@ -174,6 +187,19 @@ export class ClaudeStreamParser {
       content,
       timestamp: Date.now(),
       usage: this.normalizeUsage(usage ?? null),
+    });
+  }
+
+  private emitThinkingMessage(content: string, isPartial: boolean, id?: string): void {
+    if (!content) return;
+
+    this.onMessage({
+      id: id || `thinking-${++this.messageCounter}`,
+      role: "assistant",
+      content,
+      timestamp: Date.now(),
+      isPartial,
+      isThinking: true,
     });
   }
 
@@ -232,8 +258,12 @@ export class ClaudeStreamParser {
         const blockType = event.content_block?.type;
         const index = event.index ?? 0;
 
-        if (blockType === "text" || blockType === "thinking" || blockType === "assistant_response") {
+        this.blockTypes.set(index, blockType || "text");
+
+        if (blockType === "text" || blockType === "assistant_response") {
           this.textBlocks.set(index, "");
+        } else if (blockType === "thinking") {
+          this.thinkingBlocks.set(index, "");
         } else if (blockType === "tool_use") {
           this.toolBlocks.set(index, {
             id: event.content_block?.id,
@@ -249,7 +279,20 @@ export class ClaudeStreamParser {
         const index = event.index ?? 0;
         const addition = event.delta?.text ?? event.delta?.partial_json ?? "";
 
-        if (this.textBlocks.has(index)) {
+        const blockType = this.blockTypes.get(index);
+
+        if (blockType === "thinking" && this.thinkingBlocks.has(index)) {
+          const prev = this.thinkingBlocks.get(index) || "";
+          const next = prev + addition;
+          this.thinkingBlocks.set(index, next);
+
+          const content = this.buildThinkingText();
+          if (content) {
+            const id = this.currentThinkingId || this.currentAssistantId?.concat("-thinking") || `thinking-${this.messageCounter + 1}`;
+            this.currentThinkingId = id;
+            this.emitThinkingMessage(content, true, id);
+          }
+        } else if (this.textBlocks.has(index)) {
           const prev = this.textBlocks.get(index) || "";
           this.textBlocks.set(index, prev + addition);
 
@@ -291,6 +334,12 @@ export class ClaudeStreamParser {
           this.currentUsage = event.message.usage;
         }
 
+        const thinkingContent = this.buildThinkingText();
+        if (thinkingContent) {
+          const id = this.currentThinkingId || this.currentAssistantId?.concat("-thinking") || `thinking-${++this.messageCounter}`;
+          this.emitThinkingMessage(thinkingContent, false, id);
+        }
+
         const content = this.buildAssistantText();
         this.emitAssistantMessage(content, this.currentUsage, this.currentAssistantId || event.message?.id);
         this.resetStreamState();
@@ -307,7 +356,11 @@ export class ClaudeStreamParser {
         // Extract text content from blocks
         const contentBlocks = event.message.content ?? [];
         const textContent = contentBlocks
-          .filter((block) => block.type === "text")
+          .filter((block) => block.type === "text" || block.type === "assistant_response")
+          .map((block) => block.text || "")
+          .join("");
+        const thinkingContent = contentBlocks
+          .filter((block) => block.type === "thinking")
           .map((block) => block.text || "")
           .join("");
 
@@ -318,6 +371,16 @@ export class ClaudeStreamParser {
             content: textContent,
             timestamp: Date.now(),
             usage: event.message.usage,
+          });
+        }
+
+        if (thinkingContent) {
+          this.onMessage({
+            id: event.message.id ? `${event.message.id}-thinking` : `thinking-${++this.messageCounter}`,
+            role: "assistant",
+            content: thinkingContent,
+            timestamp: Date.now(),
+            isThinking: true,
           });
         }
 
