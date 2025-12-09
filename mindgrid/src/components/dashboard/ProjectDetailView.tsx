@@ -1,17 +1,31 @@
 import { useState, useRef, useEffect } from "react";
 import type { ProjectPreset } from "../../lib/presets";
+import type { PermissionMode, CommitMode } from "../../lib/claude-types";
 import { StatusBadge } from "./StatusBadge";
 import type { DashboardProject, DashboardSession } from "./types";
 import { PathLink } from "../PathLink";
+import { EditProjectDialog } from "./EditProjectDialog";
 
 interface ProjectDetailViewProps {
   project: DashboardProject;
   preset?: ProjectPreset;
+  defaultModel?: string | null;
+  defaultPermissionMode?: PermissionMode;
+  defaultCommitMode?: CommitMode;
   onClose: () => void;
   onOpenSession: (project: DashboardProject, session: DashboardSession) => void;
+  onOpenNewChat: (session: DashboardSession) => void;
   onCreateSession: () => void;
   onDeleteProject: (projectId: string) => Promise<void>;
   onDeleteSession: (sessionId: string) => Promise<void>;
+  onUpdateProject: (projectId: string, updates: {
+    name?: string;
+    defaultModel?: string | null;
+    defaultPermissionMode?: PermissionMode;
+    defaultCommitMode?: CommitMode;
+    buildCommand?: string | null;
+    runCommand?: string | null;
+  }) => Promise<void>;
   onRunProject?: (project: DashboardProject, session: DashboardSession) => void;
 }
 
@@ -21,10 +35,11 @@ const TABS = [
   { id: "github", label: "GitHub" },
 ];
 
-export function ProjectDetailView({ project, preset, onClose, onOpenSession, onCreateSession, onDeleteProject, onDeleteSession, onRunProject }: ProjectDetailViewProps) {
+export function ProjectDetailView({ project, preset, defaultModel, defaultPermissionMode, defaultCommitMode, onClose, onOpenSession, onOpenNewChat, onCreateSession, onDeleteProject, onDeleteSession, onUpdateProject, onRunProject }: ProjectDetailViewProps) {
   const [activeTab, setActiveTab] = useState<"overview" | "sessions" | "github">("overview");
   const [showDeleteProjectModal, setShowDeleteProjectModal] = useState(false);
   const [showDeleteSessionModal, setShowDeleteSessionModal] = useState<string | null>(null);
+  const [showEditProjectModal, setShowEditProjectModal] = useState(false);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
   const [isDeletingSession, setIsDeletingSession] = useState(false);
   const deleteProjectButtonRef = useRef<HTMLButtonElement>(null);
@@ -120,6 +135,20 @@ export function ProjectDetailView({ project, preset, onClose, onOpenSession, onC
           <span className="px-3 py-1.5 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg text-sm text-[var(--text-secondary)]">
             {preset?.name || "Custom Project"}
           </span>
+          <button
+            onClick={() => setShowEditProjectModal(true)}
+            className="p-1.5 hover:bg-[var(--bg-hover)] rounded-lg text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+            title="Edit project"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+              />
+            </svg>
+          </button>
           <button
             onClick={() => setShowDeleteProjectModal(true)}
             className="p-1.5 hover:bg-[rgba(239,68,68,0.15)] rounded-lg text-[var(--text-tertiary)] hover:text-[var(--accent-error)] transition-colors"
@@ -235,6 +264,18 @@ export function ProjectDetailView({ project, preset, onClose, onOpenSession, onC
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenNewChat(session);
+                      }}
+                      className="p-1.5 hover:bg-[var(--bg-hover)] rounded-lg text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] transition-all"
+                      title="Open new chat window"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                    </button>
                     {project.runCommand && onRunProject && (
                       <button
                         onClick={(e) => {
@@ -444,6 +485,17 @@ export function ProjectDetailView({ project, preset, onClose, onOpenSession, onC
           </div>
         </div>
       )}
+
+      {/* Edit Project Dialog */}
+      <EditProjectDialog
+        isOpen={showEditProjectModal}
+        project={project}
+        defaultModel={defaultModel}
+        defaultPermissionMode={defaultPermissionMode}
+        defaultCommitMode={defaultCommitMode}
+        onClose={() => setShowEditProjectModal(false)}
+        onSave={(updates) => onUpdateProject(project.id, updates)}
+      />
     </div>
   );
 }

@@ -10,12 +10,13 @@ interface ProjectCardProps {
   onOpen: (project: DashboardProject) => void;
   onOpenSession: (project: DashboardProject, session: DashboardSession) => void;
   onOpenSessionChat: (sessionId: string) => void;
+  onOpenNewChat: (session: DashboardSession) => void;
   onCreateSession: (project: DashboardProject) => void;
   onDeleteProject: (projectId: string) => Promise<void>;
   onDeleteSession: (sessionId: string) => Promise<void>;
 }
 
-export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSessionChat, onCreateSession, onDeleteProject, onDeleteSession }: ProjectCardProps) {
+export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSessionChat, onOpenNewChat, onCreateSession, onDeleteProject, onDeleteSession }: ProjectCardProps) {
   const [showDeleteProjectModal, setShowDeleteProjectModal] = useState(false);
   const [showDeleteSessionModal, setShowDeleteSessionModal] = useState<string | null>(null);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
@@ -171,6 +172,18 @@ export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSess
                   <span className="text-[var(--text-secondary)] text-xs truncate group-hover/session:text-[var(--text-primary)] transition-colors">{session.name}</span>
                 </div>
                 <div className="flex items-center gap-1 opacity-0 group-hover/session:opacity-100 transition-opacity">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenNewChat(session);
+                    }}
+                    className="p-1.5 rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] transition-colors"
+                    title="Open new chat window"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                    </svg>
+                  </button>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();

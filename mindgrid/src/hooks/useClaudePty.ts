@@ -20,10 +20,11 @@ interface UseClaudePtyOptions {
   onEvent?: (event: ClaudeEvent) => void;
   onMessage?: (message: ParsedMessage) => void;
   onRawOutput?: (data: string) => void;
+  onExit?: (code: number | null) => void;
 }
 
 export function useClaudePty(options: UseClaudePtyOptions = {}) {
-  const { onEvent, onMessage, onRawOutput } = options;
+  const { onEvent, onMessage, onRawOutput, onExit } = options;
   const [ptyId, setPtyId] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const ptyIdRef = useRef<string | null>(null);
@@ -35,12 +36,14 @@ export function useClaudePty(options: UseClaudePtyOptions = {}) {
   const onEventRef = useRef(onEvent);
   const onMessageRef = useRef(onMessage);
   const onRawOutputRef = useRef(onRawOutput);
+  const onExitRef = useRef(onExit);
 
   useEffect(() => {
     onEventRef.current = onEvent;
     onMessageRef.current = onMessage;
     onRawOutputRef.current = onRawOutput;
-  }, [onEvent, onMessage, onRawOutput]);
+    onExitRef.current = onExit;
+  }, [onEvent, onMessage, onRawOutput, onExit]);
 
   // Create parser once with stable refs
   useEffect(() => {
@@ -117,6 +120,9 @@ export function useClaudePty(options: UseClaudePtyOptions = {}) {
           setIsRunning(false);
           setPtyId(null);
           ptyIdRef.current = null;
+
+          // Notify caller of exit
+          onExitRef.current?.(event.payload.code);
         }
       });
 

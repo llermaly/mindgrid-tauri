@@ -5,6 +5,9 @@ import type { GitStatus } from "../lib/git-types";
 import { debug } from "./debugStore";
 import * as db from "../lib/database";
 
+// Lazy import to avoid circular dependency with window-manager
+const getWindowManager = () => import("../lib/window-manager");
+
 // Data structure for session data saved to worktree
 interface WorktreeSessionData {
   name: string;
@@ -71,16 +74,38 @@ export interface PanelState {
   totalCost: number;
 }
 
+/**
+ * ChatWindow represents an independent chat conversation within a session.
+ * Each chat window has its own messages, Claude session, and can be pinned or unpinned.
+ * - Pinned windows persist and are opened when "Open Workspace" is clicked
+ * - Unpinned windows are flagged for cleanup when closed
+ */
+export interface ChatWindow {
+  id: string;
+  sessionId: string;
+  title: string; // User-editable title, defaults to "Chat 1", "Chat 2", etc.
+  claudeSessionId: string | null;
+  messages: ParsedMessage[];
+  isPinned: boolean; // true = persists (variants), false = cleanup on close
+  model: string | null;
+  totalCost: number;
+  totalTokens: number;
+  createdAt: number;
+  updatedAt: number;
+  markedForDeletion?: boolean; // Flag for cleanup when unpinned window is closed
+}
+
 export interface Session {
   id: string;
   name: string;
   projectId: string;
-  claudeSessionId: string | null; // For single chat window mode
+  claudeSessionId: string | null; // Legacy: For single chat window mode (kept for backward compat)
   ptyId: string | null;
-  messages: ParsedMessage[]; // For single chat window mode
+  messages: ParsedMessage[]; // Legacy: For single chat window mode (kept for backward compat)
+  chatWindows: string[]; // Array of ChatWindow IDs belonging to this session
   isRunning: boolean;
   totalCost: number;
-  model: string | null; // Default model for single chat window
+  model: string | null; // Default model for new chat windows
   panelStates?: Partial<Record<PanelType, PanelState>>; // Per-panel state for workspace
   cwd: string;
   createdAt: number;
@@ -116,6 +141,7 @@ interface GhCliStatus {
 interface SessionState {
   projects: Record<string, Project>;
   sessions: Record<string, Session>;
+  chatWindows: Record<string, ChatWindow>; // All chat windows indexed by ID
   activeSessionId: string | null;
   activeProjectId: string | null;
   activeChatSessions: Set<string>; // Sessions with open chat windows
@@ -139,6 +165,21 @@ interface SessionState {
   deleteSession: (id: string) => Promise<void>;
   setActiveSession: (id: string | null) => void;
 
+  // ChatWindow actions
+  createChatWindow: (sessionId: string, options?: { title?: string; isPinned?: boolean; initialPrompt?: string }) => Promise<ChatWindow>;
+  updateChatWindow: (chatWindowId: string, updates: Partial<ChatWindow>) => Promise<void>;
+  deleteChatWindow: (chatWindowId: string) => Promise<void>;
+  getChatWindow: (chatWindowId: string) => ChatWindow | null;
+  getSessionChatWindows: (sessionId: string) => ChatWindow[];
+  getPinnedChatWindows: (sessionId: string) => ChatWindow[];
+  markChatWindowForDeletion: (chatWindowId: string) => Promise<void>;
+  cleanupMarkedChatWindows: () => Promise<void>;
+  addChatWindowMessage: (chatWindowId: string, message: ParsedMessage) => Promise<void>;
+  handleChatWindowClaudeEvent: (chatWindowId: string, event: ClaudeEvent) => Promise<void>;
+  clearChatWindow: (chatWindowId: string) => Promise<void>;
+  setChatWindowModel: (chatWindowId: string, model: string) => void;
+  toggleChatWindowPinned: (chatWindowId: string) => Promise<void>;
+
   // Active chat session tracking
   markSessionChatOpen: (sessionId: string) => void;
   markSessionChatClosed: (sessionId: string) => void;
@@ -148,7 +189,7 @@ interface SessionState {
   refreshActiveChatSessions: () => Promise<void>;
   isSessionActive: (sessionId: string) => boolean;
 
-  // Message actions
+  // Message actions (legacy - for backward compatibility)
   addMessage: (sessionId: string, message: ParsedMessage) => Promise<void>;
   handleClaudeEvent: (sessionId: string, event: ClaudeEvent) => Promise<void>;
 
@@ -193,6 +234,7 @@ const generateId = () => crypto.randomUUID();
 export const useSessionStore = create<SessionState>((set, get) => ({
   projects: {},
   sessions: {},
+  chatWindows: {},
   activeSessionId: null,
   activeProjectId: null,
   activeChatSessions: new Set<string>(),
@@ -230,14 +272,30 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       const sessionList = await db.loadSessions();
       const sessions: Record<string, Session> = {};
       for (const s of sessionList) {
-        // Load messages for each session
+        // Load messages for each session (legacy support)
         const messages = await db.loadMessages(s.id);
-        sessions[s.id] = { ...s, messages };
+        sessions[s.id] = { ...s, messages, chatWindows: s.chatWindows || [] };
 
         // Associate session with project (if not already)
         if (projects[s.projectId]) {
           if (!projects[s.projectId].sessions.includes(s.id)) {
             projects[s.projectId].sessions.push(s.id);
+          }
+        }
+      }
+
+      // Load chat windows
+      const chatWindowList = await db.loadChatWindows();
+      const chatWindows: Record<string, ChatWindow> = {};
+      for (const cw of chatWindowList) {
+        // Load messages for each chat window
+        const messages = await db.loadChatWindowMessages(cw.id);
+        chatWindows[cw.id] = { ...cw, messages };
+
+        // Associate chat window with session (if not already)
+        if (sessions[cw.sessionId]) {
+          if (!sessions[cw.sessionId].chatWindows.includes(cw.id)) {
+            sessions[cw.sessionId].chatWindows.push(cw.id);
           }
         }
       }
@@ -253,6 +311,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       set({
         projects,
         sessions,
+        chatWindows,
         activeSessionId,
         activeProjectId,
         isLoading: false,
@@ -263,6 +322,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       debug.info("SessionStore", "Initialized", {
         projects: Object.keys(projects).length,
         sessions: Object.keys(sessions).length,
+        chatWindows: Object.keys(chatWindows).length,
         activeSessionId,
       });
 
@@ -332,6 +392,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
             claudeSessionId: savedData?.claudeSessionId || null,
             ptyId: null,
             messages: savedData?.messages || [],
+            chatWindows: [], // Will be populated when chat windows are loaded
             isRunning: false,
             totalCost: savedData?.totalCost || 0,
             model: savedData?.model || null,
@@ -406,7 +467,21 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
     debug.info("SessionStore", "Deleting project", { id, name: project.name });
 
-    // Delete all sessions first (including worktree cleanup)
+    // Close all chat windows for all sessions first
+    try {
+      const { closeAllSessionChatWindows } = await getWindowManager();
+      for (const sessionId of project.sessions) {
+        try {
+          await closeAllSessionChatWindows(sessionId);
+        } catch (err) {
+          debug.warn("SessionStore", "Failed to close chat windows for session", { sessionId, error: String(err) });
+        }
+      }
+    } catch (err) {
+      debug.warn("SessionStore", "Failed to import window-manager", { error: String(err) });
+    }
+
+    // Delete all sessions (including worktree cleanup)
     for (const sessionId of project.sessions) {
       const session = get().sessions[sessionId];
       if (session) {
@@ -501,6 +576,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       claudeSessionId: null,
       ptyId: null,
       messages: [],
+      chatWindows: [], // Initialize empty, chat windows added via createChatWindow
       isRunning: false,
       totalCost: 0,
       model: defaultModel, // Inherit from project default
@@ -576,6 +652,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
     debug.info("SessionStore", "Deleting session", { id, name: session.name });
 
+    // Close all chat windows for this session first
+    try {
+      const { closeAllSessionChatWindows } = await getWindowManager();
+      await closeAllSessionChatWindows(id);
+    } catch (err) {
+      debug.warn("SessionStore", "Failed to close chat windows for session", { id, error: String(err) });
+    }
+
     // Remove worktree if it exists and is different from project path
     const project = get().projects[session.projectId];
     if (project && session.cwd !== project.path && session.cwd.includes(".mindgrid/worktrees")) {
@@ -629,6 +713,310 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         set({ activeProjectId: session.projectId });
       }
     }
+  },
+
+  // ChatWindow CRUD actions
+  createChatWindow: async (sessionId, options) => {
+    const session = get().sessions[sessionId];
+    if (!session) {
+      throw new Error(`Session not found: ${sessionId}`);
+    }
+
+    // Generate a unique ID and default title
+    const id = generateId();
+    const existingWindows = get().getSessionChatWindows(sessionId);
+    const defaultTitle = options?.title || `Chat ${existingWindows.length + 1}`;
+
+    const chatWindow: ChatWindow = {
+      id,
+      sessionId,
+      title: defaultTitle,
+      claudeSessionId: null,
+      messages: [],
+      isPinned: options?.isPinned ?? false, // Defaults to unpinned for new windows
+      model: session.model, // Inherit from session
+      totalCost: 0,
+      totalTokens: 0,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    debug.info("SessionStore", "Creating chat window", { id, sessionId, title: defaultTitle, isPinned: chatWindow.isPinned });
+
+    // Save to DB
+    await db.saveChatWindow(chatWindow);
+
+    // Update state
+    set((state) => {
+      const session = state.sessions[sessionId];
+      return {
+        chatWindows: { ...state.chatWindows, [id]: chatWindow },
+        sessions: {
+          ...state.sessions,
+          [sessionId]: {
+            ...session,
+            chatWindows: [...session.chatWindows, id],
+            updatedAt: Date.now(),
+          },
+        },
+      };
+    });
+
+    // Update session in DB
+    const updatedSession = get().sessions[sessionId];
+    if (updatedSession) {
+      await db.saveSession({ ...updatedSession, messages: [] });
+    }
+
+    return chatWindow;
+  },
+
+  updateChatWindow: async (chatWindowId, updates) => {
+    const chatWindow = get().chatWindows[chatWindowId];
+    if (!chatWindow) return;
+
+    const updated = { ...chatWindow, ...updates, updatedAt: Date.now() };
+
+    set((state) => ({
+      chatWindows: { ...state.chatWindows, [chatWindowId]: updated },
+    }));
+
+    // Save to DB (excluding messages which are stored separately)
+    await db.saveChatWindow({ ...updated, messages: [] });
+  },
+
+  deleteChatWindow: async (chatWindowId) => {
+    const chatWindow = get().chatWindows[chatWindowId];
+    if (!chatWindow) return;
+
+    debug.info("SessionStore", "Deleting chat window", { chatWindowId, sessionId: chatWindow.sessionId });
+
+    // Delete from DB
+    await db.deleteChatWindow(chatWindowId);
+
+    // Update state
+    set((state) => {
+      const { [chatWindowId]: _, ...remainingWindows } = state.chatWindows;
+      const session = state.sessions[chatWindow.sessionId];
+
+      return {
+        chatWindows: remainingWindows,
+        sessions: session ? {
+          ...state.sessions,
+          [chatWindow.sessionId]: {
+            ...session,
+            chatWindows: session.chatWindows.filter(id => id !== chatWindowId),
+            updatedAt: Date.now(),
+          },
+        } : state.sessions,
+      };
+    });
+
+    // Update session in DB
+    const session = get().sessions[chatWindow.sessionId];
+    if (session) {
+      await db.saveSession({ ...session, messages: [] });
+    }
+  },
+
+  getChatWindow: (chatWindowId) => {
+    return get().chatWindows[chatWindowId] || null;
+  },
+
+  getSessionChatWindows: (sessionId) => {
+    const session = get().sessions[sessionId];
+    if (!session) return [];
+    return session.chatWindows
+      .map(id => get().chatWindows[id])
+      .filter((cw): cw is ChatWindow => cw !== undefined);
+  },
+
+  getPinnedChatWindows: (sessionId) => {
+    return get().getSessionChatWindows(sessionId).filter(cw => cw.isPinned);
+  },
+
+  markChatWindowForDeletion: async (chatWindowId) => {
+    const chatWindow = get().chatWindows[chatWindowId];
+    if (!chatWindow) return;
+
+    // Only mark unpinned windows for deletion
+    if (chatWindow.isPinned) {
+      debug.info("SessionStore", "Skipping deletion mark for pinned window", { chatWindowId });
+      return;
+    }
+
+    debug.info("SessionStore", "Marking chat window for deletion", { chatWindowId });
+    await get().updateChatWindow(chatWindowId, { markedForDeletion: true });
+  },
+
+  cleanupMarkedChatWindows: async () => {
+    const markedWindows = Object.values(get().chatWindows).filter(cw => cw.markedForDeletion);
+    debug.info("SessionStore", "Cleaning up marked chat windows", { count: markedWindows.length });
+
+    for (const chatWindow of markedWindows) {
+      await get().deleteChatWindow(chatWindow.id);
+    }
+  },
+
+  addChatWindowMessage: async (chatWindowId, message) => {
+    debug.event("SessionStore", "Adding chat window message", { chatWindowId, role: message.role });
+
+    const chatWindow = get().chatWindows[chatWindowId];
+    if (!chatWindow) {
+      console.error("[SessionStore] Chat window not found:", chatWindowId);
+      return;
+    }
+
+    set((state) => {
+      const cw = state.chatWindows[chatWindowId];
+      if (!cw) return state;
+
+      // Check if message already exists (for streaming updates)
+      const existingIndex = cw.messages.findIndex((m) => m.id === message.id);
+      let newMessages;
+
+      if (existingIndex >= 0) {
+        newMessages = [...cw.messages];
+        newMessages[existingIndex] = { ...newMessages[existingIndex], ...message };
+      } else {
+        newMessages = [...cw.messages, message];
+      }
+
+      return {
+        chatWindows: {
+          ...state.chatWindows,
+          [chatWindowId]: {
+            ...cw,
+            messages: newMessages,
+            updatedAt: Date.now(),
+          },
+        },
+      };
+    });
+
+    // Save message to store (only if not partial)
+    if (!message.isPartial) {
+      try {
+        await db.saveChatWindowMessage(chatWindowId, message);
+      } catch (err) {
+        console.error("[SessionStore] Failed to save chat window message:", err);
+      }
+    }
+  },
+
+  handleChatWindowClaudeEvent: async (chatWindowId, event) => {
+    debug.event("SessionStore", "Chat window Claude event", { chatWindowId, type: event.type });
+
+    const chatWindow = get().chatWindows[chatWindowId];
+    if (!chatWindow) return;
+
+    const updates: Partial<ChatWindow> = { updatedAt: Date.now() };
+    let shouldSave = false;
+
+    if (event.type === "system" && event.subtype === "init") {
+      updates.claudeSessionId = event.session_id || null;
+      // Only set model from init event if chat window doesn't already have one
+      if (!chatWindow.model && event.model) {
+        updates.model = event.model;
+      }
+    }
+
+    if (event.type === "result" && event.cost_usd) {
+      updates.totalCost = chatWindow.totalCost + event.cost_usd;
+      shouldSave = true;
+    }
+
+    // Track tokens if available from modelUsage
+    if (event.type === "result" && event.modelUsage) {
+      let totalTokensFromEvent = 0;
+      for (const modelData of Object.values(event.modelUsage)) {
+        totalTokensFromEvent +=
+          (modelData.inputTokens || 0) +
+          (modelData.outputTokens || 0) +
+          (modelData.cacheReadInputTokens || 0) +
+          (modelData.cacheCreationInputTokens || 0);
+      }
+      if (totalTokensFromEvent > 0) {
+        updates.totalTokens = (chatWindow.totalTokens || 0) + totalTokensFromEvent;
+        shouldSave = true;
+      }
+    }
+
+    const updated: ChatWindow = { ...chatWindow, ...updates };
+
+    set((state) => ({
+      chatWindows: { ...state.chatWindows, [chatWindowId]: updated },
+    }));
+
+    // Save chat window to DB if cost/tokens changed
+    if (shouldSave) {
+      await db.saveChatWindow({ ...updated, messages: [] });
+    }
+  },
+
+  clearChatWindow: async (chatWindowId) => {
+    const chatWindow = get().chatWindows[chatWindowId];
+    if (!chatWindow) return;
+
+    debug.info("SessionStore", "Clearing chat window messages", { chatWindowId });
+
+    // Clear messages from state
+    set((state) => ({
+      chatWindows: {
+        ...state.chatWindows,
+        [chatWindowId]: {
+          ...state.chatWindows[chatWindowId],
+          messages: [],
+          claudeSessionId: null, // Reset Claude session to start fresh
+          totalCost: 0,
+          totalTokens: 0,
+          updatedAt: Date.now(),
+        },
+      },
+    }));
+
+    // Clear messages from database
+    await db.clearChatWindowMessages(chatWindowId);
+
+    // Update chat window in database
+    const updated = get().chatWindows[chatWindowId];
+    if (updated) {
+      await db.saveChatWindow({ ...updated, messages: [] });
+    }
+  },
+
+  setChatWindowModel: (chatWindowId, model) => {
+    debug.info("SessionStore", "Setting chat window model", { chatWindowId, model });
+    set((state) => {
+      const chatWindow = state.chatWindows[chatWindowId];
+      if (!chatWindow) return state;
+      return {
+        chatWindows: {
+          ...state.chatWindows,
+          [chatWindowId]: { ...chatWindow, model, updatedAt: Date.now() },
+        },
+      };
+    });
+
+    // Persist to database
+    const chatWindow = get().chatWindows[chatWindowId];
+    if (chatWindow) {
+      db.saveChatWindow({ ...chatWindow, messages: [] });
+    }
+  },
+
+  toggleChatWindowPinned: async (chatWindowId) => {
+    const chatWindow = get().chatWindows[chatWindowId];
+    if (!chatWindow) return;
+
+    const newPinned = !chatWindow.isPinned;
+    debug.info("SessionStore", "Toggling chat window pinned", { chatWindowId, isPinned: newPinned });
+
+    await get().updateChatWindow(chatWindowId, {
+      isPinned: newPinned,
+      // Clear deletion mark if pinning
+      markedForDeletion: newPinned ? false : chatWindow.markedForDeletion,
+    });
   },
 
   addMessage: async (sessionId, message) => {

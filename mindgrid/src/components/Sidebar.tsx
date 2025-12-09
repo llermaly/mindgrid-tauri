@@ -57,6 +57,13 @@ export function Sidebar({ activePage, onOpenSettings, onNavigateHome }: SidebarP
       const primarySession = { id: "base", name: sessionName, prompt: options?.prompt, model: options?.model };
       const variantConfigs = [primarySession, ...(options?.variants || [])];
 
+      debug.info("Sidebar", "Variant configs to create", {
+        primarySessionName: sessionName,
+        variantCount: options?.variants?.length || 0,
+        totalConfigs: variantConfigs.length,
+        configs: variantConfigs.map(v => ({ id: v.id, name: v.name }))
+      });
+
       const { setSessionModel, updateSession } = useSessionStore.getState();
       const createdSessions: Session[] = [];
 
@@ -65,8 +72,14 @@ export function Sidebar({ activePage, onOpenSettings, onNavigateHome }: SidebarP
           variant.name?.trim() ||
           (sessionName ? `${sessionName} ${variantConfigs.length > 1 ? `(${index + 1})` : ""}` : `Variant ${index + 1}`);
 
+        debug.info("Sidebar", `Creating session ${index + 1}/${variantConfigs.length}`, {
+          index,
+          variantName: variant.name,
+          computedName: name
+        });
+
         const newSession = await createSession(project.id, name, projectPath);
-        debug.info("Sidebar", "Session created", { id: newSession.id, name });
+        debug.info("Sidebar", "Session created successfully", { id: newSession.id, name, index });
 
         // Copy selected gitignored files to worktree
         if (filesToCopy && filesToCopy.length > 0 && newSession.cwd !== projectPath) {
@@ -99,6 +112,10 @@ export function Sidebar({ activePage, onOpenSettings, onNavigateHome }: SidebarP
 
       // Navigate to the new session and open chat windows for all sessions
       onNavigateHome();
+      debug.info("Sidebar", "Sessions created, opening windows", {
+        createdCount: createdSessions.length,
+        sessions: createdSessions.map(s => ({ id: s.id, name: s.name }))
+      });
       if (createdSessions.length > 0) {
         setActiveSession(createdSessions[0].id);
         await openAllProjectSessionChats(

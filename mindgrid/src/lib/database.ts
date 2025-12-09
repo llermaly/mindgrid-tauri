@@ -1,6 +1,6 @@
 import Database from "@tauri-apps/plugin-sql";
 import { load, Store } from "@tauri-apps/plugin-store";
-import type { Project, Session } from "../stores/sessionStore";
+import type { Project, Session, ChatWindow } from "../stores/sessionStore";
 import type { ParsedMessage } from "./claude-types";
 import { debug } from "../stores/debugStore";
 import { getStoreFilename, getDatabaseUri } from "./dev-mode";
@@ -141,6 +141,7 @@ export async function saveSession(session: Session): Promise<void> {
     claudeSessionId: session.claudeSessionId,
     ptyId: null,
     messages: [], // Messages stored separately
+    chatWindows: session.chatWindows || [], // ChatWindow IDs
     isRunning: false,
     totalCost: session.totalCost,
     model: session.model,
@@ -235,4 +236,106 @@ export async function deleteMessages(sessionId: string): Promise<void> {
 export async function clearSessionMessages(sessionId: string): Promise<void> {
   await deleteMessages(sessionId);
   debug.info("Database", `Cleared messages for session ${sessionId}`);
+}
+
+// ChatWindow operations - using Store for reliable persistence
+export async function loadChatWindows(): Promise<ChatWindow[]> {
+  const s = await getStore();
+  const data = await s.get<ChatWindow[]>("chatWindows");
+  const chatWindows = data || [];
+  debug.info("Database", `Loaded ${chatWindows.length} chat windows from store`);
+  return chatWindows.map((cw) => ({
+    ...cw,
+    messages: [], // Messages loaded separately
+    isPinned: cw.isPinned ?? false,
+    totalCost: cw.totalCost || 0,
+    totalTokens: cw.totalTokens || 0,
+  }));
+}
+
+export async function saveChatWindow(chatWindow: ChatWindow): Promise<void> {
+  const s = await getStore();
+  const chatWindows = (await s.get<ChatWindow[]>("chatWindows")) || [];
+  const index = chatWindows.findIndex((cw) => cw.id === chatWindow.id);
+
+  // Create a serializable version (exclude runtime-only fields like messages)
+  const chatWindowToSave: ChatWindow = {
+    id: chatWindow.id,
+    sessionId: chatWindow.sessionId,
+    title: chatWindow.title,
+    claudeSessionId: chatWindow.claudeSessionId,
+    messages: [], // Messages stored separately
+    isPinned: chatWindow.isPinned,
+    model: chatWindow.model,
+    totalCost: chatWindow.totalCost,
+    totalTokens: chatWindow.totalTokens,
+    createdAt: chatWindow.createdAt,
+    updatedAt: chatWindow.updatedAt,
+    markedForDeletion: chatWindow.markedForDeletion,
+  };
+
+  if (index >= 0) {
+    chatWindows[index] = chatWindowToSave;
+  } else {
+    chatWindows.push(chatWindowToSave);
+  }
+
+  await s.set("chatWindows", chatWindows);
+  await s.save();
+  debug.info("Database", "Saved chat window to store", { id: chatWindow.id, title: chatWindow.title });
+}
+
+export async function deleteChatWindow(chatWindowId: string): Promise<void> {
+  const s = await getStore();
+  const chatWindows = (await s.get<ChatWindow[]>("chatWindows")) || [];
+  const filtered = chatWindows.filter((cw) => cw.id !== chatWindowId);
+  await s.set("chatWindows", filtered);
+  await s.save();
+
+  // Also delete messages for this chat window
+  await deleteChatWindowMessages(chatWindowId);
+  debug.info("Database", "Deleted chat window from store", { id: chatWindowId });
+}
+
+// ChatWindow message operations
+export async function loadChatWindowMessages(chatWindowId: string): Promise<ParsedMessage[]> {
+  const s = await getStore();
+  const allMessages = (await s.get<Record<string, ParsedMessage[]>>("chatWindowMessages")) || {};
+  const messages = allMessages[chatWindowId] || [];
+  debug.info("Database", `Loaded ${messages.length} messages for chat window ${chatWindowId}`);
+  return messages;
+}
+
+export async function saveChatWindowMessage(chatWindowId: string, message: ParsedMessage): Promise<void> {
+  const s = await getStore();
+  const allMessages = (await s.get<Record<string, ParsedMessage[]>>("chatWindowMessages")) || {};
+  const chatWindowMessages = allMessages[chatWindowId] || [];
+
+  // Check if message already exists (update) or is new (add)
+  const index = chatWindowMessages.findIndex((m) => m.id === message.id);
+  if (index >= 0) {
+    chatWindowMessages[index] = message;
+  } else {
+    chatWindowMessages.push(message);
+  }
+
+  allMessages[chatWindowId] = chatWindowMessages;
+  await s.set("chatWindowMessages", allMessages);
+  await s.save();
+  debug.info("Database", `Saved message to chat window ${chatWindowId}`, { messageId: message.id });
+}
+
+export async function deleteChatWindowMessages(chatWindowId: string): Promise<void> {
+  const s = await getStore();
+  const allMessages = (await s.get<Record<string, ParsedMessage[]>>("chatWindowMessages")) || {};
+  delete allMessages[chatWindowId];
+  await s.set("chatWindowMessages", allMessages);
+  await s.save();
+  debug.info("Database", `Deleted messages for chat window ${chatWindowId}`);
+}
+
+// Alias for clearing chat window messages
+export async function clearChatWindowMessages(chatWindowId: string): Promise<void> {
+  await deleteChatWindowMessages(chatWindowId);
+  debug.info("Database", `Cleared messages for chat window ${chatWindowId}`);
 }

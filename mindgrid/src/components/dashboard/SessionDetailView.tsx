@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { Session, PanelType, PanelState } from "../../stores/sessionStore";
+import type { Session, PanelType, PanelState, ChatWindow } from "../../stores/sessionStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import type { GitStatus, GitDiffFile, GitDiffResult, GitFileDiff } from "../../lib/git-types";
 import { getGitStatusConfig } from "../../lib/git-types";
 import { StatusBadge } from "./StatusBadge";
 import type { DashboardSessionStatus } from "./types";
 import { MonacoDiffViewer } from "../diff/MonacoDiffViewer";
+import { openChatWindow, openNewChatInSession } from "../../lib/window-manager";
 
 const SESSION_TABS = [
   { id: "overview", label: "Overview" },
@@ -297,6 +298,9 @@ export function SessionDetailView({
                   <SingleChatCard session={session} />
                 </div>
               )}
+
+              {/* Chat Windows */}
+              <ChatWindowsCard session={session} projectName={projectName} />
 
               {/* Recent Messages Preview */}
               <RecentMessagesCard messages={session.messages} limit={5} />
@@ -665,6 +669,149 @@ function RecentMessagesCard({ messages, limit = 5 }: { messages: import("../../l
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function ChatWindowsCard({ session, projectName }: { session: Session; projectName: string }) {
+  const chatWindows = useSessionStore((state) => state.getSessionChatWindows(session.id));
+  const toggleChatWindowPinned = useSessionStore((state) => state.toggleChatWindowPinned);
+  const deleteChatWindow = useSessionStore((state) => state.deleteChatWindow);
+
+  const handleOpenChatWindow = async (chatWindow: ChatWindow) => {
+    await openChatWindow({
+      sessionId: session.id,
+      sessionName: session.name,
+      projectName,
+      cwd: session.cwd,
+      chatWindowId: chatWindow.id,
+    });
+  };
+
+  const handleNewChatWindow = async () => {
+    await openNewChatInSession({
+      sessionId: session.id,
+      sessionName: session.name,
+      projectName,
+      cwd: session.cwd,
+    });
+  };
+
+  return (
+    <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-medium text-white">Chat Windows</h3>
+        <button
+          onClick={handleNewChatWindow}
+          className="p-1.5 hover:bg-neutral-800 rounded text-neutral-400 hover:text-white transition-colors"
+          title="New chat window"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+        </button>
+      </div>
+
+      {chatWindows.length === 0 ? (
+        <div className="text-center py-6">
+          <div className="w-10 h-10 mx-auto mb-3 rounded-lg bg-neutral-800 border border-neutral-700 flex items-center justify-center">
+            <svg className="w-5 h-5 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+          </div>
+          <p className="text-sm text-neutral-400">No chat windows yet</p>
+          <button
+            onClick={handleNewChatWindow}
+            className="mt-2 text-xs text-[var(--accent-primary)] hover:underline"
+          >
+            Create a new chat window
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {chatWindows.map((cw) => (
+            <div
+              key={cw.id}
+              className="flex items-center gap-3 p-3 bg-neutral-800 rounded-lg group hover:bg-neutral-700/70 transition-colors"
+            >
+              {/* Pin indicator */}
+              <button
+                onClick={() => toggleChatWindowPinned(cw.id)}
+                className={`p-1 rounded transition-colors ${
+                  cw.isPinned
+                    ? "text-amber-400 hover:text-amber-300"
+                    : "text-neutral-500 hover:text-neutral-300"
+                }`}
+                title={cw.isPinned ? "Unpin (won't open with workspace)" : "Pin (opens with workspace)"}
+              >
+                <svg className="w-4 h-4" fill={cw.isPinned ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                </svg>
+              </button>
+
+              {/* Chat window info */}
+              <button
+                onClick={() => handleOpenChatWindow(cw)}
+                className="flex-1 text-left"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-neutral-200">{cw.title}</span>
+                  {cw.markedForDeletion && (
+                    <span className="px-1.5 py-0.5 text-[10px] bg-red-500/20 text-red-400 rounded">
+                      Cleanup
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-3 text-xs text-neutral-500 mt-0.5">
+                  <span>{cw.messages.length} messages</span>
+                  <span>${cw.totalCost.toFixed(4)}</span>
+                  {cw.model && <span>{cw.model}</span>}
+                </div>
+              </button>
+
+              {/* Actions */}
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={() => handleOpenChatWindow(cw)}
+                  className="p-1.5 hover:bg-neutral-600 rounded text-neutral-400 hover:text-white transition-colors"
+                  title="Open chat window"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => deleteChatWindow(cw.id)}
+                  className="p-1.5 hover:bg-red-500/20 rounded text-neutral-400 hover:text-red-400 transition-colors"
+                  title="Delete chat window"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Legend */}
+      {chatWindows.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-neutral-800 flex items-center gap-4 text-xs text-neutral-500">
+          <div className="flex items-center gap-1">
+            <svg className="w-3 h-3 text-amber-400" fill="currentColor" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+            </svg>
+            <span>Pinned - opens with workspace</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <svg className="w-3 h-3 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+            </svg>
+            <span>Unpinned - cleaned up when closed</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

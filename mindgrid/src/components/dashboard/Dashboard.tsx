@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { PRESETS, type ChatType } from "../../lib/presets";
-import { openAllProjectSessionChats, openMultipleChatWindows, openRunCommandWindow, runAllProjectSessions } from "../../lib/window-manager";
+import { openAllProjectSessionChats, openMultipleChatWindows, openRunCommandWindow, runAllProjectSessions, openNewChatInSession } from "../../lib/window-manager";
 import { useSessionStore, type Project, type Session } from "../../stores/sessionStore";
 import { useUsageStore } from "../../stores/usageStore";
 import { getWorktreeInfo } from "../../lib/dev-mode";
@@ -38,6 +38,7 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
     refreshGitStatus,
     deleteProject,
     deleteSession,
+    updateProject,
     refreshActiveChatSessions,
     isSessionActive,
     isSessionRunning,
@@ -198,6 +199,24 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
     }
   };
 
+  const handleOpenNewChat = (session: DashboardSession) => {
+    const storeSession = sessions[session.id];
+    if (!storeSession) return;
+    const project = projects[storeSession.projectId];
+    if (!project) return;
+
+    void openNewChatInSession({
+      sessionId: session.id,
+      sessionName: session.name,
+      projectName: project.name,
+      cwd: storeSession.cwd,
+    });
+  };
+
+  const handleUpdateProject = async (projectId: string, updates: { name?: string; buildCommand?: string | null; runCommand?: string | null }) => {
+    await updateProject(projectId, updates);
+  };
+
   const handleOpenCreateSessionDialog = (projectId?: string) => {
     if (projectId) {
       setCreateSessionForProjectId(projectId);
@@ -286,10 +305,9 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
   ) => {
     try {
       const project = await createProject(projectName, projectPath, projectCommands);
-      const variantConfigs =
-        options?.variants && options.variants.length > 0
-          ? options.variants
-          : [{ id: "base", name: sessionName, prompt: options?.prompt, model: options?.model }];
+      // Always include the primary session, then add any variants
+      const primarySession = { id: "base", name: sessionName, prompt: options?.prompt, model: options?.model };
+      const variantConfigs = [primarySession, ...(options?.variants || [])];
 
       const { setSessionModel, updateSession } = useSessionStore.getState();
       const createdSessions: Session[] = [];
@@ -476,11 +494,16 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
             <ProjectDetailView
               project={selectedProject}
               preset={presetMap[selectedProject.presetId]}
+              defaultModel={projects[selectedProject.id]?.defaultModel}
+              defaultPermissionMode={projects[selectedProject.id]?.defaultPermissionMode}
+              defaultCommitMode={projects[selectedProject.id]?.defaultCommitMode}
               onClose={() => setSelectedProjectId(null)}
               onOpenSession={handleOpenSession}
+              onOpenNewChat={handleOpenNewChat}
               onCreateSession={() => handleOpenCreateSessionDialog(selectedProject.id)}
               onDeleteProject={handleDeleteProject}
               onDeleteSession={handleDeleteSession}
+              onUpdateProject={handleUpdateProject}
               onRunProject={handleRunProject}
             />
           ) : (
@@ -505,6 +528,7 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
                             onOpen={(p) => setSelectedProjectId(p.id)}
                             onOpenSession={handleOpenSession}
                             onOpenSessionChat={handleOpenSessionChat}
+                            onOpenNewChat={handleOpenNewChat}
                             onCreateSession={(p) => handleOpenCreateSessionDialog(p.id)}
                             onDeleteProject={handleDeleteProject}
                             onDeleteSession={handleDeleteSession}

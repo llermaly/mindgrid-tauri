@@ -459,6 +459,7 @@ export function ChatUI({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modeButtonRef = useRef<HTMLButtonElement>(null);
   const commitButtonRef = useRef<HTMLButtonElement>(null);
+  const isContextQueryRef = useRef(false); // Track if current run is auto /context
 
   useEffect(() => {
     if (!filtersExpanded) return;
@@ -560,6 +561,23 @@ export function ChatUI({
         setContextUsed(percentage);
       }
     },
+    onExit: (code) => {
+      // After successful Claude exit, auto-run /context to get accurate context usage
+      // Skip if this exit was from a /context query itself (avoid infinite loop)
+      if (code === 0 && !isContextQueryRef.current && claudeSessionId) {
+        debug.info("ChatUI", "Auto-running /context after successful Claude exit");
+        isContextQueryRef.current = true;
+        // Small delay to ensure previous process fully cleaned up
+        setTimeout(() => {
+          sendMessage("/context").finally(() => {
+            isContextQueryRef.current = false;
+          });
+        }, 100);
+      } else if (isContextQueryRef.current) {
+        debug.info("ChatUI", "Skipping auto /context (was context query)");
+        isContextQueryRef.current = false;
+      }
+    },
   });
 
   const { runCodex, isRunning: isCodexRunning } = useCodexRunner({
@@ -625,12 +643,6 @@ export function ChatUI({
     window.addEventListener("keydown", handleEsc);
     return () => window.removeEventListener("keydown", handleEsc);
   }, [filtersExpanded]);
-
-  // Rough context usage estimate based on message count
-  useEffect(() => {
-    const estimate = Math.min(95, Math.max(5, messages.length * 5));
-    setContextUsed(estimate);
-  }, [messages.length]);
 
   // Allow closing filters with Escape for quick cleanup
   useEffect(() => {
