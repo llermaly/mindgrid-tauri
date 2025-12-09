@@ -541,15 +541,20 @@ export function Dashboard() {
       />
 
       {(() => {
-        const dialogProject = createSessionForProjectId
-          ? activeProjects.find(p => p.id === createSessionForProjectId)
-          : selectedProject;
+        const dialogProjectId = createSessionForProjectId || selectedProjectId;
+        const dialogProject = dialogProjectId
+          ? activeProjects.find(p => p.id === dialogProjectId)
+          : null;
+        const sourceProject = dialogProjectId ? projects[dialogProjectId] : null;
         return dialogProject && (
           <CreateSessionDialog
             isOpen={showCreateSessionDialog}
             projectName={dialogProject.name}
             projectPath={dialogProject.path}
             existingSessionCount={dialogProject.sessions.length}
+            defaultModel={sourceProject?.defaultModel}
+            defaultPermissionMode={sourceProject?.defaultPermissionMode}
+            defaultCommitMode={sourceProject?.defaultCommitMode}
             onClose={() => {
               setShowCreateSessionDialog(false);
               setCreateSessionForProjectId(null);

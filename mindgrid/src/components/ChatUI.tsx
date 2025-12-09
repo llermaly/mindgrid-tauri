@@ -184,7 +184,7 @@ export function ChatUI({
   const [showUsagePopup, setShowUsagePopup] = useState(false);
   const [usagePopupPos, setUsagePopupPos] = useState({ x: 0, y: 0 });
   const [filtersExpanded, setFiltersExpanded] = useState(false);
-  const [activeFilters, setActiveFilters] = useState<string[]>(['all']);
+  const [activeFilters, setActiveFilters] = useState<string[]>(['thinking', 'text', 'user']);
   const [attachments, setAttachments] = useState<File[]>([]);
   const [isListening, setIsListening] = useState(false);
   const [showTerminal, setShowTerminal] = useState(false);

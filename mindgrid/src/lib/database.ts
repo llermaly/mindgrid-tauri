@@ -1,7 +1,7 @@
 import Database from "@tauri-apps/plugin-sql";
 import { load, Store } from "@tauri-apps/plugin-store";
 import type { Project, Session } from "../stores/sessionStore";
-import type { ParsedMessage } from "./claude-types";
+import type { ParsedMessage, PermissionMode, CommitMode } from "./claude-types";
 import { debug } from "../stores/debugStore";
 import { getStoreFilename, getDatabaseUri } from "./dev-mode";
 
@@ -75,6 +75,8 @@ export async function loadProjects(): Promise<Project[]> {
   return projects.map((p) => ({
     ...p,
     sessions: p.sessions || [], // Ensure sessions array exists
+    defaultPermissionMode: p.defaultPermissionMode || 'bypassPermissions', // Default for existing projects
+    defaultCommitMode: p.defaultCommitMode || 'checkpoint', // Default for existing projects
   }));
 }
 
