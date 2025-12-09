@@ -2,7 +2,8 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { ClaudeStreamParser } from "../lib/claude-parser";
-import type { ClaudeEvent, ParsedMessage, PermissionMode } from "../lib/claude-types";
+import type { ClaudeEvent, ParsedMessage, PermissionMode, CommitMode } from "../lib/claude-types";
+import { DEFAULT_STRUCTURED_PROMPT_TEMPLATE } from "../lib/claude-types";
 import { debug } from "../stores/debugStore";
 
 interface PtyOutput {
@@ -136,6 +137,7 @@ export function useClaudePty(options: UseClaudePtyOptions = {}) {
     cwd?: string;
     claudeSessionId?: string | null;
     permissionMode?: PermissionMode;
+    commitMode?: CommitMode;
     model?: string | null;
   }>({});
 
@@ -143,11 +145,12 @@ export function useClaudePty(options: UseClaudePtyOptions = {}) {
     cwd?: string,
     claudeSessionId?: string | null,
     permissionMode?: PermissionMode,
-    model?: string | null
+    model?: string | null,
+    commitMode?: CommitMode
   ) => {
     // Just store the config and "start" the session conceptually
-    configRef.current = { cwd, claudeSessionId, permissionMode, model };
-    debug.info("PTY", "Session initialized", { cwd, claudeSessionId, permissionMode, model });
+    configRef.current = { cwd, claudeSessionId, permissionMode, model, commitMode };
+    debug.info("PTY", "Session initialized", { cwd, claudeSessionId, permissionMode, model, commitMode });
 
     // Return a dummy ID to satisfy the UI that we "started"
     return "session-active";
@@ -174,12 +177,19 @@ export function useClaudePty(options: UseClaudePtyOptions = {}) {
       // Reset parser state for new message to avoid stale data
       parserRef.current?.flush();
 
-      const { cwd, claudeSessionId, permissionMode: configPermissionMode, model } = configRef.current;
+      const { cwd, claudeSessionId, permissionMode: configPermissionMode, model, commitMode } = configRef.current;
       const permissionMode = overridePermissionMode || configPermissionMode || 'default';
+
+      // Enhance message with structured commit instructions if in structured mode
+      let finalMessage = message;
+      if (commitMode === 'structured') {
+        finalMessage = `${message}\n\n${DEFAULT_STRUCTURED_PROMPT_TEMPLATE}`;
+        console.log("[useClaudePty] Enhanced prompt with structured commit instructions");
+      }
 
       // Build args similar to commander - each message spawns fresh process
       const claudeArgs: string[] = [
-        "-p", message,
+        "-p", finalMessage,
         "--output-format", "stream-json",
         "--verbose",
         "--include-partial-messages"

@@ -464,20 +464,28 @@ export const useSessionStore = create<SessionState>((set, get) => ({
            // Use sanitized name + short ID for uniqueness and readability
            const sanitizedName = name.replace(/[^a-zA-Z0-9-_]/g, "-").toLowerCase();
            const worktreeName = `${sanitizedName}-${id.slice(0, 6)}`;
-           
+
            debug.info("SessionStore", "Creating worktree for session", { worktreeName });
-           
+
            const worktreePath = await invoke<string>("create_workspace_worktree", {
              projectPath: project.path,
              name: worktreeName
            });
-           sessionCwd = worktreePath;
-           debug.info("SessionStore", "Created worktree", { worktreePath });
+
+           // Validate worktree was created successfully
+           if (worktreePath && worktreePath !== project.path && worktreePath.includes('.mindgrid/worktrees')) {
+             sessionCwd = worktreePath;
+             debug.info("SessionStore", "Created worktree", { worktreePath });
+           } else {
+             throw new Error(`Worktree creation returned invalid path: ${worktreePath}`);
+           }
         }
       }
     } catch (err) {
       console.error("Failed to create worktree:", err);
       debug.error("SessionStore", "Failed to create worktree", err);
+      // Re-throw to prevent session creation with invalid cwd
+      throw new Error(`Failed to create isolated worktree for session: ${err}`);
     }
 
     // Get project's defaults
@@ -577,13 +585,16 @@ export const useSessionStore = create<SessionState>((set, get) => ({
            projectPath: project.path,
            worktreePath: session.cwd
          });
+         debug.info("SessionStore", "Worktree removed successfully");
        } catch (err) {
          console.error("Failed to remove worktree:", err);
          debug.error("SessionStore", "Failed to remove worktree", err);
+         // Don't delete session if worktree removal failed - prevents orphaned worktrees
+         throw new Error(`Cannot delete session: failed to remove worktree. ${err}`);
        }
     }
 
-    // Delete from DB
+    // Delete from DB (only if worktree removal succeeded or wasn't needed)
     await db.deleteSession(id);
 
     set((state) => {

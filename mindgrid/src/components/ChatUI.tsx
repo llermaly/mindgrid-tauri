@@ -661,9 +661,9 @@ export function ChatUI({
   // Initialize config on mount (no "Start Claude" button needed)
   useEffect(() => {
     if (!hasStarted && activeAgent === "claude") {
-      spawnClaude(cwd, claudeSessionId, permissionMode, model).then(() => setHasStarted(true));
+      spawnClaude(cwd, claudeSessionId, permissionMode, model, commitMode).then(() => setHasStarted(true));
     }
-  }, [cwd, claudeSessionId, permissionMode, model, hasStarted, spawnClaude, activeAgent]);
+  }, [cwd, claudeSessionId, permissionMode, model, commitMode, hasStarted, spawnClaude, activeAgent]);
 
   // Auto-send initial prompt after Claude starts (only if there are no existing messages)
   useEffect(() => {
@@ -701,13 +701,13 @@ export function ChatUI({
     }
   }, [hasStarted, initialPrompt, messages.length, thinkingMode, activeAgent, onClaudeMessage, sendMessage, runCodex, model]);
 
-  // Update config when permission mode or model changes
+  // Update config when permission mode, model, or commit mode changes
   useEffect(() => {
     if (hasStarted && activeAgent === "claude") {
-      spawnClaude(cwd, claudeSessionId, permissionMode, model);
+      spawnClaude(cwd, claudeSessionId, permissionMode, model, commitMode);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [permissionMode, model, activeAgent]);
+  }, [permissionMode, model, commitMode, activeAgent]);
 
   const handleSend = useCallback(async () => {
     if (!input.trim()) return;

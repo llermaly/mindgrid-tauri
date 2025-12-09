@@ -46,6 +46,14 @@ export const DEFAULT_COMMIT_MODE_SETTINGS: CommitModeSettings = {
   checkpointPrefix: 'checkpoint: ',
 };
 
+// Default structured prompt template - appended to prompts when in structured mode
+export const DEFAULT_STRUCTURED_PROMPT_TEMPLATE = `
+After completing the requested changes, please create a git commit with an appropriate message. Follow these guidelines:
+- Use Conventional Commits format (feat:, fix:, docs:, style:, refactor:, test:, chore:)
+- Include a clear, concise description of the changes
+- Only commit files that are directly related to this task
+`.trim();
+
 export const COMMIT_MODE_INFO: Record<CommitMode, { label: string; description: string; color: string }> = {
   checkpoint: {
     label: 'Checkpoint',
@@ -54,7 +62,7 @@ export const COMMIT_MODE_INFO: Record<CommitMode, { label: string; description: 
   },
   structured: {
     label: 'Structured',
-    description: 'Claude handles commits properly',
+    description: 'Claude creates commits with proper messages',
     color: 'text-blue-400',
   },
   disabled: {

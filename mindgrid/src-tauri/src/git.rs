@@ -1599,11 +1599,19 @@ pub async fn git_merge_to_main(
         .map_err(|e| format!("git merge failed: {}", e))?;
 
     if !merge_output.status.success() {
-        // Abort merge and go back
+        // Abort merge and restore original branch
         let _ = tokio::process::Command::new("git")
             .arg("-C")
             .arg(&project_path)
             .args(["merge", "--abort"])
+            .output()
+            .await;
+
+        // Checkout back to the original branch
+        let _ = tokio::process::Command::new("git")
+            .arg("-C")
+            .arg(&project_path)
+            .args(["checkout", &branch])
             .output()
             .await;
 
@@ -1627,6 +1635,21 @@ pub async fn git_merge_to_main(
         .map_err(|e| format!("git commit failed: {}", e))?;
 
     if !commit_output.status.success() {
+        // Reset the merge and checkout back to original branch
+        let _ = tokio::process::Command::new("git")
+            .arg("-C")
+            .arg(&project_path)
+            .args(["reset", "--hard", "HEAD"])
+            .output()
+            .await;
+
+        let _ = tokio::process::Command::new("git")
+            .arg("-C")
+            .arg(&project_path)
+            .args(["checkout", &branch])
+            .output()
+            .await;
+
         return Ok(MergeResult {
             success: false,
             message: None,
