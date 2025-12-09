@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { invoke } from '@tauri-apps/api/core';
 import { MODELS, type ModelConfig } from '../lib/models';
 
@@ -18,6 +19,24 @@ export function ModelSelector({
   const [isOpen, setIsOpen] = useState(false);
   const [remoteModels, setRemoteModels] = useState<ModelConfig[]>([]);
   const [remoteLoaded, setRemoteLoaded] = useState(false);
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  const updateDropdownPosition = useCallback(() => {
+    if (buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setDropdownPosition({
+        top: rect.bottom + 4,
+        left: rect.left,
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      updateDropdownPosition();
+    }
+  }, [isOpen, updateDropdownPosition]);
 
   useEffect(() => {
     let isMounted = true;
@@ -88,6 +107,7 @@ export function ModelSelector({
   return (
     <div className="relative">
       <button
+        ref={buttonRef}
         onClick={() => setIsOpen(!isOpen)}
         className={`flex items-center gap-1.5 rounded-md transition-colors border border-neutral-700 hover:border-neutral-600 ${
           size === 'sm' ? 'px-2 py-1' : 'px-3 py-1.5'
@@ -106,10 +126,13 @@ export function ModelSelector({
         </svg>
       </button>
 
-      {isOpen && (
+      {isOpen && createPortal(
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
-          <div className="absolute top-full left-0 mt-1 bg-neutral-800 border border-neutral-700 rounded-lg shadow-xl z-50 py-1 min-w-48 max-h-80 overflow-y-auto">
+          <div className="fixed inset-0 z-[9998]" onClick={() => setIsOpen(false)} />
+          <div
+            className="fixed bg-neutral-800 border border-neutral-700 rounded-lg shadow-xl z-[9999] py-1 min-w-48 max-h-80 overflow-y-auto"
+            style={{ top: dropdownPosition.top, left: dropdownPosition.left }}
+          >
             {availableModels.map((model, index) => {
               const prevModel = index > 0 ? availableModels[index - 1] : null;
               const showHeader = !prevModel || prevModel.provider !== model.provider;
@@ -155,7 +178,8 @@ export function ModelSelector({
               </div>
             )}
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   );

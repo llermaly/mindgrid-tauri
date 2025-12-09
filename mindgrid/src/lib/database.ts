@@ -149,6 +149,7 @@ export async function saveSession(session: Session): Promise<void> {
     updatedAt: session.updatedAt,
     permissionMode: session.permissionMode || 'default',
     commitMode: session.commitMode || 'checkpoint',
+    initialPrompt: session.initialPrompt, // Preserve initial prompt for auto-send
   };
 
   if (index >= 0) {

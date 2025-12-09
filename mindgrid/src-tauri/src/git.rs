@@ -327,6 +327,12 @@ pub async fn remove_workspace_worktree(
     project_path: String,
     worktree_path: String,
 ) -> Result<(), String> {
+    // Extract the worktree name to determine the branch name
+    let worktree_name = Path::new(&worktree_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(|s| s.to_string());
+
     // Remove worktree (prunes checked-out tree)
     let status = tokio::process::Command::new("git")
         .arg("-C")
@@ -335,13 +341,57 @@ pub async fn remove_workspace_worktree(
         .output()
         .await
         .map_err(|e| format!("git worktree remove failed: {}", e))?;
-        
+
     if !status.status.success() {
-        return Err(format!(
-            "Failed to remove worktree: {}",
-            String::from_utf8_lossy(&status.stderr)
-        ));
+        let stderr = String::from_utf8_lossy(&status.stderr).to_string();
+
+        // Gracefully handle already-deleted worktrees
+        if stderr.contains("is not a working tree") ||
+           stderr.contains("does not exist") ||
+           stderr.contains("No such file or directory") {
+            eprintln!("[MindGrid] Worktree already removed or doesn't exist, continuing with cleanup");
+        } else {
+            return Err(format!("Failed to remove worktree: {}", stderr));
+        }
     }
+
+    // Prune any stale worktree references
+    let _ = tokio::process::Command::new("git")
+        .arg("-C")
+        .arg(&project_path)
+        .args(["worktree", "prune"])
+        .output()
+        .await;
+
+    // Delete the associated branch (mindgrid/{name})
+    if let Some(name) = worktree_name {
+        let branch_name = format!("mindgrid/{}", name);
+
+        let branch_status = tokio::process::Command::new("git")
+            .arg("-C")
+            .arg(&project_path)
+            .args(["branch", "-D", &branch_name])
+            .output()
+            .await;
+
+        match branch_status {
+            Ok(output) => {
+                if output.status.success() {
+                    eprintln!("[MindGrid] Deleted branch: {}", branch_name);
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    // Don't fail if branch doesn't exist or was already deleted
+                    if !stderr.contains("not found") && !stderr.contains("does not exist") {
+                        eprintln!("[MindGrid] Warning: Could not delete branch {}: {}", branch_name, stderr);
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("[MindGrid] Warning: Failed to delete branch {}: {}", branch_name, e);
+            }
+        }
+    }
+
     Ok(())
 }
 

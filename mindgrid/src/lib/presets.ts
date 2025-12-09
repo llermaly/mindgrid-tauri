@@ -77,7 +77,7 @@ export const PRESETS: ProjectPreset[] = [
     stack: [],
     chatTypes: ['research', 'planning', 'coding', 'quick'],
     defaults: {
-      model: 'claude-sonnet',
+      model: 'opus',
       permissionMode: 'auto',
     },
   },
@@ -90,7 +90,7 @@ export const PRESETS: ProjectPreset[] = [
     stack: [],
     chatTypes: ['research', 'coding'],
     defaults: {
-      model: 'claude-sonnet',
+      model: 'opus',
       permissionMode: 'auto',
     },
   },
@@ -103,7 +103,7 @@ export const PRESETS: ProjectPreset[] = [
     stack: [],
     chatTypes: ['coding'],
     defaults: {
-      model: 'claude-sonnet',
+      model: 'opus',
       permissionMode: 'auto',
     },
   },
@@ -116,7 +116,7 @@ export const PRESETS: ProjectPreset[] = [
     stack: [],
     chatTypes: ['research', 'quick'],
     defaults: {
-      model: 'claude-sonnet',
+      model: 'opus',
       permissionMode: 'approve',
     },
   },
@@ -129,7 +129,7 @@ export const PRESETS: ProjectPreset[] = [
     stack: [],
     chatTypes: ['planning', 'research'],
     defaults: {
-      model: 'claude-sonnet',
+      model: 'opus',
       permissionMode: 'approve',
     },
   },
@@ -142,7 +142,7 @@ export const PRESETS: ProjectPreset[] = [
     stack: [],
     chatTypes: [],
     defaults: {
-      model: 'claude-sonnet',
+      model: 'opus',
       permissionMode: 'approve',
     },
   },

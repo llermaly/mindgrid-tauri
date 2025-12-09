@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { useClaudePty } from "../hooks/useClaudePty";
 import type { ClaudeEvent, ParsedMessage, PermissionMode, CommitMode } from "../lib/claude-types";
@@ -30,6 +31,7 @@ interface ChatUIProps {
   commitMode?: CommitMode;
   gitAhead?: number;
   sessionName?: string;
+  initialPrompt?: string;
   ghAvailable?: boolean;
   onClaudeEvent?: (event: ClaudeEvent) => void;
   onClaudeMessage?: (message: ParsedMessage) => void;
@@ -411,6 +413,7 @@ export function ChatUI({
   commitMode = 'checkpoint',
   gitAhead = 0,
   sessionName = '',
+  initialPrompt,
   ghAvailable = false,
   onClaudeEvent,
   onClaudeMessage,
@@ -426,6 +429,7 @@ export function ChatUI({
   const [input, setInput] = useState("");
   const [hasStarted, setHasStarted] = useState(false);
   const [showModeDropdown, setShowModeDropdown] = useState(false);
+  const initialPromptSentRef = useRef(false);
   const [showCommitDropdown, setShowCommitDropdown] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isPushing, setIsPushing] = useState(false);
@@ -448,9 +452,13 @@ export function ChatUI({
   const [attachments, setAttachments] = useState<File[]>([]);
   const [isListening, setIsListening] = useState(false);
   const [showTerminal, setShowTerminal] = useState(false);
+  const [modeDropdownPos, setModeDropdownPos] = useState({ top: 0, left: 0 });
+  const [commitDropdownPos, setCommitDropdownPos] = useState({ top: 0, left: 0 });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const modeButtonRef = useRef<HTMLButtonElement>(null);
+  const commitButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!filtersExpanded) return;
@@ -635,12 +643,63 @@ export function ChatUI({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [filtersExpanded]);
 
+  // Update dropdown positions when they open
+  useEffect(() => {
+    if (showModeDropdown && modeButtonRef.current) {
+      const rect = modeButtonRef.current.getBoundingClientRect();
+      setModeDropdownPos({ top: rect.bottom + 4, left: rect.left });
+    }
+  }, [showModeDropdown]);
+
+  useEffect(() => {
+    if (showCommitDropdown && commitButtonRef.current) {
+      const rect = commitButtonRef.current.getBoundingClientRect();
+      setCommitDropdownPos({ top: rect.bottom + 4, left: rect.left });
+    }
+  }, [showCommitDropdown]);
+
   // Initialize config on mount (no "Start Claude" button needed)
   useEffect(() => {
     if (!hasStarted && activeAgent === "claude") {
       spawnClaude(cwd, claudeSessionId, permissionMode, model).then(() => setHasStarted(true));
     }
   }, [cwd, claudeSessionId, permissionMode, model, hasStarted, spawnClaude, activeAgent]);
+
+  // Auto-send initial prompt after Claude starts (only if there are no existing messages)
+  useEffect(() => {
+    console.log("[ChatUI] Auto-send check:", { hasStarted, initialPrompt, initialPromptSentRef: initialPromptSentRef.current, messagesLength: messages.length });
+
+    // Use ref to prevent multiple sends across re-renders
+    if (hasStarted && initialPrompt && !initialPromptSentRef.current && messages.length === 0) {
+      console.log("[ChatUI] Conditions met, will auto-send initial prompt");
+      initialPromptSentRef.current = true;
+
+      // Small delay to ensure Claude is ready to receive messages
+      setTimeout(async () => {
+        console.log("[ChatUI] Sending initial prompt now:", initialPrompt);
+        const baseMessage = initialPrompt.trim();
+        const message = thinkingMode
+          ? `${baseMessage}\n\n(Think through the problem and share a brief reasoning summary before the final answer.)`
+          : `${baseMessage}\n\n(Do not include thinking or reasoning steps; reply concisely with just the answer/output.)`;
+
+        // Add user message to UI
+        const userMessage: ParsedMessage = {
+          id: `user-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          role: "user",
+          content: baseMessage,
+          timestamp: Date.now(),
+        };
+        onClaudeMessage?.(userMessage);
+
+        // Send through appropriate agent
+        if (activeAgent === "codex") {
+          await runCodex(message, model || undefined);
+        } else {
+          await sendMessage(message);
+        }
+      }, 1000); // Increased delay to ensure Claude PTY is fully ready
+    }
+  }, [hasStarted, initialPrompt, messages.length, thinkingMode, activeAgent, onClaudeMessage, sendMessage, runCodex, model]);
 
   // Update config when permission mode or model changes
   useEffect(() => {
@@ -974,6 +1033,7 @@ export function ChatUI({
           {/* Permission Mode Selector */}
           <div className="relative">
             <button
+              ref={modeButtonRef}
               onClick={() => setShowModeDropdown(!showModeDropdown)}
               className={`text-xs px-2 py-1 rounded border border-zinc-600 hover:border-zinc-500 flex items-center gap-1 ${PERMISSION_MODE_INFO[permissionMode].color}`}
               title={PERMISSION_MODE_INFO[permissionMode].description}
@@ -987,10 +1047,13 @@ export function ChatUI({
               </svg>
             </button>
 
-            {showModeDropdown && (
+            {showModeDropdown && createPortal(
               <>
-                <div className="fixed inset-0 z-10" onClick={() => setShowModeDropdown(false)} />
-                <div className="absolute top-full mt-1 left-0 w-48 bg-zinc-800 border border-zinc-700 rounded-lg shadow-lg z-20 py-1">
+                <div className="fixed inset-0 z-[9998]" onClick={() => setShowModeDropdown(false)} />
+                <div
+                  className="fixed w-48 bg-zinc-800 border border-zinc-700 rounded-lg shadow-lg z-[9999] py-1"
+                  style={{ top: modeDropdownPos.top, left: modeDropdownPos.left }}
+                >
                   {(Object.keys(PERMISSION_MODE_INFO) as PermissionMode[]).map((mode) => (
                     <button
                       key={mode}
@@ -1011,13 +1074,15 @@ export function ChatUI({
                     </button>
                   ))}
                 </div>
-              </>
+              </>,
+              document.body
             )}
           </div>
 
           {/* Commit Mode Selector */}
           <div className="relative">
             <button
+              ref={commitButtonRef}
               onClick={() => setShowCommitDropdown(!showCommitDropdown)}
               className={`text-xs px-2 py-1 rounded border border-zinc-600 hover:border-zinc-500 flex items-center gap-1 ${COMMIT_MODE_INFO[commitMode].color}`}
               title={COMMIT_MODE_INFO[commitMode].description}
@@ -1033,10 +1098,13 @@ export function ChatUI({
               </svg>
             </button>
 
-            {showCommitDropdown && (
+            {showCommitDropdown && createPortal(
               <>
-                <div className="fixed inset-0 z-10" onClick={() => setShowCommitDropdown(false)} />
-                <div className="absolute top-full mt-1 left-0 w-48 bg-zinc-800 border border-zinc-700 rounded-lg shadow-lg z-20 py-1">
+                <div className="fixed inset-0 z-[9998]" onClick={() => setShowCommitDropdown(false)} />
+                <div
+                  className="fixed w-48 bg-zinc-800 border border-zinc-700 rounded-lg shadow-lg z-[9999] py-1"
+                  style={{ top: commitDropdownPos.top, left: commitDropdownPos.left }}
+                >
                   {(Object.keys(COMMIT_MODE_INFO) as CommitMode[]).map((mode) => (
                     <button
                       key={mode}
@@ -1057,7 +1125,8 @@ export function ChatUI({
                     </button>
                   ))}
                 </div>
-              </>
+              </>,
+              document.body
             )}
           </div>
 

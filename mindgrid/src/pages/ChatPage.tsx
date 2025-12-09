@@ -113,6 +113,8 @@ export function ChatPage({ sessionId, isNewChat }: ChatPageProps) {
     );
   }
 
+  console.log("[ChatPage] Session loaded:", { sessionId, initialPrompt: session.initialPrompt, messagesCount: session.messages.length });
+
   return (
     <div className="h-screen flex flex-col bg-zinc-900">
       {/* Minimal header for chat window */}
@@ -144,6 +146,7 @@ export function ChatPage({ sessionId, isNewChat }: ChatPageProps) {
           commitMode={session.commitMode}
           gitAhead={session.gitStatus?.ahead ?? 0}
           sessionName={session.name}
+          initialPrompt={session.initialPrompt}
           onClaudeEvent={handleClaudeEvent}
           onClaudeMessage={handleClaudeMessage}
           onPermissionModeChange={handlePermissionModeChange}

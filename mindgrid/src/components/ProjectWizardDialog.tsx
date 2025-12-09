@@ -65,7 +65,7 @@ export function ProjectWizardDialog({
   const [projectPath, setProjectPath] = useState("");
   const [projectName, setProjectName] = useState("");
   const [sessionName, setSessionName] = useState(() => generateDefaultSessionName(0));
-  const [prompt, setPrompt] = useState("");
+  const [prompt, setPrompt] = useState("Create a HELLO.md markdown file with MINDGRID CREATION as a content.");
   const [model, setModel] = useState<string | null>(null);
   const [chatTypes, setChatTypes] = useState<ChatType[]>([]);
   const [filesToCopy, setFilesToCopy] = useState<string[]>([]);
@@ -89,7 +89,7 @@ export function ProjectWizardDialog({
       setProjectPath("");
       setProjectName("");
       setSessionName(generateDefaultSessionName(0));
-      setPrompt("");
+      setPrompt("Create a HELLO.md markdown file with MINDGRID CREATION as a content.");
       setModel(null);
       setChatTypes([]);
       setFilesToCopy([]);

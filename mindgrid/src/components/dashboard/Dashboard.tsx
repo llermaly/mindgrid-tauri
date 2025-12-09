@@ -316,7 +316,7 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
     projectName: string,
     projectPath: string,
     sessionName: string,
-    chatTypes: ChatType[],
+    _chatTypes: ChatType[],
     filesToCopy?: string[],
     projectCommands?: { buildCommand?: string; runCommand?: string },
     options?: { prompt?: string; model?: string | null; variants?: SessionVariantConfig[] }
@@ -357,8 +357,10 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
         }
 
         const variantPrompt = variant.prompt || options?.prompt;
+        console.log("[Dashboard] Setting initial prompt for session:", { sessionId: newSession.id, variantPrompt, variantRaw: variant.prompt, optionsPrompt: options?.prompt });
         if (variantPrompt) {
           await updateSession(newSession.id, { initialPrompt: variantPrompt });
+          console.log("[Dashboard] Initial prompt saved successfully");
         }
 
         createdSessions.push(newSession);
@@ -373,7 +375,8 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
           })),
           project.name
         );
-      } else if (createdSessions[0] && chatTypes.length > 0) {
+      } else if (createdSessions[0]) {
+        // Always open exactly one chat window for a single session
         await openMultipleChatWindows(
           {
             sessionId: createdSessions[0].id,
@@ -381,7 +384,7 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
             projectName: project.name,
             cwd: createdSessions[0].cwd,
           },
-          chatTypes.length
+          1
         );
       }
 
