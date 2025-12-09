@@ -100,6 +100,8 @@ export interface Project {
   defaultModel: string | null; // Default model for new sessions
   defaultPermissionMode: PermissionMode; // Default permission mode for new sessions
   defaultCommitMode: CommitMode; // Default commit mode for new sessions
+  buildCommand: string | null; // Command to build the project
+  runCommand: string | null; // Command to run the project (for previews/worktrees)
   createdAt: number;
   updatedAt: number;
 }
@@ -117,6 +119,7 @@ interface SessionState {
   activeSessionId: string | null;
   activeProjectId: string | null;
   activeChatSessions: Set<string>; // Sessions with open chat windows
+  activeRunSessions: Set<string>; // Sessions with open run/preview windows
   isLoading: boolean;
   isInitialized: boolean;
   ghAvailable: boolean;
@@ -126,7 +129,7 @@ interface SessionState {
   initialize: () => Promise<void>;
 
   // Project actions
-  createProject: (name: string, path: string) => Promise<Project>;
+  createProject: (name: string, path: string, options?: { buildCommand?: string; runCommand?: string }) => Promise<Project>;
   updateProject: (id: string, updates: Partial<Project>) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
 
@@ -139,6 +142,9 @@ interface SessionState {
   // Active chat session tracking
   markSessionChatOpen: (sessionId: string) => void;
   markSessionChatClosed: (sessionId: string) => void;
+  markSessionRunOpen: (sessionId: string) => void;
+  markSessionRunClosed: (sessionId: string) => void;
+  isSessionRunning: (sessionId: string) => boolean;
   refreshActiveChatSessions: () => Promise<void>;
   isSessionActive: (sessionId: string) => boolean;
 
@@ -190,6 +196,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   activeSessionId: null,
   activeProjectId: null,
   activeChatSessions: new Set<string>(),
+  activeRunSessions: new Set<string>(),
   isLoading: false,
   isInitialized: false,
   ghAvailable: false,
@@ -270,7 +277,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
   },
 
-  createProject: async (name, path) => {
+  createProject: async (name, path, options) => {
     // Check if project with same path already exists
     const existingProject = Object.values(get().projects).find(p => p.path === path);
     if (existingProject) {
@@ -285,6 +292,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       defaultModel: null, // Will use system default
       defaultPermissionMode: 'bypassPermissions', // Default for new sessions
       defaultCommitMode: 'checkpoint', // Default for new sessions
+      buildCommand: options?.buildCommand || null,
+      runCommand: options?.runCommand || null,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -1281,6 +1290,28 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       debug.info("SessionStore", "Marked session chat as closed", { sessionId, activeCount: newActiveChatSessions.size });
       return { activeChatSessions: newActiveChatSessions };
     });
+  },
+
+  markSessionRunOpen: (sessionId) => {
+    set((state) => {
+      const newActiveRunSessions = new Set(state.activeRunSessions);
+      newActiveRunSessions.add(sessionId);
+      debug.info("SessionStore", "Marked session run as open", { sessionId, activeCount: newActiveRunSessions.size });
+      return { activeRunSessions: newActiveRunSessions };
+    });
+  },
+
+  markSessionRunClosed: (sessionId) => {
+    set((state) => {
+      const newActiveRunSessions = new Set(state.activeRunSessions);
+      newActiveRunSessions.delete(sessionId);
+      debug.info("SessionStore", "Marked session run as closed", { sessionId, activeCount: newActiveRunSessions.size });
+      return { activeRunSessions: newActiveRunSessions };
+    });
+  },
+
+  isSessionRunning: (sessionId) => {
+    return get().activeRunSessions.has(sessionId);
   },
 
   refreshActiveChatSessions: async () => {

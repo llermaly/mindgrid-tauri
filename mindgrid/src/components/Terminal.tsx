@@ -11,6 +11,7 @@ interface TerminalProps {
   mode?: "raw" | "stream-json";
   cwd?: string;
   claudeSessionId?: string | null;
+  initialCommand?: string;
   onClaudeEvent?: (event: ClaudeEvent) => void;
   onClaudeMessage?: (message: ParsedMessage) => void;
 }
@@ -19,6 +20,7 @@ export function Terminal({
   className = "",
   mode = "stream-json",
   cwd,
+  initialCommand,
   onClaudeEvent,
   onClaudeMessage,
 }: TerminalProps) {
@@ -113,15 +115,29 @@ export function Terminal({
     if (!terminal || isRunning) return;
 
     const startShell = async () => {
-      debug.info("Terminal", "Auto-spawning shell", { cwd });
+      console.log("[Terminal] Auto-spawning shell", { cwd, initialCommand });
+      terminal.writeln("Starting shell...");
 
-      await spawn({
+      // Small delay to ensure PTY listeners are set up
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      const ptyId = await spawn({
         cmd: "/bin/zsh",
         args: [],
         cols: terminal.cols,
         rows: terminal.rows,
         cwd,
       });
+
+      console.log("[Terminal] Shell spawned", { ptyId });
+
+      // If there's an initial command, send it after a short delay to let shell initialize
+      if (initialCommand && ptyId) {
+        setTimeout(() => {
+          console.log("[Terminal] Executing initial command", { initialCommand });
+          write(initialCommand + "\n");
+        }, 500);
+      }
     };
 
     startShell();

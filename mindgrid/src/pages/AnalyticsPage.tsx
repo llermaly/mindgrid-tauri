@@ -18,21 +18,13 @@ export function AnalyticsPage({ onBack }: AnalyticsPageProps) {
     fetchAnalytics();
   }, [fetchAnalytics]);
 
-  // Helper to calculate total tokens from session
-  const getSessionTotalTokens = (s: typeof sessionAnalytics extends (infer T)[] | null ? T : never) =>
-    s.inputTokens + s.outputTokens + s.cacheCreationTokens + s.cacheReadTokens;
-
-  // Helper to calculate total tokens from daily
-  const getDailyTotalTokens = (d: typeof dailyAnalytics extends (infer T)[] | null ? T : never) =>
-    d.inputTokens + d.outputTokens + d.cacheCreationTokens + d.cacheReadTokens;
-
   // Calculate summary statistics
   const summary = useMemo(() => {
     if (!sessionAnalytics || !dailyAnalytics) return null;
 
     const totalSessions = sessionAnalytics.length;
     const totalCost = sessionAnalytics.reduce((sum, s) => sum + s.totalCost, 0);
-    const totalTokens = sessionAnalytics.reduce((sum, s) => sum + getSessionTotalTokens(s), 0);
+    const totalTokens = sessionAnalytics.reduce((sum, s) => sum + s.totalTokens, 0);
 
     // Last 7 days cost
     const last7Days = dailyAnalytics.slice(0, 7);
@@ -186,7 +178,7 @@ export function AnalyticsPage({ onBack }: AnalyticsPageProps) {
                         </div>
                       </div>
                       <div className="w-24 text-xs text-neutral-500 text-right font-mono">
-                        {formatNumber(getDailyTotalTokens(day))} tokens
+                        {formatNumber(day.totalTokens)} tokens
                       </div>
                     </div>
                   ))}
@@ -206,11 +198,11 @@ export function AnalyticsPage({ onBack }: AnalyticsPageProps) {
                         {index + 1}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-white truncate">{session.projectPath}</div>
+                        <div className="text-sm font-medium text-white truncate">{session.projectPath || session.sessionId}</div>
                         <div className="text-xs text-neutral-500 truncate">{session.sessionId}</div>
                         <div className="flex items-center gap-3 mt-1">
                           <span className="text-xs text-neutral-400">
-                            {formatNumber(getSessionTotalTokens(session))} tokens
+                            {formatNumber(session.totalTokens)} tokens
                           </span>
                           {session.modelsUsed.length > 0 && (
                             <span className="text-xs text-neutral-500">

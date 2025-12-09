@@ -22,6 +22,7 @@ export interface DailyUsage {
   outputTokens: number;
   cacheCreationTokens: number;
   cacheReadTokens: number;
+  totalTokens: number;
   totalCost: number;
   modelsUsed: string[];
   modelBreakdowns: {
@@ -36,14 +37,14 @@ export interface DailyUsage {
 
 export interface SessionUsage {
   sessionId: string;
-  projectPath: string;
+  projectPath?: string;
   inputTokens: number;
   outputTokens: number;
   cacheCreationTokens: number;
   cacheReadTokens: number;
+  totalTokens: number;
   totalCost: number;
   lastActivity: string;
-  versions: string[];
   modelsUsed: string[];
   modelBreakdowns: {
     modelName: string;
@@ -179,7 +180,7 @@ export const useUsageStore = create<UsageStore>((set, get) => ({
 
       // Extract data arrays from ccusage JSON structure
       const dailyData: DailyUsage[] = dailyJson.daily || [];
-      const sessionData: SessionUsage[] = sessionJson.data || [];
+      const sessionData: SessionUsage[] = sessionJson.sessions || [];
 
       // Sort daily by date descending (most recent first)
       const sortedDaily = [...dailyData].sort(

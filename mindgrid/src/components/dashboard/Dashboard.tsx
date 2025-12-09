@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { PRESETS, type ChatType } from "../../lib/presets";
-import { openMultipleChatWindows, openWorkspaceWindow } from "../../lib/window-manager";
+import { openAllProjectSessionChats, openMultipleChatWindows, openRunCommandWindow, openWorkspaceWindow } from "../../lib/window-manager";
 import { useSessionStore, type Project, type Session } from "../../stores/sessionStore";
 import { useUsageStore } from "../../stores/usageStore";
 import { getWorktreeInfo } from "../../lib/dev-mode";
@@ -14,7 +14,7 @@ import { UsageLimitsCard } from "./UsageLimitsCard";
 import type { DashboardProject, DashboardSession, DashboardActivity, DashboardGitInfo, DashboardSessionStatus } from "./types";
 import { SettingsPage } from "../../pages/SettingsPage";
 import { AnalyticsPage } from "../../pages/AnalyticsPage";
-import { CreateSessionDialog, type SessionConfig } from "../CreateSessionDialog";
+import { CreateSessionDialog, type SessionConfig, type SessionVariantConfig } from "../CreateSessionDialog";
 import { PathLink } from "../PathLink";
 
 type DashboardView = "all" | "recent" | "active" | "analytics" | "settings";
@@ -31,6 +31,7 @@ export function Dashboard() {
     deleteSession,
     refreshActiveChatSessions,
     isSessionActive,
+    isSessionRunning,
   } = useSessionStore();
 
   const fetchAll = useUsageStore((state) => state.fetchAll);
@@ -77,7 +78,7 @@ export function Dashboard() {
     return map;
   }, []);
 
-  const enhancedProjects = useMemo(() => buildDashboardProjects(Object.values(projects), sessions, isSessionActive), [projects, sessions, isSessionActive]);
+  const enhancedProjects = useMemo(() => buildDashboardProjects(Object.values(projects), sessions, isSessionActive, isSessionRunning), [projects, sessions, isSessionActive, isSessionRunning]);
   const activeProjects = enhancedProjects.filter((project) => !project.isArchived);
   const filteredProjects = activeProjects.filter((project) =>
     project.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -142,6 +143,19 @@ export function Dashboard() {
     }
   };
 
+  const handleRunProject = (dashboardProject: DashboardProject, session: DashboardSession) => {
+    const liveSession = sessions[session.id];
+    if (liveSession && dashboardProject.runCommand) {
+      void openRunCommandWindow({
+        sessionId: liveSession.id,
+        sessionName: liveSession.name,
+        projectName: dashboardProject.name,
+        cwd: liveSession.cwd,
+        command: dashboardProject.runCommand,
+      });
+    }
+  };
+
   const handleDeleteProject = async (projectId: string) => {
     await deleteProject(projectId);
     if (selectedProjectId === projectId) {
@@ -169,62 +183,27 @@ export function Dashboard() {
     const project = projects[targetProjectId];
     if (!project) return;
 
-    const newSession = await createSession(targetProjectId, config.name, project.path);
+    const variantConfigs = config.variants && config.variants.length > 0
+      ? config.variants
+      : [{ id: "base", name: config.name, prompt: config.prompt, model: config.model }];
 
-    // Copy selected gitignored files to worktree
-    if (config.filesToCopy && config.filesToCopy.length > 0 && newSession.cwd !== project.path) {
-      try {
-        await invoke<string[]>("copy_files_to_worktree", {
-          projectPath: project.path,
-          worktreePath: newSession.cwd,
-          files: config.filesToCopy,
-        });
-      } catch (copyErr) {
-        console.error("Failed to copy files:", copyErr);
-        // Don't fail the whole operation, just log the error
-      }
-    }
-
-    // Update session with additional config
     const { setPermissionMode, setCommitMode, setSessionModel, updateSession } = useSessionStore.getState();
+    const createdSessions: Session[] = [];
 
-    if (config.permissionMode !== "default") {
-      setPermissionMode(newSession.id, config.permissionMode);
-    }
-    if (config.commitMode !== "checkpoint") {
-      setCommitMode(newSession.id, config.commitMode);
-    }
-    if (config.model) {
-      setSessionModel(newSession.id, config.model);
-    }
-    if (config.prompt) {
-      await updateSession(newSession.id, { initialPrompt: config.prompt });
-    }
+    for (const [index, variant] of variantConfigs.entries()) {
+      const sessionName =
+        variant.name?.trim() ||
+        (config.name ? `${config.name} ${variantConfigs.length > 1 ? `(${index + 1})` : ""}` : `Variant ${index + 1}`);
 
-    // Navigate to the newly created session
-    setSelectedProjectId(targetProjectId);
-    setSelectedSessionId(newSession.id);
-    setCreateSessionForProjectId(null);
-  };
+      const newSession = await createSession(targetProjectId, sessionName, project.path);
 
-  const handleCreateProjectWithChats = async (
-    projectName: string,
-    projectPath: string,
-    sessionName: string,
-    chatTypes: ChatType[],
-    filesToCopy?: string[]
-  ) => {
-    try {
-      const project = await createProject(projectName, projectPath);
-      const session = await createSession(project.id, sessionName, projectPath);
-
-    // Copy selected gitignored files to worktree
-      if (filesToCopy && filesToCopy.length > 0 && session.cwd !== projectPath) {
+      // Copy selected gitignored files to worktree
+      if (config.filesToCopy && config.filesToCopy.length > 0 && newSession.cwd !== project.path) {
         try {
           await invoke<string[]>("copy_files_to_worktree", {
-            projectPath,
-            worktreePath: session.cwd,
-            files: filesToCopy,
+            projectPath: project.path,
+            worktreePath: newSession.cwd,
+            files: config.filesToCopy,
           });
         } catch (copyErr) {
           console.error("Failed to copy files:", copyErr);
@@ -232,13 +211,110 @@ export function Dashboard() {
         }
       }
 
-      if (chatTypes.length > 0) {
-        await openMultipleChatWindows(
-          {
+      // Update session with additional config
+      if (config.permissionMode !== "default") {
+        setPermissionMode(newSession.id, config.permissionMode);
+      }
+      if (config.commitMode !== "checkpoint") {
+        setCommitMode(newSession.id, config.commitMode);
+      }
+      const variantModel = variant.model ?? config.model;
+      if (variantModel) {
+        setSessionModel(newSession.id, variantModel);
+      }
+      const variantPrompt = variant.prompt || config.prompt;
+      if (variantPrompt) {
+        await updateSession(newSession.id, { initialPrompt: variantPrompt });
+      }
+
+      createdSessions.push(newSession);
+    }
+
+    // Navigate to the newly created session
+    setSelectedProjectId(targetProjectId);
+    setSelectedSessionId(createdSessions[0]?.id ?? null);
+    setCreateSessionForProjectId(null);
+
+    if (createdSessions.length > 1) {
+      await openAllProjectSessionChats(
+        createdSessions.map((session) => ({
+          sessionId: session.id,
+          sessionName: session.name,
+          cwd: session.cwd,
+        })),
+        project.name
+      );
+    }
+  };
+
+  const handleCreateProjectWithChats = async (
+    projectName: string,
+    projectPath: string,
+    sessionName: string,
+    chatTypes: ChatType[],
+    filesToCopy?: string[],
+    projectCommands?: { buildCommand?: string; runCommand?: string },
+    options?: { prompt?: string; model?: string | null; variants?: SessionVariantConfig[] }
+  ) => {
+    try {
+      const project = await createProject(projectName, projectPath, projectCommands);
+      const variantConfigs =
+        options?.variants && options.variants.length > 0
+          ? options.variants
+          : [{ id: "base", name: sessionName, prompt: options?.prompt, model: options?.model }];
+
+      const { setSessionModel, updateSession } = useSessionStore.getState();
+      const createdSessions: Session[] = [];
+
+      for (const [index, variant] of variantConfigs.entries()) {
+        const name =
+          variant.name?.trim() ||
+          (sessionName ? `${sessionName} ${variantConfigs.length > 1 ? `(${index + 1})` : ""}` : `Variant ${index + 1}`);
+
+        const newSession = await createSession(project.id, name, projectPath);
+
+        // Copy selected gitignored files to worktree
+        if (filesToCopy && filesToCopy.length > 0 && newSession.cwd !== projectPath) {
+          try {
+            await invoke<string[]>("copy_files_to_worktree", {
+              projectPath,
+              worktreePath: newSession.cwd,
+              files: filesToCopy,
+            });
+          } catch (copyErr) {
+            console.error("Failed to copy files:", copyErr);
+          }
+        }
+
+        const variantModel = variant.model ?? options?.model;
+        if (variantModel) {
+          setSessionModel(newSession.id, variantModel);
+        }
+
+        const variantPrompt = variant.prompt || options?.prompt;
+        if (variantPrompt) {
+          await updateSession(newSession.id, { initialPrompt: variantPrompt });
+        }
+
+        createdSessions.push(newSession);
+      }
+
+      if (createdSessions.length > 1) {
+        await openAllProjectSessionChats(
+          createdSessions.map((session) => ({
             sessionId: session.id,
             sessionName: session.name,
-            projectName: project.name,
             cwd: session.cwd,
+          })),
+          project.name
+        );
+      } else if (createdSessions[0] && chatTypes.length > 0) {
+        await openMultipleChatWindows(
+          {
+            sessionId: createdSessions[0].id,
+            sessionName: createdSessions[0].name,
+            projectName: project.name,
+            cwd: createdSessions[0].cwd,
           },
           chatTypes.length
         );
@@ -423,9 +499,10 @@ export function Dashboard() {
               preset={presetMap[selectedProject.presetId]}
               onClose={() => setSelectedProjectId(null)}
               onOpenSession={handleOpenSession}
-              onCreateSession={handleOpenCreateSessionDialog}
+              onCreateSession={() => handleOpenCreateSessionDialog(selectedProject.id)}
               onDeleteProject={handleDeleteProject}
               onDeleteSession={handleDeleteSession}
+              onRunProject={handleRunProject}
             />
           ) : (
             <div className="h-full overflow-y-auto scrollbar-thin p-8 bg-white">
@@ -772,7 +849,8 @@ function StatusDot({ status }: { status: DashboardSession["status"] }) {
 function buildDashboardProjects(
   projects: Project[],
   sessions: Record<string, Session>,
-  isSessionActive: (sessionId: string) => boolean
+  isSessionActive: (sessionId: string) => boolean,
+  isSessionRunning: (sessionId: string) => boolean
 ): DashboardProject[] {
   return projects.map((project) => {
     const projectSessions = (project.sessions || [])
@@ -796,6 +874,7 @@ function buildDashboardProjects(
         agents: deriveAgents(session),
         updatedAt: session.updatedAt || session.createdAt || Date.now(),
         initialPrompt: session.initialPrompt,
+        isRunning: isSessionRunning(session.id),
       };
     });
 
@@ -848,6 +927,8 @@ function buildDashboardProjects(
         totalMessages,
         filesModified,
       },
+      buildCommand: project.buildCommand,
+      runCommand: project.runCommand,
     };
   });
 }

@@ -676,3 +676,80 @@ export async function closeWorkspaceWindow(sessionId: string): Promise<void> {
   }
 }
 
+export interface RunCommandWindowOptions {
+  sessionId: string;
+  sessionName: string;
+  projectName: string;
+  cwd: string;
+  command: string;
+}
+
+/**
+ * Opens a terminal window that executes a command (e.g., run preview)
+ */
+export async function openRunCommandWindow(options: RunCommandWindowOptions): Promise<WebviewWindow | null> {
+  const { sessionId, sessionName, projectName, cwd, command } = options;
+  const timestamp = Date.now();
+  const windowLabel = `run-${sessionId}-${timestamp}`;
+
+  console.log("[window-manager] openRunCommandWindow called:", { sessionId, windowLabel, command, cwd });
+
+  try {
+    // Create URL with cwd and run command (no need to load session)
+    const url = `index.html?mode=terminal&cwd=${encodeURIComponent(cwd)}&runCommand=${encodeURIComponent(command)}`;
+
+    console.log("[window-manager] Creating run command window:", { windowLabel, url });
+
+    const webview = new WebviewWindow(windowLabel, {
+      url,
+      title: `Run - ${sessionName} - ${projectName}`,
+      width: 900,
+      height: 600,
+      minWidth: 400,
+      minHeight: 300,
+      center: true,
+      decorations: true,
+      resizable: true,
+      focus: true,
+    });
+
+    webview.once("tauri://created", () => {
+      console.log(`[window-manager] Run command window created: ${windowLabel}`);
+      // Mark session as having a run window open
+      useSessionStore.getState().markSessionRunOpen(sessionId);
+    });
+
+    webview.once("tauri://error", (e) => {
+      console.error(`[window-manager] Run command window error: ${windowLabel}`, e);
+    });
+
+    // Listen for window close to update state
+    webview.once("tauri://destroyed", () => {
+      console.log(`[window-manager] Run command window closed: ${windowLabel}`);
+      // Check if this was the last run window for this session
+      void getRunWindowCount(sessionId).then(count => {
+        if (count === 0) {
+          useSessionStore.getState().markSessionRunClosed(sessionId);
+        }
+      });
+    });
+
+    return webview;
+  } catch (error) {
+    console.error("[window-manager] Failed to create run command window:", error);
+    return null;
+  }
+}
+
+/**
+ * Get count of open run windows for a session
+ */
+export async function getRunWindowCount(sessionId: string): Promise<number> {
+  try {
+    const windows = await getAllWebviewWindows();
+    return windows.filter(w => w.label.startsWith(`run-${sessionId}`)).length;
+  } catch {
+    return 0;
+  }
+}
+

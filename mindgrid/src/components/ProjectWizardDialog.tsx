@@ -3,9 +3,26 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { PRESETS, CHAT_TYPES, type ProjectPreset, type ChatType } from "../lib/presets";
 import { GitignoreFilesSelector } from "./GitignoreFilesSelector";
+import { ModelSelector } from "./ModelSelector";
+import type { SessionVariantConfig } from "./CreateSessionDialog";
+import { generateDefaultSessionName, validateSessionName } from "../lib/session-utils";
 
 // Hardcoded projects directory - will be a setting later
 const PROJECTS_DIRECTORY = "/Users/gustavollermalylarrain/Documents/proyectos/personales";
+
+// Default project for development - mindgrid-tauri
+const DEFAULT_PROJECT_PATH = "/Users/gustavollermalylarrain/Documents/proyectos/personales/mindgrid-tauri";
+
+// Main repo path for referencing scripts that may not exist in worktrees
+const MAIN_REPO_PATH = "/Users/gustavollermalylarrain/Documents/proyectos/personales/mindgrid-tauri";
+
+// Project-specific build/run commands
+const PROJECT_COMMANDS: Record<string, { buildCommand: string; runCommand: string }> = {
+  "mindgrid-tauri": {
+    buildCommand: "cd mindgrid && npm install && npm run build",
+    runCommand: `cd mindgrid && npm install && ${MAIN_REPO_PATH}/mindgrid/scripts/tauri-preview.sh`,
+  },
+};
 
 interface GitRepoInfo {
   name: string;
@@ -20,11 +37,19 @@ interface ProjectWizardDialogProps {
     projectPath: string,
     sessionName: string,
     chatTypes: ChatType[],
-    filesToCopy?: string[]
+    filesToCopy?: string[],
+    projectCommands?: { buildCommand?: string; runCommand?: string },
+    options?: { prompt?: string; model?: string | null; variants?: SessionVariantConfig[] }
   ) => Promise<void>;
 }
 
-type WizardStep = 'project' | 'configure';
+type WizardStep = 'project' | 'configure' | 'variants';
+
+const WIZARD_STEPS: Array<{ id: WizardStep; label: string; helper: string }> = [
+  { id: 'project', label: 'Select repository', helper: 'Choose where to work' },
+  { id: 'configure', label: 'Session setup', helper: 'Name, prompt, workflow' },
+  { id: 'variants', label: 'Variants (optional)', helper: 'Parallel sessions' },
+];
 
 export function ProjectWizardDialog({
   isOpen,
@@ -40,11 +65,18 @@ export function ProjectWizardDialog({
   const [projectPath, setProjectPath] = useState("");
   const [projectName, setProjectName] = useState("");
   const [sessionName, setSessionName] = useState("Main");
+  const [prompt, setPrompt] = useState("");
+  const [model, setModel] = useState<string | null>(null);
   const [chatTypes, setChatTypes] = useState<ChatType[]>([]);
   const [filesToCopy, setFilesToCopy] = useState<string[]>([]);
+  const [buildCommand, setBuildCommand] = useState("");
+  const [runCommand, setRunCommand] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [variantsEnabled, setVariantsEnabled] = useState(false);
+  const [variants, setVariants] = useState<SessionVariantConfig[]>([]);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const repoListRef = useRef<HTMLDivElement>(null);
 
   // Load repos when dialog opens
   useEffect(() => {
@@ -56,10 +88,16 @@ export function ProjectWizardDialog({
       setProjectPath("");
       setProjectName("");
       setSessionName("Main");
+      setPrompt("");
+      setModel(null);
       setChatTypes([]);
       setFilesToCopy([]);
+      setBuildCommand("");
+      setRunCommand("");
       setIsCreating(false);
       setError(null);
+      setVariantsEnabled(false);
+      setVariants([]);
       loadRepos();
       setTimeout(() => searchInputRef.current?.focus(), 50);
     }
@@ -72,6 +110,25 @@ export function ProjectWizardDialog({
         parentDirectory: PROJECTS_DIRECTORY,
       });
       setRepos(result);
+
+      // Pre-select mindgrid-tauri if available
+      const defaultRepo = result.find(r => r.path === DEFAULT_PROJECT_PATH);
+      if (defaultRepo) {
+        setSelectedRepo(defaultRepo);
+        setProjectPath(defaultRepo.path);
+        setProjectName(defaultRepo.name);
+        // Set default commands
+        const commands = PROJECT_COMMANDS[defaultRepo.name];
+        if (commands) {
+          setBuildCommand(commands.buildCommand);
+          setRunCommand(commands.runCommand);
+        }
+        // Scroll to the selected item after render
+        setTimeout(() => {
+          const selectedElement = repoListRef.current?.querySelector(`[data-path="${defaultRepo.path}"]`);
+          selectedElement?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }, 100);
+      }
     } catch (err) {
       console.error("Failed to load repos:", err);
       setRepos([]);
@@ -88,6 +145,15 @@ export function ProjectWizardDialog({
     setSelectedRepo(repo);
     setProjectPath(repo.path);
     setProjectName(repo.name);
+    // Set default commands if available
+    const commands = PROJECT_COMMANDS[repo.name];
+    if (commands) {
+      setBuildCommand(commands.buildCommand);
+      setRunCommand(commands.runCommand);
+    } else {
+      setBuildCommand("");
+      setRunCommand("");
+    }
   };
 
   const handleSelectFolder = async () => {
@@ -114,6 +180,7 @@ export function ProjectWizardDialog({
   const handlePresetSelect = (preset: ProjectPreset) => {
     setSelectedPreset(preset);
     setChatTypes([...preset.chatTypes]);
+    setModel(preset.defaults.model || null);
   };
 
   const handleNext = () => {
@@ -123,6 +190,7 @@ export function ProjectWizardDialog({
       if (!selectedPreset) {
         setSelectedPreset(PRESETS[0]);
         setChatTypes([...PRESETS[0].chatTypes]);
+        setModel(PRESETS[0].defaults.model || null);
       }
     }
   };
@@ -142,15 +210,52 @@ export function ProjectWizardDialog({
       setError("Please enter a project name");
       return;
     }
-    if (!sessionName.trim()) {
+    if (!sessionName.trim() && !variantsEnabled) {
       setError("Please enter a session name");
       return;
+    }
+    if (!variantsEnabled) {
+      const validationError = validateSessionName(sessionName);
+      if (validationError) {
+        setError(validationError);
+        return;
+      }
+    }
+    if (variantsEnabled) {
+      if (variants.length === 0) {
+        setError("Add at least one variant");
+        return;
+      }
+      for (const variant of variants) {
+        const validationError = validateSessionName(variant.name);
+        if (validationError) {
+          setError(`Variant "${variant.name}": ${validationError}`);
+          return;
+        }
+      }
     }
 
     setIsCreating(true);
     setError(null);
     try {
-      await onCreate(projectName.trim(), projectPath, sessionName.trim(), chatTypes, filesToCopy);
+      // Use the editable command values from state
+      const commands = {
+        buildCommand: buildCommand.trim() || undefined,
+        runCommand: runCommand.trim() || undefined,
+      };
+      await onCreate(
+        projectName.trim(),
+        projectPath,
+        sessionName.trim(),
+        chatTypes,
+        filesToCopy,
+        commands,
+        {
+          prompt: prompt.trim(),
+          model,
+          variants: variantsEnabled ? variants : undefined,
+        }
+      );
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create project");
@@ -165,7 +270,12 @@ export function ProjectWizardDialog({
       e.preventDefault();
       if (step === 'project' && selectedRepo) {
         handleNext();
-      } else if (step === 'configure' && projectPath && projectName.trim() && sessionName.trim()) {
+      } else if (
+        step === 'configure' &&
+        projectPath &&
+        projectName.trim() &&
+        (sessionName.trim() || variantsEnabled)
+      ) {
         handleSubmit();
       }
     }
@@ -179,37 +289,89 @@ export function ProjectWizardDialog({
     }
   };
 
+  const generateVariantId = () => Math.random().toString(36).slice(2);
+
+  const createVariantFromBase = (index?: number): SessionVariantConfig => ({
+    id: generateVariantId(),
+    name: index ? `Variant ${index}` : sessionName || "Variant 1",
+    prompt,
+    model,
+  });
+
+  const handleAddVariant = () => {
+    setVariants((current) => [...current, createVariantFromBase(current.length + 1)]);
+  };
+
+  const handleUpdateVariant = (id: string, updates: Partial<SessionVariantConfig>) => {
+    setVariants((current) => current.map((variant) => (variant.id === id ? { ...variant, ...updates } : variant)));
+  };
+
+  const handleRemoveVariant = (id: string) => {
+    setVariants((current) => current.filter((variant) => variant.id !== id));
+  };
+
   if (!isOpen) return null;
 
   return (
-    <div
-      className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
-      onClick={onClose}
-      onKeyDown={handleKeyDown}
-    >
-      <div
-        className="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-2xl mx-4 shadow-2xl max-h-[90vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-zinc-800">
-          <h2 className="text-xl font-semibold text-zinc-100">
-            {step === 'project' ? 'Select Project' : 'Configure Session'}
-          </h2>
-          <p className="text-sm text-zinc-400 mt-1">
-            {step === 'project'
-              ? 'Choose a git repository to open'
-              : 'Set up your session and choose which chat windows to open'
-            }
-          </p>
+    <div className="fixed inset-0 bg-neutral-950/90 backdrop-blur-sm z-50 flex flex-col" onKeyDown={handleKeyDown}>
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-800">
+        <div className="flex items-center gap-3">
+          <div className="flex flex-col">
+            <span className="text-lg font-semibold text-white">New Project</span>
+            <span className="text-xs text-neutral-500">Step {step === 'project' ? '1' : '2'} of 2</span>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-neutral-500">
+            <span className={`px-2 py-1 rounded border ${step === 'project' ? 'border-blue-500 text-blue-300' : 'border-neutral-700'}`}>Select repo</span>
+            <span className="text-neutral-600">→</span>
+            <span className={`px-2 py-1 rounded border ${step === 'configure' ? 'border-blue-500 text-blue-300' : 'border-neutral-700'}`}>Configure sessions</span>
+          </div>
         </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 text-sm text-neutral-300 hover:text-white hover:bg-neutral-800 rounded-lg border border-neutral-700"
+          >
+            Close
+          </button>
+          {step === 'configure' && (
+            <button
+              onClick={handleBack}
+              className="px-3 py-1.5 text-sm text-neutral-300 hover:text-white hover:bg-neutral-800 rounded-lg border border-neutral-700"
+            >
+              Back
+            </button>
+          )}
+          <button
+            onClick={step === 'project' ? handleNext : handleSubmit}
+            disabled={
+              isCreating ||
+              !selectedRepo ||
+              (step === 'configure' && (!projectPath || (!sessionName.trim() && !variantsEnabled)))
+            }
+            className="px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {isCreating ? (
+              <>
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Creating...
+              </>
+            ) : (
+              step === 'project' ? 'Continue' : 'Create Project'
+            )}
+          </button>
+        </div>
+      </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto">
+      {/* Body */}
+      <div className="flex flex-1 overflow-hidden">
+        <div className="flex-1 overflow-y-auto p-6">
           {step === 'project' && (
-            <div className="p-4">
-              {/* Search Input */}
-              <div className="relative mb-3">
+            <div className="space-y-4 max-w-5xl">
+              <div className="relative">
                 <svg
                   className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500"
                   fill="none"
@@ -229,97 +391,78 @@ export function ProjectWizardDialog({
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search projects..."
-                  className="w-full pl-10 pr-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  className="w-full pl-10 pr-4 py-2.5 bg-zinc-900 border border-zinc-700 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 />
               </div>
 
-              {/* Repo List */}
-              <div className="border border-zinc-700 rounded-lg overflow-hidden">
-                {loadingRepos ? (
-                  <div className="p-8 text-center text-zinc-500">
-                    <svg className="w-6 h-6 animate-spin mx-auto mb-2" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              <div className="grid grid-cols-1 lg:grid-cols-[2fr,1fr] gap-4">
+                <div className="border border-zinc-700 rounded-lg overflow-hidden">
+                  {loadingRepos ? (
+                    <div className="p-8 text-center text-zinc-500">
+                      <svg className="w-6 h-6 animate-spin mx-auto mb-2" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Loading repositories...
+                    </div>
+                  ) : filteredRepos.length === 0 ? (
+                    <div className="p-8 text-center text-zinc-500">
+                      {searchQuery ? "No matching projects found" : "No git repositories found"}
+                    </div>
+                  ) : (
+                    <div ref={repoListRef} className="max-h-[520px] overflow-y-auto">
+                      {filteredRepos.map((repo) => (
+                        <div
+                          key={repo.path}
+                          data-path={repo.path}
+                          onClick={() => handleSelectRepo(repo)}
+                          className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors border-b border-zinc-800 last:border-b-0 ${
+                            selectedRepo?.path === repo.path
+                              ? 'bg-blue-500/20 border-l-2 border-l-blue-500'
+                              : 'hover:bg-zinc-800'
+                          }`}
+                        >
+                          <div className="w-8 h-8 rounded bg-zinc-700 flex items-center justify-center flex-shrink-0">
+                            <svg className="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                            </svg>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-white truncate">{repo.name}</div>
+                            <div className="text-xs text-zinc-500 font-mono truncate">{repo.path}</div>
+                          </div>
+                          {selectedRepo?.path === repo.path && (
+                            <svg className="w-5 h-5 text-blue-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  <button
+                    onClick={handleSelectFolder}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-dashed border-zinc-600 rounded-lg text-zinc-300 hover:text-white hover:border-zinc-500 transition-colors bg-zinc-900"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                     </svg>
-                    Loading repositories...
+                    Browse for another folder...
+                  </button>
+                  <div className="p-3 bg-zinc-900 border border-zinc-700 rounded-lg text-xs text-neutral-400">
+                    Showing repositories from:
+                    <div className="mt-1 font-mono text-neutral-300">{PROJECTS_DIRECTORY}</div>
                   </div>
-                ) : filteredRepos.length === 0 ? (
-                  <div className="p-8 text-center text-zinc-500">
-                    {searchQuery ? "No matching projects found" : "No git repositories found"}
-                  </div>
-                ) : (
-                  <div className="max-h-[300px] overflow-y-auto">
-                    {filteredRepos.map((repo) => (
-                      <div
-                        key={repo.path}
-                        onClick={() => handleSelectRepo(repo)}
-                        className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors border-b border-zinc-800 last:border-b-0 ${
-                          selectedRepo?.path === repo.path
-                            ? 'bg-blue-500/20 border-l-2 border-l-blue-500'
-                            : 'hover:bg-zinc-800'
-                        }`}
-                      >
-                        <div className="w-8 h-8 rounded bg-zinc-700 flex items-center justify-center flex-shrink-0">
-                          <svg className="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                          </svg>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium text-white truncate">{repo.name}</div>
-                          <div className="text-xs text-zinc-500 font-mono truncate">{repo.path}</div>
-                        </div>
-                        {selectedRepo?.path === repo.path && (
-                          <svg className="w-5 h-5 text-blue-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
+                </div>
               </div>
-
-              {/* Manual folder picker */}
-              <button
-                onClick={handleSelectFolder}
-                className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-dashed border-zinc-600 rounded-lg text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Browse for another folder...
-              </button>
-
-              {/* Source directory info */}
-              <p className="mt-3 text-xs text-zinc-600 text-center">
-                Showing repositories from: {PROJECTS_DIRECTORY}
-              </p>
             </div>
           )}
 
           {step === 'configure' && (
-            <div className="p-6 space-y-6">
-              {/* Selected Project */}
-              <div className="p-3 bg-zinc-800/50 rounded-lg border border-zinc-700">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-zinc-700 flex items-center justify-center">
-                    <svg className="w-5 h-5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                    </svg>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-white">{projectName}</div>
-                    <div className="text-xs text-zinc-500 font-mono truncate">{projectPath}</div>
-                  </div>
-                  <button
-                    onClick={handleBack}
-                    className="text-xs text-blue-400 hover:text-blue-300"
-                  >
-                    Change
-                  </button>
-                </div>
-              </div>
-
+            <div className="p-2 space-y-6 max-w-5xl">
               {/* Session Name */}
               <div>
                 <label className="block text-sm font-medium text-zinc-300 mb-2">
@@ -329,12 +472,38 @@ export function ProjectWizardDialog({
                   type="text"
                   value={sessionName}
                   onChange={(e) => setSessionName(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                  className="w-full px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
                   placeholder="Main"
+                  disabled={variantsEnabled}
                 />
                 <p className="text-xs text-zinc-500 mt-1">
                   This will create a git worktree for this session
                 </p>
+              </div>
+
+              {/* Prompt and Model */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-zinc-300 mb-2">
+                    Task / Prompt <span className="text-neutral-500">(optional)</span>
+                  </label>
+                  <textarea
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    className="w-full px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-white focus:outline-none focus:border-blue-500 resize-none"
+                    rows={3}
+                    placeholder="Describe what you want each variant to tackle"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-300 mb-2">
+                    Model <span className="text-neutral-500">(optional)</span>
+                  </label>
+                  <ModelSelector value={model} onChange={setModel} />
+                  <p className="text-xs text-neutral-500 mt-2">
+                    Defaults to preset choice. Override per variant below.
+                  </p>
+                </div>
               </div>
 
               {/* Workflow Presets */}
@@ -409,6 +578,131 @@ export function ProjectWizardDialog({
                 )}
               </div>
 
+              {/* Build & Run Commands */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-zinc-500 mb-1">Build Command</label>
+                  <input
+                    type="text"
+                    value={buildCommand}
+                    onChange={(e) => setBuildCommand(e.target.value)}
+                    className="w-full px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-white font-mono text-sm focus:outline-none focus:border-blue-500"
+                    placeholder="npm run build"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-zinc-500 mb-1">Run Command (for preview)</label>
+                  <input
+                    type="text"
+                    value={runCommand}
+                    onChange={(e) => setRunCommand(e.target.value)}
+                    className="w-full px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-white font-mono text-sm focus:outline-none focus:border-blue-500"
+                    placeholder="npm run dev"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-zinc-500">
+                Commands run from the worktree directory. Use the Run button to execute the preview.
+              </p>
+
+              {/* Variants */}
+              <div className="p-3 border border-dashed border-zinc-700 rounded-lg bg-zinc-900/50 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-medium text-zinc-200">Create variants</div>
+                    <p className="text-xs text-zinc-500">
+                      Spin up multiple sessions with different prompts/models.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const enable = !variantsEnabled;
+                      setVariantsEnabled(enable);
+                      if (enable && variants.length === 0) {
+                        setVariants([createVariantFromBase()]);
+                        setError(null);
+                      }
+                    }}
+                    className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
+                      variantsEnabled
+                        ? "border-emerald-500 bg-emerald-500/10 text-emerald-300"
+                        : "border-zinc-700 hover:border-zinc-600 text-zinc-300"
+                    }`}
+                  >
+                    {variantsEnabled ? "Variants on" : "Enable variants"}
+                  </button>
+                </div>
+
+                {variantsEnabled && (
+                  <div className="space-y-3">
+                    {variants.map((variant, index) => (
+                      <div key={variant.id} className="p-3 rounded-lg border border-zinc-700 bg-zinc-900 space-y-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex-1">
+                            <label className="block text-xs text-zinc-500 mb-1">
+                              Variant Name {index === 0 && "(base)"}
+                            </label>
+                            <input
+                              type="text"
+                              value={variant.name}
+                              onChange={(e) => handleUpdateVariant(variant.id, { name: e.target.value })}
+                              className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-blue-500"
+                            />
+                          </div>
+                          {variants.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveVariant(variant.id)}
+                              className="p-2 rounded text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                              aria-label="Remove variant"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs text-zinc-500 mb-1">Model</label>
+                            <ModelSelector
+                              value={variant.model}
+                              onChange={(value) => handleUpdateVariant(variant.id, { model: value })}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-zinc-500 mb-1">Prompt</label>
+                            <textarea
+                              value={variant.prompt}
+                              onChange={(e) => handleUpdateVariant(variant.id, { prompt: e.target.value })}
+                              rows={2}
+                              className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 resize-none"
+                              placeholder={prompt || "Describe this variant's goal"}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    <div className="flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={handleAddVariant}
+                        className="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 hover:border-zinc-600 rounded-lg text-zinc-200 transition-colors flex items-center gap-1.5"
+                      >
+                        <span className="text-emerald-400 text-base leading-none">+</span>
+                        Add variant
+                      </button>
+                      <div className="text-xs text-zinc-500">
+                        {variants.length} session{variants.length === 1 ? "" : "s"} will be created
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Gitignored Files Selector */}
               <GitignoreFilesSelector
                 projectPath={projectPath}
@@ -427,55 +721,35 @@ export function ProjectWizardDialog({
           )}
         </div>
 
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-zinc-800 flex justify-between">
+        {/* Summary Pane */}
+        <aside className="w-80 border-l border-neutral-800 bg-neutral-900/80 backdrop-blur-sm p-4 space-y-4 hidden lg:block">
           <div>
-            {step === 'configure' && (
-              <button
-                onClick={handleBack}
-                className="px-4 py-2 text-sm font-medium text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors"
-              >
-                Back
-              </button>
-            )}
+            <div className="text-xs uppercase text-neutral-500 mb-1">Project</div>
+            <div className="text-sm text-white truncate">{projectName || "—"}</div>
+            <div className="text-[11px] text-neutral-500 truncate font-mono">{projectPath || "Select a repo"}</div>
           </div>
-          <div className="flex gap-3">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors"
-            >
-              Cancel
-            </button>
-            {step === 'project' && (
-              <button
-                onClick={handleNext}
-                disabled={!selectedRepo}
-                className="px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Next
-              </button>
-            )}
-            {step === 'configure' && (
-              <button
-                onClick={handleSubmit}
-                disabled={!projectPath || !projectName.trim() || !sessionName.trim() || isCreating}
-                className="px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                {isCreating ? (
-                  <>
-                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    Creating...
-                  </>
-                ) : (
-                  "Create Project"
-                )}
-              </button>
-            )}
+          <div>
+            <div className="text-xs uppercase text-neutral-500 mb-1">Workflow</div>
+            <div className="text-sm text-white">{selectedPreset?.name || "Not selected"}</div>
+            <div className="text-[11px] text-neutral-500">{chatTypes.length} chat window{chatTypes.length === 1 ? "" : "s"}</div>
           </div>
-        </div>
+          <div>
+            <div className="text-xs uppercase text-neutral-500 mb-1">Prompt / Model</div>
+            <div className="text-sm text-white truncate">{prompt || "No prompt"}</div>
+            <div className="text-[11px] text-neutral-500">{model || "Default model"}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase text-neutral-500 mb-1">Variants</div>
+            <div className="text-sm text-white">
+              {variantsEnabled ? `${variants.length} variant${variants.length === 1 ? "" : "s"}` : "Single session"}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase text-neutral-500 mb-1">Commands</div>
+            <div className="text-[12px] text-neutral-300 font-mono truncate">{buildCommand || "—"}</div>
+            <div className="text-[12px] text-neutral-300 font-mono truncate">{runCommand || "—"}</div>
+          </div>
+        </aside>
       </div>
     </div>
   );

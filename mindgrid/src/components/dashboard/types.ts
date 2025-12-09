@@ -9,6 +9,7 @@ export interface DashboardSession {
   agents: string[];
   updatedAt: number;
   initialPrompt?: string;
+  isRunning?: boolean; // Has an open run/preview window
 }
 
 export interface DashboardGitInfo {
@@ -43,6 +44,8 @@ export interface DashboardProject {
   github?: DashboardGitInfo;
   chatHistory: DashboardActivity[];
   stats: { totalSessions: number; totalMessages: number; filesModified: number };
+  buildCommand?: string | null;
+  runCommand?: string | null;
 }
 
 export interface DashboardPresetMap {

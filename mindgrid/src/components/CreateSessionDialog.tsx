@@ -9,6 +9,13 @@ import { ModelSelector } from "./ModelSelector";
 import { GitignoreFilesSelector } from "./GitignoreFilesSelector";
 import type { PermissionMode, CommitMode } from "../lib/claude-types";
 
+export interface SessionVariantConfig {
+  id: string;
+  name: string;
+  prompt: string;
+  model: string | null;
+}
+
 export interface SessionConfig {
   name: string;
   prompt: string;
@@ -17,6 +24,7 @@ export interface SessionConfig {
   commitMode: CommitMode;
   toolType: "claude" | "codex" | "none";
   filesToCopy?: string[];
+  variants?: SessionVariantConfig[];
 }
 
 interface CreateSessionDialogProps {
@@ -43,6 +51,13 @@ const COMMIT_MODES: { value: CommitMode; label: string; description: string }[] 
   { value: "disabled", label: "Disabled", description: "No auto commits" },
 ];
 
+const generateVariantId = () => {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return Math.random().toString(36).slice(2);
+};
+
 export function CreateSessionDialog({
   isOpen,
   projectName,
@@ -62,6 +77,8 @@ export function CreateSessionDialog({
   const [toolType, setToolType] = useState<"claude" | "codex" | "none">("claude");
   const [filesToCopy, setFilesToCopy] = useState<string[]>([]);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [variantsEnabled, setVariantsEnabled] = useState(false);
+  const [variants, setVariants] = useState<SessionVariantConfig[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -76,6 +93,8 @@ export function CreateSessionDialog({
       setCommitMode(defaultCommitMode ?? "checkpoint");
       setToolType("claude");
       setFilesToCopy([]);
+      setVariantsEnabled(false);
+      setVariants([]);
       setShowAdvanced(false);
       setError(null);
       setIsCreating(false);
@@ -88,18 +107,67 @@ export function CreateSessionDialog({
 
   const handleNameChange = (value: string) => {
     setSessionName(value);
-    setError(validateSessionName(value));
+    if (!variantsEnabled) {
+      setError(validateSessionName(value));
+    }
+  };
+
+  const createVariantFromBase = (index?: number): SessionVariantConfig => ({
+    id: generateVariantId(),
+    name: index ? `${sessionName || "Variant"} ${index}` : sessionName || "New Session",
+    prompt,
+    model,
+  });
+
+  const handleAddVariant = () => {
+    setVariants((current) => {
+      const nextIndex = current.length + 1;
+      return [...current, createVariantFromBase(nextIndex)];
+    });
+  };
+
+  const handleUpdateVariant = (id: string, updates: Partial<SessionVariantConfig>) => {
+    setVariants((current) =>
+      current.map((variant) => (variant.id === id ? { ...variant, ...updates } : variant))
+    );
+  };
+
+  const handleRemoveVariant = (id: string) => {
+    setVariants((current) => current.filter((variant) => variant.id !== id));
   };
 
   const handleSubmit = async () => {
-    const validationError = validateSessionName(sessionName);
-    if (validationError) {
-      setError(validationError);
-      return;
+    if (variantsEnabled) {
+      if (variants.length === 0) {
+        setError("Add at least one variant before creating sessions.");
+        return;
+      }
+
+      for (const variant of variants) {
+        const validationError = validateSessionName(variant.name);
+        if (validationError) {
+          setError(`Variant "${variant.name}": ${validationError}`);
+          return;
+        }
+      }
+    } else {
+      const validationError = validateSessionName(sessionName);
+      if (validationError) {
+        setError(validationError);
+        return;
+      }
     }
 
     setIsCreating(true);
     try {
+      const normalizedVariants = variantsEnabled
+        ? variants.map((variant) => ({
+            ...variant,
+            name: variant.name.trim(),
+            prompt: variant.prompt.trim(),
+          }))
+        : undefined;
+
       await onCreate({
         name: sessionName.trim(),
         prompt: prompt.trim(),
@@ -108,6 +176,7 @@ export function CreateSessionDialog({
         commitMode,
         toolType,
         filesToCopy,
+        variants: normalizedVariants,
       });
       onClose();
     } catch (err) {
@@ -217,6 +286,108 @@ export function CreateSessionDialog({
             />
           </div>
 
+          {/* Variants */}
+          <div className="p-3 border border-dashed border-zinc-700 rounded-lg bg-zinc-900/50 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-medium text-zinc-200">Create variants</div>
+                <p className="text-xs text-zinc-500">
+                  Launch multiple sessions with different prompts or models.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const enable = !variantsEnabled;
+                  setVariantsEnabled(enable);
+                  if (enable && variants.length === 0) {
+                    setVariants([createVariantFromBase()]);
+                    setError(null);
+                  } else if (!enable) {
+                    setError(validateSessionName(sessionName));
+                  }
+                }}
+                className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
+                  variantsEnabled
+                    ? "border-emerald-500 bg-emerald-500/10 text-emerald-300"
+                    : "border-zinc-700 hover:border-zinc-600 text-zinc-300"
+                }`}
+              >
+                {variantsEnabled ? "Variants on" : "Enable variants"}
+              </button>
+            </div>
+
+            {variantsEnabled && (
+              <div className="space-y-3">
+                {variants.map((variant, index) => (
+                  <div key={variant.id} className="p-3 rounded-lg border border-zinc-700 bg-zinc-900 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex-1">
+                        <label className="block text-xs text-zinc-500 mb-1">
+                          Variant Name {index === 0 && "(base)"}
+                        </label>
+                        <input
+                          type="text"
+                          value={variant.name}
+                          onChange={(e) => handleUpdateVariant(variant.id, { name: e.target.value })}
+                          className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded text-sm text-white focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                      {variants.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveVariant(variant.id)}
+                          className="p-2 rounded text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                          aria-label="Remove variant"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+
+                    <div className={`grid ${toolType !== "none" ? "grid-cols-2" : "grid-cols-1"} gap-3`}>
+                      {toolType !== "none" && (
+                        <div>
+                          <label className="block text-xs text-zinc-500 mb-1">Model</label>
+                          <ModelSelector
+                            value={variant.model}
+                            onChange={(value) => handleUpdateVariant(variant.id, { model: value })}
+                          />
+                        </div>
+                      )}
+                      <div>
+                        <label className="block text-xs text-zinc-500 mb-1">Prompt override</label>
+                        <textarea
+                          value={variant.prompt}
+                          onChange={(e) => handleUpdateVariant(variant.id, { prompt: e.target.value })}
+                          rows={2}
+                          className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 resize-none"
+                          placeholder={prompt || "Describe this variant's goal"}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                <div className="flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={handleAddVariant}
+                    className="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 hover:border-zinc-600 rounded-lg text-zinc-200 transition-colors flex items-center gap-1.5"
+                  >
+                    <span className="text-emerald-400 text-base leading-none">+</span>
+                    Add variant
+                  </button>
+                  <div className="text-xs text-zinc-500">
+                    {variants.length} session{variants.length === 1 ? "" : "s"} will be created and opened
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* AI Tool Selection */}
           <div>
             <label className="block text-sm font-medium text-zinc-300 mb-2">
@@ -255,11 +426,7 @@ export function CreateSessionDialog({
               <label className="block text-sm font-medium text-zinc-300 mb-2">
                 Model
               </label>
-              <ModelSelector
-                value={model}
-                onChange={setModel}
-                allowedProviders={toolType === "codex" ? ["openai"] : ["anthropic"]}
-              />
+              <ModelSelector value={model} onChange={setModel} />
             </div>
           )}
 
@@ -362,7 +529,12 @@ export function CreateSessionDialog({
             </button>
             <button
               onClick={handleSubmit}
-              disabled={!!error || !sessionName.trim() || isCreating}
+              disabled={
+                !!error ||
+                isCreating ||
+                (!variantsEnabled && !sessionName.trim()) ||
+                (variantsEnabled && variants.length === 0)
+              }
               className="px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {isCreating ? (
@@ -374,7 +546,7 @@ export function CreateSessionDialog({
                   Creating...
                 </>
               ) : (
-                "Create Session"
+                variantsEnabled && variants.length > 1 ? "Create Sessions" : "Create Session"
               )}
             </button>
           </div>

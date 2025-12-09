@@ -5,11 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port 1424",
-    "dev:preview": "vite --port 1426",
+    "dev:dynamic": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri dev --config src-tauri/tauri.conf.json",
-    "tauri:preview": "tauri dev --config src-tauri/tauri.worktree.conf.json",
+    "tauri:preview": "./scripts/tauri-preview.sh",
     "worktree": "../scripts/worktree.sh",
     "worktree:create": "../scripts/worktree.sh create",
     "worktree:list": "../scripts/worktree.sh list",

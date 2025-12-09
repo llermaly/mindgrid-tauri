@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for all windows",
-  "windows": ["main", "chat-*", "workspace-*"],
+  "windows": ["main", "chat-*", "workspace-*", "run-*"],
   "permissions": [
     "core:default",
     "core:window:default",

@@ -11,16 +11,22 @@ import { useSessionStore, type Session, type PanelType } from "./stores/sessionS
 import { isDevMode, getWorktreeInfo } from "./lib/dev-mode";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-function getWindowParams(): { mode: "main" | "workspace"; sessionId: string | null } {
+function getWindowParams(): { mode: "main" | "workspace" | "terminal"; sessionId: string | null; runCommand: string | null; cwd: string | null } {
   const params = new URLSearchParams(window.location.search);
+  const modeParam = params.get("mode");
+  let mode: "main" | "workspace" | "terminal" = "main";
+  if (modeParam === "workspace") mode = "workspace";
+  if (modeParam === "terminal") mode = "terminal";
   return {
-    mode: params.get("mode") === "workspace" ? "workspace" : "main",
+    mode,
     sessionId: params.get("sessionId"),
+    runCommand: params.get("runCommand"),
+    cwd: params.get("cwd"),
   };
 }
 
 function App() {
-  const { mode: windowMode, sessionId: urlSessionId } = getWindowParams();
+  const { mode: windowMode, sessionId: urlSessionId, runCommand, cwd: urlCwd } = getWindowParams();
 
   const {
     activeSessionId,
@@ -70,7 +76,7 @@ function App() {
     checkEnvironment();
   }, []);
 
-  const effectiveSessionId = windowMode === "workspace" && urlSessionId ? urlSessionId : activeSessionId;
+  const effectiveSessionId = (windowMode === "workspace" || windowMode === "terminal") && urlSessionId ? urlSessionId : activeSessionId;
   const activeSession = effectiveSessionId ? sessions[effectiveSessionId] : null;
 
   useEffect(() => {
@@ -145,6 +151,15 @@ function App() {
     }
   };
 
+  // Terminal mode doesn't need the store - render immediately if we have cwd from URL
+  if (windowMode === "terminal" && urlCwd) {
+    return (
+      <div className="h-full bg-neutral-900">
+        <TerminalPanel cwd={urlCwd} initialCommand={runCommand || undefined} />
+      </div>
+    );
+  }
+
   if (!isInitialized || isLoading) {
     return (
       <div className="h-full flex items-center justify-center bg-zinc-900">
@@ -167,6 +182,26 @@ function App() {
     return (
       <div className="h-full bg-neutral-900">
         <SessionWorkspace sessionName={activeSession.name} renderPanel={(panelId: PanelType) => renderPanelContent(panelId, activeSession)} />
+      </div>
+    );
+  }
+
+  if (windowMode === "terminal") {
+    // Terminal mode uses cwd directly from URL, no session needed
+    const terminalCwd = urlCwd || activeSession?.cwd;
+    if (!terminalCwd) {
+      return (
+        <div className="h-full flex items-center justify-center bg-zinc-900">
+          <div className="text-center">
+            <div className="text-zinc-400 mb-2">No working directory specified</div>
+            <div className="text-zinc-500 text-sm">Please provide a cwd parameter</div>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="h-full bg-neutral-900">
+        <TerminalPanel cwd={terminalCwd} initialCommand={runCommand || undefined} />
       </div>
     );
   }

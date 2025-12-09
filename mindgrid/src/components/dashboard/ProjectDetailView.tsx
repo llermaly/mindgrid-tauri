@@ -12,6 +12,7 @@ interface ProjectDetailViewProps {
   onCreateSession: () => void;
   onDeleteProject: (projectId: string) => Promise<void>;
   onDeleteSession: (sessionId: string) => Promise<void>;
+  onRunProject?: (project: DashboardProject, session: DashboardSession) => void;
 }
 
 const TABS = [
@@ -21,7 +22,7 @@ const TABS = [
   { id: "history", label: "History" },
 ];
 
-export function ProjectDetailView({ project, preset, onClose, onOpenSession, onCreateSession, onDeleteProject, onDeleteSession }: ProjectDetailViewProps) {
+export function ProjectDetailView({ project, preset, onClose, onOpenSession, onCreateSession, onDeleteProject, onDeleteSession, onRunProject }: ProjectDetailViewProps) {
   const [activeTab, setActiveTab] = useState<"overview" | "sessions" | "github" | "history">("overview");
   const [showDeleteProjectModal, setShowDeleteProjectModal] = useState(false);
   const [showDeleteSessionModal, setShowDeleteSessionModal] = useState<string | null>(null);
@@ -241,7 +242,14 @@ export function ProjectDetailView({ project, preset, onClose, onOpenSession, onC
                   <div className="flex items-center gap-3 min-w-0 flex-1">
                     <StatusBadge status={session.status} />
                     <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium text-white">{session.name}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-white">{session.name}</span>
+                        {session.isRunning && (
+                          <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-500/20 text-green-400 rounded border border-green-500/30">
+                            RUNNING
+                          </span>
+                        )}
+                      </div>
                       {session.initialPrompt ? (
                         <div className="text-xs text-neutral-400 truncate" title={session.initialPrompt}>
                           {session.initialPrompt}
@@ -252,6 +260,31 @@ export function ProjectDetailView({ project, preset, onClose, onOpenSession, onC
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    {project.runCommand && onRunProject && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRunProject(project, session);
+                        }}
+                        className="p-1.5 hover:bg-neutral-700 rounded text-neutral-500 hover:text-green-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Run preview"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
+                          />
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                          />
+                        </svg>
+                      </button>
+                    )}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();

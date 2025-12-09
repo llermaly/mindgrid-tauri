@@ -4,7 +4,7 @@ import { useSessionStore, type Project, type Session } from "../stores/sessionSt
 import { debug } from "../stores/debugStore";
 import { GitStatusIndicator } from "./GitStatusIndicator";
 import { openChatWindow, openNewChatInSession, openMultipleChatWindows, openAllProjectSessionChats } from "../lib/window-manager";
-import { CreateSessionDialog, type SessionConfig } from "./CreateSessionDialog";
+import { CreateSessionDialog, type SessionConfig, type SessionVariantConfig } from "./CreateSessionDialog";
 import { ProjectWizardDialog } from "./ProjectWizardDialog";
 import { ModelSelector } from "./ModelSelector";
 import type { ChatType } from "../lib/presets";
@@ -40,7 +40,9 @@ export function Sidebar({ activePage, onOpenSettings, onNavigateHome }: SidebarP
     projectPath: string,
     sessionName: string,
     chatTypes: ChatType[],
-    filesToCopy?: string[]
+    filesToCopy?: string[],
+    _projectCommands?: { buildCommand?: string; runCommand?: string },
+    options?: { prompt?: string; model?: string | null; variants?: SessionVariantConfig[] }
   ) => {
     try {
       debug.info("Sidebar", "Creating project with wizard", { projectName, projectPath, sessionName, chatTypes, filesToCopy });
@@ -51,39 +53,72 @@ export function Sidebar({ activePage, onOpenSettings, onNavigateHome }: SidebarP
 
       setExpandedProjects((prev) => new Set([...prev, project.id]));
 
-      // Create ONE session for this project
-      const session = await createSession(project.id, sessionName, projectPath);
-      debug.info("Sidebar", "Session created", { id: session.id, name: sessionName });
+      const variantConfigs =
+        options?.variants && options.variants.length > 0
+          ? options.variants
+          : [{ id: "base", name: sessionName, prompt: options?.prompt, model: options?.model }];
 
-      // Copy selected gitignored files to worktree
-      if (filesToCopy && filesToCopy.length > 0 && session.cwd !== projectPath) {
-        try {
-          debug.info("Sidebar", "Copying files to worktree", { files: filesToCopy, dest: session.cwd });
-          const copied = await invoke<string[]>("copy_files_to_worktree", {
-            projectPath,
-            worktreePath: session.cwd,
-            files: filesToCopy,
-          });
-          debug.info("Sidebar", "Files copied successfully", { copied });
-        } catch (copyErr) {
-          debug.error("Sidebar", "Failed to copy files to worktree", copyErr);
-          console.error("Failed to copy files:", copyErr);
-          // Don't fail the whole operation, just log the error
+      const { setSessionModel, updateSession } = useSessionStore.getState();
+      const createdSessions: Session[] = [];
+
+      for (const [index, variant] of variantConfigs.entries()) {
+        const name =
+          variant.name?.trim() ||
+          (sessionName ? `${sessionName} ${variantConfigs.length > 1 ? `(${index + 1})` : ""}` : `Variant ${index + 1}`);
+
+        const newSession = await createSession(project.id, name, projectPath);
+        debug.info("Sidebar", "Session created", { id: newSession.id, name });
+
+        // Copy selected gitignored files to worktree
+        if (filesToCopy && filesToCopy.length > 0 && newSession.cwd !== projectPath) {
+          try {
+            debug.info("Sidebar", "Copying files to worktree", { files: filesToCopy, dest: newSession.cwd });
+            const copied = await invoke<string[]>("copy_files_to_worktree", {
+              projectPath,
+              worktreePath: newSession.cwd,
+              files: filesToCopy,
+            });
+            debug.info("Sidebar", "Files copied successfully", { copied });
+          } catch (copyErr) {
+            debug.error("Sidebar", "Failed to copy files to worktree", copyErr);
+            console.error("Failed to copy files:", copyErr);
+          }
         }
+
+        const variantModel = variant.model ?? options?.model;
+        if (variantModel) {
+          setSessionModel(newSession.id, variantModel);
+        }
+
+        const variantPrompt = variant.prompt || options?.prompt;
+        if (variantPrompt) {
+          await updateSession(newSession.id, { initialPrompt: variantPrompt });
+        }
+
+        createdSessions.push(newSession);
       }
 
       // Navigate to the new session
       onNavigateHome();
-      setActiveSession(session.id);
+      setActiveSession(createdSessions[0]?.id ?? null);
 
-      // Open chat windows for each selected chat type
-      if (chatTypes.length > 0) {
+      if (createdSessions.length > 1) {
+        debug.info("Sidebar", "Opening variant chat windows", { count: createdSessions.length });
+        await openAllProjectSessionChats(
+          createdSessions.map((session) => ({
+            sessionId: session.id,
+            sessionName: session.name,
+            cwd: session.cwd,
+          })),
+          project.name
+        );
+      } else if (createdSessions[0] && chatTypes.length > 0) {
         debug.info("Sidebar", "Opening chat windows", { count: chatTypes.length });
         await openMultipleChatWindows({
-          sessionId: session.id,
-          sessionName: session.name,
+          sessionId: createdSessions[0].id,
+          sessionName: createdSessions[0].name,
           projectName: project.name,
-          cwd: session.cwd,
+          cwd: createdSessions[0].cwd,
         }, chatTypes.length);
       }
     } catch (err) {
@@ -100,42 +135,72 @@ export function Sidebar({ activePage, onOpenSettings, onNavigateHome }: SidebarP
   const handleCreateSessionConfirm = async (config: SessionConfig) => {
     if (!createSessionForProject) return;
     const projectPath = createSessionForProject.path;
-    const newSession = await createSession(createSessionForProject.id, config.name, projectPath);
+    const variantConfigs = config.variants && config.variants.length > 0
+      ? config.variants
+      : [{ id: "base", name: config.name, prompt: config.prompt, model: config.model }];
 
-    // Copy selected gitignored files to worktree
-    if (config.filesToCopy && config.filesToCopy.length > 0 && newSession.cwd !== projectPath) {
-      try {
-        debug.info("Sidebar", "Copying files to worktree", { files: config.filesToCopy, dest: newSession.cwd });
-        const copied = await invoke<string[]>("copy_files_to_worktree", {
-          projectPath,
-          worktreePath: newSession.cwd,
-          files: config.filesToCopy,
-        });
-        debug.info("Sidebar", "Files copied successfully", { copied });
-      } catch (copyErr) {
-        debug.error("Sidebar", "Failed to copy files to worktree", copyErr);
-        console.error("Failed to copy files:", copyErr);
-        // Don't fail the whole operation, just log the error
+    const { setPermissionMode, setCommitMode, setSessionModel, updateSession } = useSessionStore.getState();
+    const createdSessions: Session[] = [];
+
+    for (const [index, variant] of variantConfigs.entries()) {
+      const sessionName =
+        variant.name?.trim() ||
+        (config.name ? `${config.name} ${variantConfigs.length > 1 ? `(${index + 1})` : ""}` : `Variant ${index + 1}`);
+
+      const newSession = await createSession(createSessionForProject.id, sessionName, projectPath);
+
+      // Copy selected gitignored files to worktree
+      if (config.filesToCopy && config.filesToCopy.length > 0 && newSession.cwd !== projectPath) {
+        try {
+          debug.info("Sidebar", "Copying files to worktree", { files: config.filesToCopy, dest: newSession.cwd });
+          const copied = await invoke<string[]>("copy_files_to_worktree", {
+            projectPath,
+            worktreePath: newSession.cwd,
+            files: config.filesToCopy,
+          });
+          debug.info("Sidebar", "Files copied successfully", { copied });
+        } catch (copyErr) {
+          debug.error("Sidebar", "Failed to copy files to worktree", copyErr);
+          console.error("Failed to copy files:", copyErr);
+          // Don't fail the whole operation, just log the error
+        }
       }
-    }
 
-    // Apply additional config
-    const { setPermissionMode, setCommitMode, setSessionModel } = useSessionStore.getState();
-    if (config.permissionMode !== "default") {
-      setPermissionMode(newSession.id, config.permissionMode);
-    }
-    if (config.commitMode !== "checkpoint") {
-      setCommitMode(newSession.id, config.commitMode);
-    }
-    if (config.model) {
-      setSessionModel(newSession.id, config.model);
+      // Apply additional config
+      if (config.permissionMode !== "default") {
+        setPermissionMode(newSession.id, config.permissionMode);
+      }
+      if (config.commitMode !== "checkpoint") {
+        setCommitMode(newSession.id, config.commitMode);
+      }
+      const variantModel = variant.model ?? config.model;
+      if (variantModel) {
+        setSessionModel(newSession.id, variantModel);
+      }
+      const variantPrompt = variant.prompt || config.prompt;
+      if (variantPrompt) {
+        await updateSession(newSession.id, { initialPrompt: variantPrompt });
+      }
+
+      createdSessions.push(newSession);
     }
 
     setCreateSessionForProject(null);
 
-    // Navigate to the new session
+    // Navigate to the new session(s)
     onNavigateHome();
-    setActiveSession(newSession.id);
+    setActiveSession(createdSessions[0]?.id ?? null);
+
+    if (createdSessions.length > 1) {
+      await openAllProjectSessionChats(
+        createdSessions.map((session) => ({
+          sessionId: session.id,
+          sessionName: session.name,
+          cwd: session.cwd,
+        })),
+        createSessionForProject.name
+      );
+    }
   };
 
   const toggleProject = (projectId: string) => {
