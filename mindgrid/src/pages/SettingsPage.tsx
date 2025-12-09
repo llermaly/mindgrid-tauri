@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode, type JSX } from "react";
 
 type SettingsSection = "appearance" | "ai-providers" | "security" | "projects" | "agents" | "updates" | "advanced";
 

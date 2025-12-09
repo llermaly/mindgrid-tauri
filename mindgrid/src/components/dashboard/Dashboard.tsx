@@ -11,7 +11,7 @@ import { ProjectCard } from "./ProjectCard";
 import { ProjectDetailView } from "./ProjectDetailView";
 import { SessionDetailView } from "./SessionDetailView";
 import { UsageLimitsCard } from "./UsageLimitsCard";
-import type { DashboardProject, DashboardSession, DashboardActivity, DashboardGitInfo } from "./types";
+import type { DashboardProject, DashboardSession, DashboardActivity, DashboardGitInfo, DashboardSessionStatus } from "./types";
 import { SettingsPage } from "../../pages/SettingsPage";
 import { CreateSessionDialog, type SessionConfig } from "../CreateSessionDialog";
 import { PathLink } from "../PathLink";

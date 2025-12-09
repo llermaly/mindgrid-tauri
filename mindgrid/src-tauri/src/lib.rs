@@ -228,6 +228,8 @@ pub fn run() {
             git::git_create_pr,
             git::git_merge_to_main,
             git::git_merge_pr,
+            git::git_check_merge_conflicts,
+            git::git_generate_pr_info,
             git::open_in_editor,
             git::save_session_to_worktree,
             git::load_session_from_worktree,

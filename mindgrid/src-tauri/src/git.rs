@@ -1734,3 +1734,176 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
     }
     Ok(())
 }
+
+// New types for enhanced GitHub workflow
+#[derive(Debug, Serialize)]
+pub struct ConflictCheckResult {
+    pub has_conflicts: bool,
+    pub conflicting_files: Vec<String>,
+    pub base_branch: String,
+    pub current_branch: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PrSuggestion {
+    pub title: String,
+    pub body: String,
+    pub commit_count: usize,
+}
+
+/// Check for merge conflicts before attempting to merge
+#[tauri::command]
+pub async fn git_check_merge_conflicts(
+    working_directory: String,
+) -> Result<ConflictCheckResult, String> {
+    let path = Path::new(&working_directory);
+
+    // Get current branch
+    let current_branch_output = std::process::Command::new("git")
+        .current_dir(path)
+        .args(&["rev-parse", "--abbrev-ref", "HEAD"])
+        .output()
+        .map_err(|e| format!("Failed to get current branch: {}", e))?;
+
+    if !current_branch_output.status.success() {
+        return Err("Failed to determine current branch".to_string());
+    }
+
+    let current_branch = String::from_utf8_lossy(&current_branch_output.stdout)
+        .trim()
+        .to_string();
+
+    // Detect main branch
+    let main_branch = detect_main_branch(path)?;
+
+    // Fetch latest changes
+    let _ = std::process::Command::new("git")
+        .current_dir(path)
+        .args(&["fetch", "origin", &main_branch])
+        .output();
+
+    // Use merge-tree to check for conflicts without modifying the working directory
+    let merge_tree_output = std::process::Command::new("git")
+        .current_dir(path)
+        .args(&[
+            "merge-tree",
+            &format!("origin/{}", main_branch),
+            &current_branch,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to check merge conflicts: {}", e))?;
+
+    let output_str = String::from_utf8_lossy(&merge_tree_output.stdout);
+
+    // Parse merge-tree output for conflicts
+    let has_conflicts = output_str.contains("<<<<<<< ");
+    let mut conflicting_files = Vec::new();
+
+    if has_conflicts {
+        // Extract conflicting file paths from merge-tree output
+        for line in output_str.lines() {
+            if line.starts_with("changed in both") || line.contains("CONFLICT") {
+                // Extract filename from conflict marker
+                if let Some(filename) = line.split_whitespace().last() {
+                    if !conflicting_files.contains(&filename.to_string()) {
+                        conflicting_files.push(filename.to_string());
+                    }
+                }
+            }
+        }
+
+        // Alternative: use diff to find conflicting files
+        if conflicting_files.is_empty() {
+            let diff_output = std::process::Command::new("git")
+                .current_dir(path)
+                .args(&[
+                    "diff",
+                    "--name-only",
+                    &format!("origin/{}", main_branch),
+                    &current_branch,
+                ])
+                .output()
+                .map_err(|e| format!("Failed to get diff: {}", e))?;
+
+            let diff_str = String::from_utf8_lossy(&diff_output.stdout);
+            for line in diff_str.lines() {
+                if !line.trim().is_empty() {
+                    conflicting_files.push(line.trim().to_string());
+                }
+            }
+        }
+    }
+
+    Ok(ConflictCheckResult {
+        has_conflicts,
+        conflicting_files,
+        base_branch: main_branch,
+        current_branch,
+    })
+}
+
+/// Generate smart PR title and body from commits
+#[tauri::command]
+pub async fn git_generate_pr_info(
+    working_directory: String,
+) -> Result<PrSuggestion, String> {
+    let path = Path::new(&working_directory);
+
+    // Get main branch
+    let main_branch = detect_main_branch(path)?;
+
+    // Get commits that are ahead of main
+    let log_output = std::process::Command::new("git")
+        .current_dir(path)
+        .args(&[
+            "log",
+            &format!("origin/{}..HEAD", main_branch),
+            "--pretty=format:%s",
+        ])
+        .output()
+        .map_err(|e| format!("Failed to get commit log: {}", e))?;
+
+    if !log_output.status.success() {
+        return Err("Failed to get commit history".to_string());
+    }
+
+    let commits_str = String::from_utf8_lossy(&log_output.stdout);
+    let commits: Vec<&str> = commits_str.lines().collect();
+    let commit_count = commits.len();
+
+    // Generate title from commits
+    let title = if commit_count == 0 {
+        "Update from workspace".to_string()
+    } else if commit_count == 1 {
+        commits[0].to_string()
+    } else {
+        // Use first commit, truncate if too long
+        let first_commit = commits[0];
+        if first_commit.len() > 50 {
+            format!("{}...", &first_commit[..47])
+        } else {
+            first_commit.to_string()
+        }
+    };
+
+    // Generate body with all commits
+    let mut body = String::new();
+    body.push_str("## Changes\n\n");
+
+    if commit_count > 0 {
+        for commit in &commits {
+            body.push_str(&format!("- {}\n", commit));
+        }
+    } else {
+        body.push_str("- No commits yet\n");
+    }
+
+    body.push_str("\n---\n");
+    body.push_str("🔷 Generated with [MindGrid](https://github.com/llermaly/mindgrid-tauri)\n");
+
+    Ok(PrSuggestion {
+        title,
+        body,
+        commit_count,
+    })
+}

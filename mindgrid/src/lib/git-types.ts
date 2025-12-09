@@ -65,6 +65,20 @@ export interface GitStatusConfig {
   description: string;
 }
 
+// New types for enhanced GitHub workflow
+export interface ConflictCheckResult {
+  has_conflicts: boolean;
+  conflicting_files: string[];
+  base_branch: string;
+  current_branch: string;
+}
+
+export interface PrSuggestion {
+  title: string;
+  body: string;
+  commit_count: number;
+}
+
 export function getGitStatusConfig(gitStatus: GitStatus): GitStatusConfig {
   // Ready to Merge - Has commits, clean working directory, not behind
   if (gitStatus.is_ready_to_merge ||

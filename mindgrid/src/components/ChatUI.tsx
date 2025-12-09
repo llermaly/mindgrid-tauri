@@ -274,6 +274,8 @@ export function ChatUI({
   const [showPrDialog, setShowPrDialog] = useState(false);
   const [prTitle, setPrTitle] = useState("");
   const [prBody, setPrBody] = useState("");
+  const [showMergeDialog, setShowMergeDialog] = useState(false);
+  const [squashMerge, setSquashMerge] = useState(true);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [showContextPopup, setShowContextPopup] = useState(false);
   const [contextPopupPos, setContextPopupPos] = useState({ x: 0, y: 0 });
@@ -586,20 +588,38 @@ export function ChatUI({
   }, [onCreatePr, isCreatingPr, prTitle, prBody, sessionName, onGetPrInfo]);
 
   const handleMergePr = useCallback(async () => {
-    if (!onMergePr || isMergingPr) return;
+    if (!onMergePr || isMergingPr || !cwd) return;
     setIsMergingPr(true);
     try {
-      const result = await onMergePr(true); // squash merge
+      // Check for conflicts first
+      const conflictCheck = await invoke<{has_conflicts: boolean; conflicting_files: string[]}>(
+        "git_check_merge_conflicts",
+        { workingDirectory: cwd }
+      );
+
+      if (conflictCheck.has_conflicts) {
+        // Show error about conflicts
+        setIsMergingPr(false);
+        setShowMergeDialog(false);
+        // You could show a conflict dialog here instead
+        alert(`Cannot merge: conflicts detected in ${conflictCheck.conflicting_files.length} file(s):\n${conflictCheck.conflicting_files.join('\n')}`);
+        return;
+      }
+
+      const result = await onMergePr(squashMerge);
       if (result.success) {
         setPrInfo(null); // PR is merged, clear info
-        setSuccessMessage("PR merged successfully! Branch has been deleted.");
+        setSuccessMessage(`PR merged successfully!${squashMerge ? ' (squashed)' : ''} Branch has been deleted.`);
+        setShowMergeDialog(false);
         // Auto-hide success message after 5 seconds
         setTimeout(() => setSuccessMessage(null), 5000);
       }
+    } catch (error) {
+      console.error("Merge failed:", error);
     } finally {
       setIsMergingPr(false);
     }
-  }, [onMergePr, isMergingPr]);
+  }, [onMergePr, isMergingPr, cwd, squashMerge]);
 
   return (
     <div className={`flex flex-col h-full bg-zinc-900 ${className}`}>
@@ -916,10 +936,21 @@ export function ChatUI({
           {/* Create PR Button - show for worktrees without PR */}
           {onCreatePr && cwd?.includes('.mindgrid/worktrees') && !prInfo && (
             <button
-              onClick={() => {
-                if (!ghAvailable) return;
-                setPrTitle(sessionName);
-                setPrBody(`Changes from session: ${sessionName}`);
+              onClick={async () => {
+                if (!ghAvailable || !cwd) return;
+                // Generate smart PR title and body
+                try {
+                  const prSuggestion = await invoke<{title: string; body: string; commit_count: number}>(
+                    "git_generate_pr_info",
+                    { workingDirectory: cwd }
+                  );
+                  setPrTitle(prSuggestion.title);
+                  setPrBody(prSuggestion.body);
+                } catch (err) {
+                  console.error("Failed to generate PR info:", err);
+                  setPrTitle(sessionName);
+                  setPrBody(`Changes from session: ${sessionName}\n\n🔷 Generated with MindGrid`);
+                }
                 setShowPrDialog(true);
               }}
               disabled={isCreatingPr || gitAhead > 0 || !ghAvailable}
@@ -966,7 +997,7 @@ export function ChatUI({
               </a>
               {onMergePr && (
                 <button
-                  onClick={ghAvailable ? handleMergePr : undefined}
+                  onClick={ghAvailable ? () => setShowMergeDialog(true) : undefined}
                   disabled={isMergingPr || !ghAvailable}
                   className={`text-xs px-2 py-1 rounded flex items-center gap-1 ${
                     !ghAvailable
@@ -975,7 +1006,7 @@ export function ChatUI({
                       ? 'bg-zinc-700 text-zinc-400 cursor-wait'
                       : 'bg-green-600 hover:bg-green-500 text-white'
                   }`}
-                  title={!ghAvailable ? "Install gh CLI for GitHub features (brew install gh)" : "Squash and merge PR"}
+                  title={!ghAvailable ? "Install gh CLI for GitHub features (brew install gh)" : "Merge PR"}
                 >
                   {isMergingPr ? (
                     <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -1134,6 +1165,56 @@ export function ChatUI({
                   </svg>
                 )}
                 {isCreatingPr ? 'Creating...' : 'Create PR'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Merge PR Dialog */}
+      {showMergeDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowMergeDialog(false)}>
+          <div className="bg-zinc-800 border border-zinc-700 rounded-lg p-4 max-w-sm mx-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-medium text-zinc-200 mb-3">Merge Pull Request</h3>
+            <div className="space-y-3 mb-4">
+              <p className="text-xs text-zinc-400">
+                This will merge PR #{prInfo?.number} into the main branch.
+              </p>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={squashMerge}
+                  onChange={(e) => setSquashMerge(e.target.checked)}
+                  className="w-4 h-4 rounded border-zinc-600 bg-zinc-700 text-green-600 focus:ring-green-500 focus:ring-offset-zinc-800"
+                />
+                <span className="text-sm text-zinc-300">Squash commits into one</span>
+              </label>
+              <p className="text-xs text-zinc-500 ml-6">
+                {squashMerge
+                  ? "All commits will be combined into a single commit on main"
+                  : "Individual commits will be preserved in main branch"}
+              </p>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setShowMergeDialog(false)}
+                disabled={isMergingPr}
+                className="px-3 py-1.5 text-xs font-medium rounded bg-zinc-700 hover:bg-zinc-600 text-zinc-300 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleMergePr}
+                disabled={isMergingPr}
+                className="px-3 py-1.5 text-xs font-medium rounded bg-green-600 hover:bg-green-500 text-white disabled:bg-zinc-700 disabled:text-zinc-400 flex items-center gap-1"
+              >
+                {isMergingPr && (
+                  <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+                    <path d="M12 2a10 10 0 0 1 10 10" />
+                  </svg>
+                )}
+                {isMergingPr ? 'Merging...' : 'Merge PR'}
               </button>
             </div>
           </div>
