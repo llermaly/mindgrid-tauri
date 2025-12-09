@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { PRESETS, type ChatType } from "../../lib/presets";
-import { openChatWindow, openMultipleChatWindows } from "../../lib/window-manager";
+import { openMultipleChatWindows, openWorkspaceWindow } from "../../lib/window-manager";
 import { useSessionStore, type Project, type Session } from "../../stores/sessionStore";
 import { useUsageStore } from "../../stores/usageStore";
 import { getWorktreeInfo } from "../../lib/dev-mode";
@@ -101,7 +101,7 @@ export function Dashboard() {
     const liveSession = sessions[sessionId];
     const project = liveSession ? Object.values(projects).find(p => p.id === liveSession.projectId) : null;
     if (liveSession && project) {
-      void openChatWindow({
+      void openWorkspaceWindow({
         sessionId: liveSession.id,
         sessionName: liveSession.name,
         projectName: project.name,

@@ -12,6 +12,11 @@ interface TimelineEntry {
   status: TimelineStatus;
 }
 
+type CodexTimelineEvent =
+  | { type: 'thinking'; text: string }
+  | { type: 'assistant'; text: string }
+  | { type: 'tool'; name: string; detail?: string; result?: string; isError?: boolean };
+
 export class CodexStreamParser {
   private sections = {
     reasoning: [] as string[],
@@ -21,6 +26,12 @@ export class CodexStreamParser {
 
   private steps: TimelineEntry[] = [];
   private stepMap = new Map<string, TimelineEntry>();
+  private timeline: CodexTimelineEvent[] = [];
+  private _timestampBase = Date.now();
+
+  getTimestampBase() {
+    return this._timestampBase;
+  }
 
   feed(raw: string): string | undefined {
     if (!raw.trim()) return;
@@ -67,6 +78,7 @@ export class CodexStreamParser {
 
     if (eventType === 'turn.completed' && event.usage) {
       this.sections.usage = event.usage;
+      this._timestampBase = Date.now();
       return this.buildOutput();
     }
 
@@ -81,15 +93,24 @@ export class CodexStreamParser {
     switch (item.type) {
       case 'agent_message':
         if (item.text) this.sections.messages.push(item.text);
+        if (item.text) this.timeline.push({ type: 'assistant', text: item.text });
         return this.buildOutput();
       case 'reasoning':
         if (item.text) this.sections.reasoning.push(item.text);
+        if (item.text) this.timeline.push({ type: 'thinking', text: item.text });
         return this.buildOutput();
       case 'command_execution': {
         const detail = item.aggregated_output
           ? `\n\`\`\`sh\n$ ${item.command}\n${item.aggregated_output}\n\`\`\``
           : undefined;
         this.recordStep(item.id, item.command, detail, this.mapStatus(item.status));
+        this.timeline.push({
+          type: 'tool',
+          name: item.command || 'Command',
+          detail,
+          result: item.aggregated_output,
+          isError: item.status === 'failed',
+        });
         return this.buildOutput();
       }
       case 'file_change': {
@@ -100,6 +121,12 @@ export class CodexStreamParser {
           })
           .join('\n');
         this.recordStep(item.id, 'File updates', changes || undefined, item.status === 'failed' ? 'failed' : 'completed');
+        this.timeline.push({
+          type: 'tool',
+          name: 'File updates',
+          detail: changes || undefined,
+          isError: item.status === 'failed',
+        });
         return this.buildOutput();
       }
       default:
@@ -141,5 +168,64 @@ export class CodexStreamParser {
       parts.push(stepLines.join('\n'));
     }
     return parts.join('\n\n');
+  }
+
+  toMessages(): Array<{
+    role: 'assistant' | 'tool';
+    content: string;
+    usage?: { input_tokens?: number; cached_input_tokens?: number; output_tokens?: number } | null;
+    toolName?: string;
+    toolResult?: string;
+    isError?: boolean;
+    isThinking?: boolean;
+  }> {
+    const messages: Array<{
+      role: 'assistant' | 'tool';
+      content: string;
+      usage?: { input_tokens?: number; cached_input_tokens?: number; output_tokens?: number } | null;
+      toolName?: string;
+      toolResult?: string;
+      isError?: boolean;
+      isThinking?: boolean;
+    }> = [];
+
+    for (const event of this.timeline) {
+      switch (event.type) {
+        case 'thinking':
+          messages.push({
+            role: 'assistant',
+            content: event.text,
+            isThinking: true,
+          });
+          break;
+        case 'assistant':
+          messages.push({
+            role: 'assistant',
+            content: event.text,
+          });
+          break;
+        case 'tool':
+          messages.push({
+            role: 'tool',
+            content: event.detail || event.name,
+            toolName: event.name,
+            toolResult: event.result,
+            isError: event.isError,
+          });
+          break;
+      }
+    }
+
+    // Attach usage to the last assistant message if available
+    if (this.sections.usage) {
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'assistant' && !messages[i].isThinking) {
+          messages[i].usage = this.sections.usage;
+          break;
+        }
+      }
+    }
+
+    return messages;
   }
 }

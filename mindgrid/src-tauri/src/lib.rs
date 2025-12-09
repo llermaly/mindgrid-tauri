@@ -216,6 +216,7 @@ pub fn run() {
             git::remove_workspace_worktree,
             git::get_git_status,
             git::get_git_diff,
+            git::get_git_file_diff,
             git::git_add_all,
             git::git_commit,
             git::git_checkpoint_commit,

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useClaudePty } from "../hooks/useClaudePty";
 import type { ClaudeEvent, ParsedMessage, PermissionMode, CommitMode } from "../lib/claude-types";
@@ -71,17 +71,103 @@ const MESSAGE_STYLES: Record<string, { bg: string; color: string; label: string 
   assistant: { bg: "bg-zinc-800/50", color: "text-zinc-300", label: "Assistant" },
   system: { bg: "bg-yellow-500/10", color: "text-yellow-400", label: "System" },
   tool: { bg: "bg-cyan-500/10", color: "text-cyan-400", label: "Tool" },
+  thinking: { bg: "bg-purple-500/10", color: "text-purple-300", label: "Thinking" },
 };
+
+function renderInlineContent(text: string): ReactNode[] {
+  const parts = text.split(/`([^`]+)`/g);
+  return parts.map((part, idx) => {
+    const isCode = idx % 2 === 1;
+    return isCode ? (
+      <code key={`code-${idx}`} className="px-1 py-0.5 rounded bg-zinc-900/70 text-[12px] text-amber-200 border border-zinc-800">
+        {part}
+      </code>
+    ) : (
+      <span key={`text-${idx}`}>{part}</span>
+    );
+  });
+}
+
+function renderMarkdownContent(content: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  const codeRegex = /```(\w+)?\n?([\s\S]*?)```/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = codeRegex.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      const textSegment = content.slice(lastIndex, match.index);
+      nodes.push(...renderTextBlocks(textSegment));
+    }
+
+    const language = match[1] || "text";
+    const code = match[2].trimEnd();
+    nodes.push(
+      <div key={`code-${nodes.length}`} className="rounded-lg bg-zinc-900/70 border border-zinc-800 overflow-hidden">
+        <div className="flex items-center justify-between px-3 py-2 text-[11px] uppercase tracking-wide text-zinc-500 bg-zinc-900 border-b border-zinc-800">
+          <span className="font-mono">{language}</span>
+          <span className="flex gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse delay-100" />
+            <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse delay-200" />
+          </span>
+        </div>
+        <pre className="p-3 text-xs text-zinc-200 font-mono whitespace-pre-wrap overflow-x-auto bg-gradient-to-br from-zinc-950 to-zinc-900">
+          {code}
+        </pre>
+      </div>
+    );
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < content.length) {
+    const remaining = content.slice(lastIndex);
+    nodes.push(...renderTextBlocks(remaining));
+  }
+
+  return nodes;
+}
+
+function renderTextBlocks(text: string): ReactNode[] {
+  return text
+    .trim()
+    .split(/\n{2,}/)
+    .filter(Boolean)
+    .map((block, idx) => {
+      const lines = block.split("\n");
+      const isList = lines.every((line) => /^[-*+]\s+/.test(line.trim()));
+      if (isList) {
+        return (
+          <ul key={`list-${idx}`} className="list-disc list-inside text-sm text-zinc-200 space-y-1 pl-2">
+            {lines.map((line, li) => (
+              <li key={`li-${idx}-${li}`} className="leading-relaxed">
+                {renderInlineContent(line.replace(/^[-*+]\s+/, ""))}
+              </li>
+            ))}
+          </ul>
+        );
+      }
+
+      return (
+        <p key={`p-${idx}`} className="text-sm text-zinc-200 leading-relaxed">
+          {renderInlineContent(block)}
+        </p>
+      );
+    });
+}
 
 function MessageItem({ message }: { message: ParsedMessage }) {
   const [isExpanded, setIsExpanded] = useState(message.role !== "tool");
-  const style = MESSAGE_STYLES[message.role] || MESSAGE_STYLES.assistant;
+  const styleKey = message.isThinking ? "thinking" : message.role;
+  const style = MESSAGE_STYLES[styleKey] || MESSAGE_STYLES.assistant;
 
   const isToolUse = message.toolName && message.toolInput;
   const isToolResult = message.toolResult !== undefined;
+  const isAssistant = message.role === "assistant";
 
   return (
-    <div className={`rounded-lg ${style.bg} overflow-hidden`}>
+    <div className={`rounded-lg ${style.bg} overflow-hidden border border-zinc-800/50`}>
       <div
         className={`flex items-center gap-2 px-3 py-2 ${
           message.role === "tool" ? "cursor-pointer" : ""
@@ -121,9 +207,21 @@ function MessageItem({ message }: { message: ParsedMessage }) {
           )}
 
           {!isToolUse && !isToolResult && message.content && (
-            <div className="text-sm text-zinc-300 whitespace-pre-wrap">
-              {message.content}
-            </div>
+            isAssistant ? (
+              message.isThinking ? (
+                <div className="text-sm text-purple-200 italic whitespace-pre-wrap">
+                  {message.content}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {renderMarkdownContent(message.content)}
+                </div>
+              )
+            ) : (
+              <div className={`text-sm whitespace-pre-wrap ${message.isThinking ? "text-purple-200 italic" : "text-zinc-300"}`}>
+                {message.content}
+              </div>
+            )
           )}
 
           {message.usage && (
@@ -265,7 +363,10 @@ export function ChatUI({
 
   const { isRunning, spawnClaude, sendMessage, kill } = useClaudePty({
     onEvent: handleClaudeEvent,
-    onMessage: onClaudeMessage,
+    onMessage: (message) => {
+      if (!thinkingMode && message.isThinking) return;
+      onClaudeMessage?.(message);
+    },
     onRawOutput: (data) => {
       // Pipe raw PTY output to debug panel for troubleshooting Claude replies
       debug.pty("ClaudeRaw", "PTY output", data.slice(0, 500));
@@ -282,14 +383,9 @@ export function ChatUI({
 
   const { runCodex, isRunning: isCodexRunning } = useCodexRunner({
     cwd,
-    onComplete: (content) => {
-      const assistantMessage: ParsedMessage = {
-        id: `codex-${Date.now()}`,
-        role: "assistant",
-        content: content || "(no output)",
-        timestamp: Date.now(),
-      };
-      onClaudeMessage?.(assistantMessage);
+    onMessage: (message) => {
+      if (!thinkingMode && message.isThinking) return;
+      onClaudeMessage?.(message);
     },
     onError: (err) => {
       const assistantMessage: ParsedMessage = {
@@ -308,6 +404,8 @@ export function ChatUI({
     if (provider === "openai") return "codex";
     return "claude";
   }, [model]);
+
+  const isAnswering = activeAgent === "codex" ? isCodexRunning : isRunning;
 
   // Get usage data from global store
   const {
@@ -335,6 +433,17 @@ export function ChatUI({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  useEffect(() => {
+    if (!filtersExpanded) return;
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setFiltersExpanded(false);
+      }
+    };
+    window.addEventListener("keydown", handleEsc);
+    return () => window.removeEventListener("keydown", handleEsc);
+  }, [filtersExpanded]);
+
   // Rough context usage estimate based on message count
   useEffect(() => {
     const estimate = Math.min(95, Math.max(5, messages.length * 5));
@@ -359,14 +468,17 @@ export function ChatUI({
   const handleSend = useCallback(async () => {
     if (!input.trim()) return;
 
-    const message = input.trim();
+    const baseMessage = input.trim();
+    const message = thinkingMode
+      ? `${baseMessage}\n\n(Think through the problem and share a brief reasoning summary before the final answer.)`
+      : `${baseMessage}\n\n(Do not include thinking or reasoning steps; reply concisely with just the answer/output.)`;
     setInput("");
 
     // Immediately add user message to UI (don't wait for Claude to echo it)
     const userMessage: ParsedMessage = {
       id: `user-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       role: "user",
-      content: message,
+      content: baseMessage,
       timestamp: Date.now(),
     };
 
@@ -379,7 +491,7 @@ export function ChatUI({
     } else {
       await sendMessage(message);
     }
-  }, [input, sendMessage, onClaudeMessage, activeAgent, runCodex, model]);
+  }, [input, sendMessage, onClaudeMessage, activeAgent, runCodex, model, thinkingMode]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -396,8 +508,8 @@ export function ChatUI({
   const filteredMessages = useMemo(() => {
     if (activeFilters.includes('all')) return messages;
     return messages.filter((m) => {
-      if (activeFilters.includes('thinking') && m.role === 'assistant' && m.content?.toLowerCase().includes('thinking')) return true;
-      if (activeFilters.includes('text') && m.role === 'assistant') return true;
+      if (activeFilters.includes('thinking') && m.isThinking) return true;
+      if (activeFilters.includes('text') && m.role === 'assistant' && !m.isThinking) return true;
       if (activeFilters.includes('tool') && m.role === 'tool') return true;
       if (activeFilters.includes('user') && m.role === 'user') return true;
       return false;
@@ -492,14 +604,26 @@ export function ChatUI({
   return (
     <div className={`flex flex-col h-full bg-zinc-900 ${className}`}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700 bg-zinc-800/50">
+      <div
+        className={`flex items-center justify-between px-4 py-3 border-b transition-colors ${
+          isAnswering
+            ? "border-indigo-700/70 bg-gradient-to-r from-zinc-800 via-indigo-900/50 to-zinc-800 shadow-[0_5px_30px_rgba(79,70,229,0.15)]"
+            : "border-zinc-700 bg-zinc-800/50"
+        }`}
+      >
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${
-              activeAgent === "codex"
-                ? (isCodexRunning ? "bg-blue-400 animate-pulse" : "bg-blue-500")
-                : (isRunning ? "bg-green-500 animate-pulse" : "bg-zinc-600")
-            }`} />
+            <div
+              className={`w-2.5 h-2.5 rounded-full ${
+                activeAgent === "codex"
+                  ? isCodexRunning
+                    ? "bg-blue-400 animate-pulse shadow-[0_0_0_4px_rgba(59,130,246,0.2)]"
+                    : "bg-blue-500"
+                  : isRunning
+                  ? "bg-emerald-400 animate-pulse shadow-[0_0_0_4px_rgba(16,185,129,0.2)]"
+                  : "bg-zinc-600"
+              }`}
+            />
             {onModelChange && (
               <ModelSelector
                 value={model || null}
@@ -507,8 +631,37 @@ export function ChatUI({
                 size="sm"
               />
             )}
-            <span className="text-xs px-2 py-1 rounded border border-zinc-700 text-neutral-400">
-              {activeAgent === "codex" ? (isCodexRunning ? "Running" : "Idle") : (isRunning ? "Running" : "Idle")}
+            <span
+              className={`text-xs px-2 py-1 rounded border flex items-center gap-1 ${
+                isAnswering
+                  ? "border-indigo-500/70 text-indigo-100 bg-indigo-500/10"
+                  : "border-zinc-700 text-neutral-400"
+              }`}
+            >
+              {isAnswering ? (
+                <>
+                  <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+                    <path d="M12 2a10 10 0 0 1 10 10" />
+                  </svg>
+                  <span>Answering</span>
+                </>
+              ) : (
+                <>
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      activeAgent === "codex"
+                        ? isCodexRunning
+                          ? "bg-blue-400"
+                          : "bg-blue-600"
+                        : isRunning
+                        ? "bg-emerald-400"
+                        : "bg-zinc-500"
+                    }`}
+                  />
+                  <span>{activeAgent === "codex" ? (isCodexRunning ? "Running" : "Idle") : (isRunning ? "Running" : "Idle")}</span>
+                </>
+              )}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -1081,7 +1234,7 @@ export function ChatUI({
 
       {/* Input */}
       <div className="p-4 border-t border-zinc-700 bg-zinc-800/30">
-        <div className="flex gap-3 items-start">
+        <div className="flex gap-3 items-end">
           <textarea
             ref={inputRef}
             value={input}
@@ -1092,33 +1245,48 @@ export function ChatUI({
             rows={1}
             disabled={false}
           />
-          <button
-            onClick={handleSend}
-            disabled={!input.trim()}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-700 disabled:cursor-not-allowed rounded-lg transition-colors text-white"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-              />
-            </svg>
-          </button>
           <div className="flex flex-col gap-2 text-xs text-neutral-400">
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="px-2 py-1 rounded border border-zinc-700 hover:border-zinc-500 hover:text-white"
+                className="p-2 rounded-lg border border-zinc-700 hover:border-zinc-500 hover:text-white text-zinc-400 bg-zinc-900/60"
+                title="Attach files"
               >
-                Attach
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <path d="M21.44 11.05l-9.19 9.19a5 5 0 01-7.07-7.07l9.19-9.19a3 3 0 114.24 4.24l-9.2 9.17a1 1 0 01-1.41-1.41l8.49-8.48" />
+                </svg>
               </button>
               <button
                 onClick={() => setIsListening((v) => !v)}
-                className={`px-2 py-1 rounded border ${isListening ? "border-green-500 text-green-300" : "border-zinc-700 text-neutral-400"} hover:border-zinc-500`}
+                className={`p-2 rounded-lg border transition-colors ${
+                  isListening
+                    ? "border-emerald-500 text-emerald-200 bg-emerald-500/10 shadow-[0_0_0_2px_rgba(16,185,129,0.15)]"
+                    : "border-zinc-700 text-neutral-400 bg-zinc-900/60 hover:border-zinc-500 hover:text-white"
+                }`}
+                title={isListening ? "Stop listening" : "Start voice input"}
               >
-                {isListening ? "Listening..." : "Audio"}
+                <svg className={`w-4 h-4 ${isListening ? "animate-pulse" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <path d="M12 18a4 4 0 004-4V6a4 4 0 00-8 0v8a4 4 0 004 4z" />
+                  <path d="M19 11v1a7 7 0 01-14 0v-1" />
+                  <line x1="12" y1="19" x2="12" y2="23" />
+                  <line x1="8" y1="23" x2="16" y2="23" />
+                </svg>
+              </button>
+              <button
+                onClick={handleSend}
+                disabled={!input.trim()}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-700 disabled:cursor-not-allowed rounded-lg transition-colors text-white flex items-center gap-2"
+                title="Send message"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
+                  />
+                </svg>
+                <span className="text-sm font-medium hidden sm:inline">Send</span>
               </button>
             </div>
             {attachments.length > 0 && (

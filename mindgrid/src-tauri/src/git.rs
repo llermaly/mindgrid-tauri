@@ -1,6 +1,75 @@
 use serde::Serialize;
+use std::io;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+
+#[cfg(unix)]
+fn create_dir_symlink(src: &Path, dst: &Path) -> io::Result<()> {
+    std::os::unix::fs::symlink(src, dst)
+}
+
+#[cfg(windows)]
+fn create_dir_symlink(src: &Path, dst: &Path) -> io::Result<()> {
+    std::os::windows::fs::symlink_dir(src, dst)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn create_dir_symlink(src: &Path, dst: &Path) -> io::Result<()> {
+    let _ = src;
+    let _ = dst;
+    Err(io::Error::new(
+        io::ErrorKind::Other,
+        "Symlinks not supported on this platform",
+    ))
+}
+
+fn link_node_modules_to_external(worktree_name: &str, worktree_path: &Path) {
+    let external_base = match std::env::var("MINDGRID_NODE_MODULES_BASE") {
+        Ok(path) => PathBuf::from(path),
+        Err(_) => return, // Feature not configured
+    };
+
+    if let Err(e) = std::fs::create_dir_all(&external_base) {
+        eprintln!(
+            "[MindGrid] Failed to ensure external node_modules base: {}",
+            e
+        );
+        return;
+    }
+
+    let external_target = external_base.join(worktree_name);
+    if let Err(e) = std::fs::create_dir_all(&external_target) {
+        eprintln!(
+            "[MindGrid] Failed to ensure external node_modules path {}: {}",
+            external_target.display(),
+            e
+        );
+        return;
+    }
+
+    let node_modules_path = worktree_path.join("node_modules");
+
+    if node_modules_path.exists() {
+        if let Ok(meta) = std::fs::symlink_metadata(&node_modules_path) {
+            if meta.file_type().is_symlink() {
+                return; // Already linked
+            }
+        }
+        eprintln!(
+            "[MindGrid] node_modules already exists in {}; skipping external link",
+            worktree_path.display()
+        );
+        return;
+    }
+
+    if let Err(e) = create_dir_symlink(&external_target, &node_modules_path) {
+        eprintln!(
+            "[MindGrid] Failed to symlink node_modules to {}: {}",
+            external_target.display(),
+            e
+        );
+    }
+}
 
 // Helper function to validate if a directory is a git repository
 pub fn is_valid_git_repository(path: &Path) -> bool {
@@ -246,6 +315,9 @@ pub async fn create_workspace_worktree(
             String::from_utf8_lossy(&status.stderr)
         ));
     }
+
+    // Optionally symlink node_modules to external storage to save local disk space
+    link_node_modules_to_external(&name, &target_path);
 
     Ok(target_path.to_string_lossy().to_string())
 }
@@ -571,6 +643,16 @@ pub struct GitDiffFile {
     pub deletions: i32,
 }
 
+#[derive(Debug, Serialize)]
+pub struct GitFileDiff {
+    pub path: String,
+    pub status: String,
+    pub patch: String,
+    pub old_value: String,
+    pub new_value: String,
+    pub is_binary: bool,
+}
+
 #[tauri::command]
 pub async fn get_git_diff(working_directory: String) -> Result<GitDiffResult, String> {
     let path = Path::new(&working_directory);
@@ -638,6 +720,111 @@ pub async fn get_git_diff(working_directory: String) -> Result<GitDiffResult, St
         total_additions,
         total_deletions,
     })
+}
+
+#[tauri::command]
+pub async fn get_git_file_diff(
+    working_directory: String,
+    file_path: String,
+    status: Option<String>,
+) -> Result<GitFileDiff, String> {
+    let path = Path::new(&working_directory);
+
+    if !path.exists() || !path.is_dir() {
+        return Err("Directory does not exist".to_string());
+    }
+
+    let status_value = status.unwrap_or_else(|| "modified".to_string());
+    let is_untracked = status_value == "untracked";
+    let is_deleted = status_value == "deleted";
+
+    // Check if file is binary
+    let is_binary = check_if_binary(&working_directory, &file_path).await;
+
+    // Get the patch/diff
+    let mut cmd = tokio::process::Command::new("git");
+    cmd.arg("-C").arg(&working_directory);
+
+    if is_untracked {
+        cmd.args([
+            "diff",
+            "--no-index",
+            "--no-color",
+            "--",
+            "/dev/null",
+            &file_path,
+        ]);
+    } else {
+        cmd.args(["diff", "--no-color", "--", &file_path]);
+    }
+
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("Failed to get file diff: {}", e))?;
+
+    let patch = String::from_utf8_lossy(&output.stdout).to_string();
+
+    // Get old value (from HEAD)
+    let old_value = if is_untracked || is_binary {
+        String::new()
+    } else {
+        get_file_from_head(&working_directory, &file_path).await.unwrap_or_default()
+    };
+
+    // Get new value (current working directory content)
+    let new_value = if is_deleted || is_binary {
+        String::new()
+    } else {
+        let full_path = path.join(&file_path);
+        std::fs::read_to_string(&full_path).unwrap_or_default()
+    };
+
+    Ok(GitFileDiff {
+        path: file_path,
+        status: status_value,
+        patch,
+        old_value,
+        new_value,
+        is_binary,
+    })
+}
+
+/// Check if a file is binary
+async fn check_if_binary(working_directory: &str, file_path: &str) -> bool {
+    // Use git's diff to check - binary files will have "Binary files" in the output
+    let output = tokio::process::Command::new("git")
+        .arg("-C")
+        .arg(working_directory)
+        .args(["diff", "--numstat", "--", file_path])
+        .output()
+        .await
+        .ok();
+
+    if let Some(output) = output {
+        let text = String::from_utf8_lossy(&output.stdout);
+        // Binary files show as "-\t-\t" in numstat output
+        text.starts_with("-\t-\t")
+    } else {
+        false
+    }
+}
+
+/// Get file content from HEAD
+async fn get_file_from_head(working_directory: &str, file_path: &str) -> Option<String> {
+    let output = tokio::process::Command::new("git")
+        .arg("-C")
+        .arg(working_directory)
+        .args(["show", &format!("HEAD:{}", file_path)])
+        .output()
+        .await
+        .ok()?;
+
+    if output.status.success() {
+        Some(String::from_utf8_lossy(&output.stdout).to_string())
+    } else {
+        None
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -1297,40 +1484,42 @@ pub async fn open_in_editor(path: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Save session data to the worktree's .mindgrid folder
+/// Save session data to the worktree root (so it can be committed with the worktree branch)
 #[tauri::command]
 pub async fn save_session_to_worktree(worktree_path: String, session_data: String) -> Result<(), String> {
     let path = Path::new(&worktree_path);
 
-    // Create .mindgrid directory in the worktree if it doesn't exist
-    let mindgrid_dir = path.join(".mindgrid");
-    if !mindgrid_dir.exists() {
-        std::fs::create_dir_all(&mindgrid_dir)
-            .map_err(|e| format!("Failed to create .mindgrid directory: {}", e))?;
-    }
-
-    // Save session data
-    let session_file = mindgrid_dir.join("session.json");
+    // Save session data directly in worktree root
+    let session_file = path.join(".mindgrid-session.json");
     std::fs::write(&session_file, &session_data)
         .map_err(|e| format!("Failed to write session data: {}", e))?;
 
     Ok(())
 }
 
-/// Load session data from the worktree's .mindgrid folder
+/// Load session data from the worktree root
 #[tauri::command]
 pub async fn load_session_from_worktree(worktree_path: String) -> Result<Option<String>, String> {
     let path = Path::new(&worktree_path);
-    let session_file = path.join(".mindgrid").join("session.json");
+    let session_file = path.join(".mindgrid-session.json");
 
-    if !session_file.exists() {
-        return Ok(None);
+    // Also check old location for backwards compatibility
+    let old_session_file = path.join(".mindgrid").join("session.json");
+
+    if session_file.exists() {
+        let data = std::fs::read_to_string(&session_file)
+            .map_err(|e| format!("Failed to read session data: {}", e))?;
+        return Ok(Some(data));
     }
 
-    let data = std::fs::read_to_string(&session_file)
-        .map_err(|e| format!("Failed to read session data: {}", e))?;
+    // Fallback to old location
+    if old_session_file.exists() {
+        let data = std::fs::read_to_string(&old_session_file)
+            .map_err(|e| format!("Failed to read session data: {}", e))?;
+        return Ok(Some(data));
+    }
 
-    Ok(Some(data))
+    Ok(None)
 }
 
 #[derive(Debug, Serialize)]

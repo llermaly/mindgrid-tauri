@@ -188,14 +188,14 @@ export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSess
                       onOpenSessionChat(session.id);
                     }}
                     className="p-1 hover:bg-neutral-600 rounded text-neutral-400 hover:text-blue-400"
-                    title="Open chat"
+                    title="Open workspace"
                   >
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
                         strokeWidth={2}
-                        d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                        d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"
                       />
                     </svg>
                   </button>
