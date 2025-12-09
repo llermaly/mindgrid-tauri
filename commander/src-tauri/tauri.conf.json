@@ -30,7 +30,14 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "capabilities": [
+        {
+          "identifier": "main-capability",
+          "windows": ["main"],
+          "permissions": ["core:default", "core:window:allow-start-dragging"]
+        }
+      ]
     },
     "macOSPrivateApi": true
   },
