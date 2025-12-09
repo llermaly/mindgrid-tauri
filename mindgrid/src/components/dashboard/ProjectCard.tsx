@@ -80,20 +80,20 @@ export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSess
 
   return (
     <div
-      className="project-card bg-neutral-900 border border-neutral-800 rounded-xl p-4 group cursor-pointer"
+      className="project-card bg-[var(--background)] border-2 border-[var(--border)] p-6 group cursor-pointer transition-all duration-100 hover:bg-[var(--foreground)] hover:text-[var(--background)]"
       onClick={() => onOpen(project)}
     >
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center gap-3 min-w-0 flex-1">
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex items-center gap-4 min-w-0 flex-1">
           <div
-            className="w-10 h-10 rounded-lg flex items-center justify-center text-xl flex-shrink-0"
-            style={{ background: preset?.color || "#6b7280" }}
+            className="w-12 h-12 border-2 border-[var(--border)] flex items-center justify-center text-2xl flex-shrink-0 group-hover:border-[var(--background)]"
+            style={{ background: preset?.color || "#000000" }}
           >
             {preset?.icon || "?"}
           </div>
           <div className="min-w-0 flex-1">
-            <h3 className="font-medium text-white truncate">{project.name}</h3>
-            <PathLink path={project.path} className="text-xs text-neutral-500" />
+            <h3 className="font-display text-xl font-bold truncate group-hover:text-[var(--background)]">{project.name}</h3>
+            <PathLink path={project.path} className="font-mono text-xs text-[var(--muted-foreground)] group-hover:text-[var(--background)] opacity-70" />
           </div>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -102,7 +102,7 @@ export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSess
               e.stopPropagation();
               onCreateSession(project);
             }}
-            className="p-1.5 hover:bg-neutral-800 rounded text-neutral-400 hover:text-emerald-400"
+            className="p-2 border border-transparent hover:border-[var(--background)] text-[var(--background)] transition-all duration-100"
             title="New session"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -119,7 +119,7 @@ export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSess
               e.stopPropagation();
               onOpen(project);
             }}
-            className="p-1.5 hover:bg-neutral-800 rounded text-neutral-400 hover:text-blue-400"
+            className="p-2 border border-transparent hover:border-[var(--background)] text-[var(--background)] transition-all duration-100"
             title="Open project details"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -136,7 +136,7 @@ export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSess
               e.stopPropagation();
               setShowDeleteProjectModal(true);
             }}
-            className="p-1.5 hover:bg-neutral-800 rounded text-neutral-400 hover:text-red-400"
+            className="p-2 border border-transparent hover:border-[var(--background)] text-[var(--background)] transition-all duration-100"
             title="Delete project"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -151,43 +151,43 @@ export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSess
         </div>
       </div>
 
-      <div className="flex items-center gap-4 text-sm">
-        <span className="text-neutral-400">
+      <div className="flex items-center gap-6 font-mono text-xs tracking-wide">
+        <span className="group-hover:text-[var(--background)]">
           {project.sessions.length} session{project.sessions.length !== 1 ? "s" : ""}
         </span>
         {activeSessions.length > 0 && (
-          <span className="flex items-center gap-1 text-blue-400">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse-dot" />
+          <span className="flex items-center gap-2 group-hover:text-[var(--background)]">
+            <span className="w-2 h-2 border border-[var(--foreground)] bg-[var(--foreground)] group-hover:border-[var(--background)] group-hover:bg-[var(--background)] animate-pulse-dot" />
             {activeSessions.length} active
           </span>
         )}
-        <span className="text-neutral-500 ml-auto">{project.lastOpened}</span>
+        <span className="ml-auto italic opacity-70 group-hover:text-[var(--background)]">{project.lastOpened}</span>
       </div>
 
       {project.sessions.length > 0 && (
-        <div className="mt-3 pt-3 border-t border-neutral-800">
-          <div className="text-xs text-neutral-500 mb-2">Sessions</div>
-          <div className="space-y-1.5">
+        <div className="mt-4 pt-4 border-t border-[var(--border)] group-hover:border-[var(--background)]">
+          <div className="font-mono text-xs tracking-widest uppercase mb-3 opacity-70 group-hover:text-[var(--background)]">Sessions</div>
+          <div className="space-y-2">
             {project.sessions.slice(0, 4).map((session) => (
               <div
                 key={session.id}
-                className="flex items-center justify-between gap-2 px-2.5 py-1.5 bg-neutral-800 hover:bg-neutral-700 rounded-lg group transition-colors cursor-pointer"
+                className="flex items-center justify-between gap-2 px-3 py-2 border border-[var(--border-light)] hover:border-[var(--border)] group-hover:border-[var(--background)] group/session transition-all duration-100 cursor-pointer"
                 onClick={(e) => {
                   e.stopPropagation();
                   onOpenSession(project, session);
                 }}
               >
-                <div className="flex items-center gap-2 min-w-0 flex-1">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
                   <StatusBadge status={session.status} />
-                  <span className="text-neutral-300 text-xs truncate">{session.name}</span>
+                  <span className="font-body text-sm truncate group-hover:text-[var(--background)]">{session.name}</span>
                 </div>
-                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center gap-1 opacity-0 group-hover/session:opacity-100 transition-opacity">
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       onOpenSessionChat(session.id);
                     }}
-                    className="p-1 hover:bg-neutral-600 rounded text-neutral-400 hover:text-blue-400"
+                    className="p-1 border border-transparent hover:border-[var(--background)] text-[var(--background)] transition-all duration-100"
                     title="Open workspace"
                   >
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -204,7 +204,7 @@ export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSess
                       e.stopPropagation();
                       setShowDeleteSessionModal(session.id);
                     }}
-                    className="p-1 hover:bg-neutral-600 rounded text-neutral-400 hover:text-red-400"
+                    className="p-1 border border-transparent hover:border-[var(--background)] text-[var(--background)] transition-all duration-100"
                     title="Delete session"
                   >
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -225,7 +225,7 @@ export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSess
                   e.stopPropagation();
                   onOpen(project);
                 }}
-                className="w-full px-2.5 py-1.5 text-xs text-neutral-500 hover:text-neutral-300 hover:bg-neutral-800 rounded-lg transition-colors text-left"
+                className="w-full px-3 py-2 font-mono text-xs border border-[var(--border-light)] hover:border-[var(--border)] group-hover:border-[var(--background)] group-hover:text-[var(--background)] transition-all duration-100 text-left"
               >
                 +{project.sessions.length - 4} more sessions...
               </button>
@@ -237,26 +237,26 @@ export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSess
       {/* Delete Project Modal */}
       {showDeleteProjectModal && (
         <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          className="fixed inset-0 bg-[var(--foreground)]/80 flex items-center justify-center z-50"
           onClick={() => setShowDeleteProjectModal(false)}
           onKeyDown={handleProjectModalKeyDown}
         >
           <div
-            className="bg-neutral-800 border border-neutral-700 rounded-lg p-4 max-w-sm mx-4 shadow-xl"
+            className="bg-[var(--background)] border-4 border-[var(--foreground)] p-8 max-w-md mx-4"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-sm font-medium text-neutral-200 mb-2">Delete Project</h3>
-            <p className="text-xs text-neutral-400 mb-4">
-              Are you sure you want to delete "{project.name}" and all its sessions? This action cannot be undone.
+            <h3 className="font-display text-2xl font-bold text-[var(--foreground)] mb-4">Delete Project</h3>
+            <p className="font-body text-sm text-[var(--foreground)] mb-4">
+              Are you sure you want to delete <strong>"{project.name}"</strong> and all its sessions? This action cannot be undone.
             </p>
-            <p className="text-xs text-neutral-500 mb-4">
+            <p className="font-mono text-xs text-[var(--muted-foreground)] mb-6 tracking-wide">
               Press Enter to confirm, Escape to cancel
             </p>
-            <div className="flex gap-2 justify-end">
+            <div className="flex gap-3 justify-end">
               <button
                 onClick={() => setShowDeleteProjectModal(false)}
                 disabled={isDeletingProject}
-                className="px-3 py-1.5 text-xs font-medium rounded bg-neutral-700 hover:bg-neutral-600 text-neutral-300 disabled:opacity-50"
+                className="px-6 py-2 border-2 border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] hover:bg-[var(--foreground)] hover:text-[var(--background)] font-mono text-xs tracking-widest uppercase disabled:opacity-50 transition-all duration-100"
               >
                 Cancel
               </button>
@@ -264,7 +264,7 @@ export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSess
                 ref={deleteProjectButtonRef}
                 onClick={handleDeleteProject}
                 disabled={isDeletingProject}
-                className="px-3 py-1.5 text-xs font-medium rounded bg-red-600 hover:bg-red-500 text-white disabled:opacity-50 flex items-center gap-1 focus:outline-none focus:ring-2 focus:ring-red-400"
+                className="px-6 py-2 bg-[var(--foreground)] text-[var(--background)] border-2 border-[var(--foreground)] hover:bg-[var(--background)] hover:text-[var(--foreground)] font-mono text-xs tracking-widest uppercase disabled:opacity-50 transition-all duration-100 flex items-center gap-2"
               >
                 {isDeletingProject ? (
                   <>
@@ -286,26 +286,26 @@ export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSess
       {/* Delete Session Modal */}
       {showDeleteSessionModal && (
         <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          className="fixed inset-0 bg-[var(--foreground)]/80 flex items-center justify-center z-50"
           onClick={() => setShowDeleteSessionModal(null)}
           onKeyDown={(e) => handleSessionModalKeyDown(e, showDeleteSessionModal)}
         >
           <div
-            className="bg-neutral-800 border border-neutral-700 rounded-lg p-4 max-w-sm mx-4 shadow-xl"
+            className="bg-[var(--background)] border-4 border-[var(--foreground)] p-8 max-w-md mx-4"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-sm font-medium text-neutral-200 mb-2">Delete Session</h3>
-            <p className="text-xs text-neutral-400 mb-4">
+            <h3 className="font-display text-2xl font-bold text-[var(--foreground)] mb-4">Delete Session</h3>
+            <p className="font-body text-sm text-[var(--foreground)] mb-4">
               Are you sure you want to delete this session? This action cannot be undone.
             </p>
-            <p className="text-xs text-neutral-500 mb-4">
+            <p className="font-mono text-xs text-[var(--muted-foreground)] mb-6 tracking-wide">
               Press Enter to confirm, Escape to cancel
             </p>
-            <div className="flex gap-2 justify-end">
+            <div className="flex gap-3 justify-end">
               <button
                 onClick={() => setShowDeleteSessionModal(null)}
                 disabled={isDeletingSession}
-                className="px-3 py-1.5 text-xs font-medium rounded bg-neutral-700 hover:bg-neutral-600 text-neutral-300 disabled:opacity-50"
+                className="px-6 py-2 border-2 border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] hover:bg-[var(--foreground)] hover:text-[var(--background)] font-mono text-xs tracking-widest uppercase disabled:opacity-50 transition-all duration-100"
               >
                 Cancel
               </button>
@@ -313,7 +313,7 @@ export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSess
                 ref={deleteSessionButtonRef}
                 onClick={() => handleDeleteSession(showDeleteSessionModal)}
                 disabled={isDeletingSession}
-                className="px-3 py-1.5 text-xs font-medium rounded bg-red-600 hover:bg-red-500 text-white disabled:opacity-50 flex items-center gap-1 focus:outline-none focus:ring-2 focus:ring-red-400"
+                className="px-6 py-2 bg-[var(--foreground)] text-[var(--background)] border-2 border-[var(--foreground)] hover:bg-[var(--background)] hover:text-[var(--foreground)] font-mono text-xs tracking-widest uppercase disabled:opacity-50 transition-all duration-100 flex items-center gap-2"
               >
                 {isDeletingSession ? (
                   <>

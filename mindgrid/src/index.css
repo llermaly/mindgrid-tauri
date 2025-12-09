@@ -1,36 +1,157 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,500;1,600;1,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;0,8..60,600;0,8..60,700;1,8..60,400;1,8..60,500;1,8..60,600&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
-/* Base styles for the app */
+/*
+  Minimalist Monochrome Design System
+  Pure black & white, serif typography, sharp edges, editorial luxury
+*/
+
+:root {
+  /* Colors - Pure Monochrome */
+  --background: #FFFFFF;
+  --foreground: #000000;
+  --muted: #F5F5F5;
+  --muted-foreground: #525252;
+  --accent: #000000;
+  --accent-foreground: #FFFFFF;
+  --border: #000000;
+  --border-light: #E5E5E5;
+  --card: #FFFFFF;
+  --card-foreground: #000000;
+  --ring: #000000;
+
+  /* Typography - Serif System */
+  --font-display: "Playfair Display", Georgia, serif;
+  --font-body: "Source Serif 4", Georgia, serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  /* Border Radius - ZERO EVERYWHERE */
+  --radius: 0px;
+
+  /* Borders */
+  --border-hairline: 1px solid #E5E5E5;
+  --border-thin: 1px solid #000000;
+  --border-medium: 2px solid #000000;
+  --border-thick: 4px solid #000000;
+  --border-ultra: 8px solid #000000;
+
+  /* Transitions - Instant to minimal */
+  --transition-instant: 0ms;
+  --transition-fast: 100ms;
+  --transition-image: 300ms;
+}
+
+/* Base styles */
 html, body, #root {
   height: 100%;
   margin: 0;
   padding: 0;
+  overflow: hidden;
 }
 
 body {
-  background-color: #18181b; /* zinc-900 */
-  color: #f4f4f5; /* zinc-100 */
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.625;
+  /* Global subtle texture - horizontal lines */
+  position: relative;
 }
 
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 1px,
+    #000 1px,
+    #000 2px
+  );
+  background-size: 100% 4px;
+  opacity: 0.015;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* Typography Utilities */
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-body {
+  font-family: var(--font-body);
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+/* Headings - Playfair Display */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  color: var(--foreground);
+}
+
+h1 {
+  font-size: 4.5rem; /* 72px */
+  font-weight: 800;
+  letter-spacing: -0.05em;
+}
+
+h2 {
+  font-size: 3.5rem; /* 56px */
+  font-weight: 700;
+}
+
+h3 {
+  font-size: 2.5rem; /* 40px */
+  font-weight: 700;
+}
+
+h4 {
+  font-size: 2rem; /* 32px */
+  font-weight: 600;
+}
+
+h5 {
+  font-size: 1.5rem; /* 24px */
+  font-weight: 600;
+}
+
+h6 {
+  font-size: 1.25rem; /* 20px */
+  font-weight: 600;
+}
+
+/* Scrollbar - Monochrome design */
 .scrollbar-thin::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 .scrollbar-thin::-webkit-scrollbar-track {
-  background: #171717;
+  background: var(--muted);
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: #404040;
-  border-radius: 3px;
+  background: var(--muted-foreground);
+  border-radius: 0; /* Sharp corners */
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: #525252;
+  background: var(--foreground);
 }
 
+/* Animations - Minimal & Instant */
 @keyframes pulse-dot {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
@@ -40,11 +161,371 @@ body {
   animation: pulse-dot 1.5s ease-in-out infinite;
 }
 
+/* Project Card - Monochrome hover */
 .project-card {
-  transition: all 0.2s ease;
+  transition: all var(--transition-fast) ease;
+  border: var(--border-thin);
+  border-radius: var(--radius);
 }
 
 .project-card:hover {
-  transform: translateY(-2px);
-  border-color: #3b82f6;
+  background-color: var(--foreground);
+  color: var(--background);
+  border-color: var(--foreground);
+}
+
+/* Button Base Styles */
+button {
+  font-family: var(--font-body);
+  border-radius: var(--radius);
+  transition: all var(--transition-instant);
+  cursor: pointer;
+}
+
+button:focus-visible {
+  outline: 3px solid var(--foreground);
+  outline-offset: 3px;
+}
+
+/* Input Base Styles */
+input,
+textarea,
+select {
+  font-family: var(--font-body);
+  border-radius: var(--radius);
+  background-color: var(--background);
+  color: var(--foreground);
+  border: var(--border-medium);
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-width: 4px;
+  border-color: var(--foreground);
+}
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 3px solid var(--foreground);
+  outline-offset: 2px;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+
+/* Links */
+a {
+  color: var(--foreground);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--transition-instant);
+}
+
+a:hover {
+  border-bottom-color: var(--foreground);
+}
+
+a:focus-visible {
+  outline: 3px solid var(--foreground);
+  outline-offset: 2px;
+  border-bottom-color: transparent;
+}
+
+/* Card Components */
+.card {
+  background: var(--card);
+  color: var(--card-foreground);
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  padding: 2rem;
+}
+
+.card-inverted {
+  background: var(--foreground);
+  color: var(--background);
+  border: none;
+  border-radius: var(--radius);
+  padding: 2rem;
+}
+
+/* Texture Patterns */
+.texture-horizontal-lines {
+  position: relative;
+}
+
+.texture-horizontal-lines::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 1px,
+    #000 1px,
+    #000 2px
+  );
+  background-size: 100% 4px;
+  opacity: 0.015;
+  pointer-events: none;
+}
+
+.texture-grid {
+  position: relative;
+}
+
+.texture-grid::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image:
+    linear-gradient(#00000008 1px, transparent 1px),
+    linear-gradient(90deg, #00000008 1px, transparent 1px);
+  background-size: 40px 40px;
+  opacity: 0.015;
+  pointer-events: none;
+}
+
+.texture-diagonal-lines {
+  position: relative;
+}
+
+.texture-diagonal-lines::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 40px,
+    #00000008 40px,
+    #00000008 42px
+  );
+  opacity: 0.01;
+  pointer-events: none;
+}
+
+.texture-inverted-vertical {
+  position: relative;
+}
+
+.texture-inverted-vertical::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent,
+    transparent 1px,
+    #fff 1px,
+    #fff 2px
+  );
+  background-size: 4px 100%;
+  opacity: 0.03;
+  pointer-events: none;
+}
+
+.texture-inverted-radial {
+  position: relative;
+}
+
+.texture-inverted-radial::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: radial-gradient(
+    circle at top center,
+    #ffffff,
+    transparent 70%
+  );
+  opacity: 0.05;
+  pointer-events: none;
+}
+
+/* Section dividers - Thick horizontal rules */
+.section-divider {
+  height: 4px;
+  background-color: var(--foreground);
+  border: none;
+  margin: 4rem 0;
+}
+
+.section-divider-ultra {
+  height: 8px;
+  background-color: var(--foreground);
+  border: none;
+  margin: 4rem 0;
+}
+
+/* Inverted Section */
+.inverted-section {
+  background-color: var(--foreground);
+  color: var(--background);
+}
+
+.inverted-section a {
+  color: var(--background);
+  border-bottom-color: transparent;
+}
+
+.inverted-section a:hover {
+  border-bottom-color: var(--background);
+}
+
+/* Feature card hover effect */
+.feature-card {
+  transition: all var(--transition-fast);
+  border: var(--border-thin);
+  border-radius: var(--radius);
+}
+
+.feature-card:hover {
+  background-color: var(--foreground);
+  color: var(--background);
+}
+
+.feature-card:hover * {
+  color: inherit;
+}
+
+/* Image hover effects */
+.image-hover-border {
+  border: 2px solid var(--border);
+  transition: all var(--transition-fast);
+  filter: grayscale(100%);
+}
+
+.image-hover-border:hover {
+  border-width: 4px;
+  transform: scale(1.05);
+  filter: grayscale(0%);
+}
+
+/* Label/metadata text */
+.label-text {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+/* Pull quotes / Testimonials */
+.pull-quote {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-style: italic;
+  line-height: 1.4;
+  border-top: 3px solid var(--foreground);
+  padding-top: 1.5rem;
+  transition: border-width var(--transition-fast);
+}
+
+.pull-quote:hover {
+  border-top-width: 5px;
+}
+
+.pull-quote-mark {
+  font-size: 4rem;
+  line-height: 1;
+  opacity: 0.15;
+  transition: opacity var(--transition-fast);
+}
+
+.pull-quote:hover .pull-quote-mark {
+  opacity: 0.25;
+}
+
+/* Utility - Sharp corners enforced */
+* {
+  border-radius: var(--radius) !important;
+}
+
+/* Focus visible for accessibility */
+*:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 3px;
+}
+
+/* Skip link */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: var(--foreground);
+  color: var(--background);
+  padding: 0.5rem 1rem;
+  text-decoration: none;
+  font-family: var(--font-body);
+  font-weight: 600;
+  z-index: 100;
+}
+
+.skip-link:focus {
+  top: 0;
+}
+
+/* Editorial elements */
+.drop-cap::first-letter {
+  font-family: var(--font-display);
+  font-size: 4rem;
+  line-height: 1;
+  float: left;
+  margin-right: 0.5rem;
+  margin-top: 0.1rem;
+  font-weight: 700;
+}
+
+.boxed-drop-cap::first-letter {
+  font-family: var(--font-display);
+  font-size: 3rem;
+  line-height: 1;
+  float: left;
+  border: 2px solid var(--foreground);
+  padding: 0.5rem 0.75rem;
+  margin-right: 1rem;
+  margin-top: 0.25rem;
+  font-weight: 700;
+}
+
+/* Decorative rule with square */
+.decorative-rule {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.decorative-rule::before {
+  content: '';
+  flex: 1;
+  height: 4px;
+  background: var(--foreground);
+}
+
+.decorative-rule::after {
+  content: '';
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid var(--foreground);
+  flex-shrink: 0;
 }

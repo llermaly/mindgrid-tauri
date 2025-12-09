@@ -147,8 +147,8 @@ function App() {
 
   if (!isInitialized || isLoading) {
     return (
-      <div className="h-full flex items-center justify-center bg-zinc-900">
-        <div className="text-zinc-400">Loading...</div>
+      <div className="h-full flex items-center justify-center bg-[var(--background)]">
+        <div className="font-mono text-sm tracking-widest uppercase text-[var(--muted-foreground)]">Loading...</div>
       </div>
     );
   }
@@ -156,16 +156,16 @@ function App() {
   if (windowMode === "workspace") {
     if (!activeSession) {
       return (
-        <div className="h-full flex items-center justify-center bg-zinc-900">
-          <div className="text-center">
-            <div className="text-zinc-400 mb-2">Session not found</div>
-            <div className="text-zinc-500 text-sm">Session ID: {urlSessionId}</div>
+        <div className="h-full flex items-center justify-center bg-[var(--background)]">
+          <div className="text-center border border-[var(--border)] p-8">
+            <div className="font-display text-xl mb-2 text-[var(--foreground)]">Session not found</div>
+            <div className="font-mono text-xs text-[var(--muted-foreground)]">Session ID: {urlSessionId}</div>
           </div>
         </div>
       );
     }
     return (
-      <div className="h-full bg-neutral-900">
+      <div className="h-full bg-[var(--background)]">
         <SessionWorkspace sessionName={activeSession.name} renderPanel={(panelId: PanelType) => renderPanelContent(panelId, activeSession)} />
       </div>
     );

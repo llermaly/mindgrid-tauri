@@ -252,20 +252,20 @@ export function Dashboard() {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-neutral-950 text-neutral-100">
-      <div className="h-12 bg-neutral-900 border-b border-neutral-800 flex items-center justify-between px-4 flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="flex gap-1.5">
-            <div className="w-3 h-3 rounded-full bg-red-500" />
-            <div className="w-3 h-3 rounded-full bg-yellow-500" />
-            <div className="w-3 h-3 rounded-full bg-green-500" />
+    <div className="h-screen flex flex-col bg-[var(--background)] text-[var(--foreground)]">
+      <div className="h-14 bg-[var(--background)] border-b-2 border-[var(--border)] flex items-center justify-between px-6 flex-shrink-0">
+        <div className="flex items-center gap-4">
+          <div className="flex gap-2">
+            <div className="w-3 h-3 border border-[var(--border)] bg-[var(--foreground)]" />
+            <div className="w-3 h-3 border border-[var(--border)] bg-[var(--foreground)]" />
+            <div className="w-3 h-3 border border-[var(--border)] bg-[var(--foreground)]" />
           </div>
-          <span className="text-lg font-semibold">MindGrid</span>
-          <span className="text-xs text-neutral-500 px-2 py-0.5 bg-neutral-800 rounded">
+          <span className="font-display text-2xl font-bold tracking-tight">MindGrid</span>
+          <span className="font-mono text-xs tracking-widest uppercase px-2 py-1 bg-[var(--foreground)] text-[var(--background)]">
             {isSettingsView ? "Settings" : isAnalyticsView ? "Analytics" : "Dashboard"}
           </span>
           {worktreeName && (
-            <span className="text-xs text-orange-400 px-2 py-0.5 bg-orange-500/20 border border-orange-500/30 rounded flex items-center gap-1.5">
+            <span className="font-mono text-xs px-2 py-1 bg-[var(--foreground)] text-[var(--background)] border border-[var(--border)] flex items-center gap-1.5">
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
@@ -282,35 +282,35 @@ export function Dashboard() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search projects..."
-                className="w-64 px-3 py-1.5 pl-9 bg-neutral-800 border border-neutral-700 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500"
+                className="w-64 px-3 py-2 pl-9 bg-[var(--background)] border-2 border-[var(--border)] text-sm text-[var(--foreground)] focus:outline-none focus:border-[var(--foreground)] placeholder:italic placeholder:text-[var(--muted-foreground)]"
               />
               <svg
-                className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500"
+                className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
               >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
             </div>
             <button
               onClick={() => setShowProjectWizard(true)}
-              className="px-4 py-1.5 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 hover:border-neutral-600 rounded-lg text-sm font-medium text-white flex items-center gap-2 transition-colors"
+              className="px-6 py-2 bg-[var(--foreground)] text-[var(--background)] border border-[var(--border)] hover:bg-[var(--background)] hover:text-[var(--foreground)] font-mono text-xs tracking-widest uppercase font-semibold flex items-center gap-2 transition-all duration-100"
             >
-              <span className="text-emerald-400">+</span> New Project
+              <span>+</span> New Project
             </button>
           </div>
         )}
       </div>
 
       <div className="flex-1 overflow-hidden flex">
-        <div className="w-56 border-r border-neutral-800 p-4 flex flex-col min-h-0">
-          <nav className="space-y-1 flex-1">
+        <div className="w-64 border-r-2 border-[var(--border)] p-6 flex flex-col min-h-0 bg-[var(--muted)]">
+          <nav className="space-y-2 flex-1">
             <SidebarButton
               label="All Projects"
               icon={
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
                 </svg>
               }
               active={activeView === "all"}
@@ -359,12 +359,12 @@ export function Dashboard() {
             />
           </nav>
 
-          <div className="border-t border-neutral-800 pt-4 space-y-1">
+          <div className="border-t-2 border-[var(--border)] pt-4 space-y-2">
             <SidebarButton
               label="Analytics"
               icon={
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                 </svg>
               }
               active={isAnalyticsView}
@@ -378,8 +378,8 @@ export function Dashboard() {
               label="Settings"
               icon={
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
               }
               active={isSettingsView}
@@ -426,9 +426,9 @@ export function Dashboard() {
                       <UsageLimitsCard />
                     </div>
 
-                    <div className="flex items-center justify-between mb-6">
-                      <h1 className="text-2xl font-semibold text-white">Projects</h1>
-                      <div className="flex items-center gap-2 text-sm text-neutral-400">
+                    <div className="flex items-center justify-between mb-8">
+                      <h1 className="font-display text-5xl font-bold tracking-tight text-[var(--foreground)]">Projects</h1>
+                      <div className="flex items-center gap-2 font-mono text-xs text-[var(--muted-foreground)] tracking-widest uppercase">
                         <span>
                           {filteredProjects.length} project{filteredProjects.length !== 1 ? "s" : ""}
                         </span>
@@ -679,13 +679,15 @@ function SidebarButton({
   return (
     <button
       onClick={onClick}
-      className={`w-full px-3 py-2 rounded-lg text-left text-sm flex items-center gap-2 transition-colors ${
-        active ? "bg-neutral-800 text-white" : "text-neutral-400 hover:text-white hover:bg-neutral-800/50"
+      className={`w-full px-4 py-3 text-left text-sm flex items-center gap-3 transition-all duration-100 border ${
+        active
+          ? "bg-[var(--foreground)] text-[var(--background)] border-[var(--foreground)] font-semibold"
+          : "text-[var(--foreground)] hover:bg-[var(--foreground)] hover:text-[var(--background)] border-transparent hover:border-[var(--foreground)]"
       }`}
     >
       {icon}
-      {label}
-      {typeof count === "number" && <span className="ml-auto text-xs text-neutral-500">{count}</span>}
+      <span className="font-body">{label}</span>
+      {typeof count === "number" && <span className="ml-auto font-mono text-xs">{count}</span>}
       {badge && <span className="ml-auto">{badge}</span>}
     </button>
   );
@@ -693,17 +695,17 @@ function SidebarButton({
 
 function EmptyState({ onCreate }: { onCreate: () => void }) {
   return (
-    <div className="text-center py-16">
-      <div className="w-16 h-16 mx-auto mb-4 rounded-xl bg-neutral-800 border border-neutral-700 flex items-center justify-center">
-        <svg className="w-8 h-8 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <div className="text-center py-24 border-2 border-[var(--border)] p-12">
+      <div className="w-20 h-20 mx-auto mb-6 border-2 border-[var(--border)] flex items-center justify-center">
+        <svg className="w-10 h-10 text-[var(--foreground)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
         </svg>
       </div>
-      <h3 className="text-lg font-medium text-white mb-2">No projects yet</h3>
-      <p className="text-neutral-400 mb-6">Create your first project to get started</p>
+      <h3 className="font-display text-3xl font-bold mb-3 text-[var(--foreground)]">No projects yet</h3>
+      <p className="font-body text-[var(--muted-foreground)] mb-8 italic">Create your first project to get started</p>
       <button
         onClick={onCreate}
-        className="px-6 py-3 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 hover:border-neutral-600 rounded-lg font-medium text-white transition-colors"
+        className="px-8 py-3 bg-[var(--foreground)] text-[var(--background)] border border-[var(--border)] hover:bg-[var(--background)] hover:text-[var(--foreground)] font-mono text-xs tracking-widest uppercase font-semibold transition-all duration-100"
       >
         Create Project
       </button>
@@ -713,28 +715,28 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
 
 function EmptyActivity() {
   return (
-    <div className="text-center py-16">
-      <div className="w-16 h-16 mx-auto mb-4 rounded-xl bg-neutral-800 border border-neutral-700 flex items-center justify-center">
-        <svg className="w-8 h-8 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <div className="text-center py-24 border-2 border-[var(--border)] p-12">
+      <div className="w-20 h-20 mx-auto mb-6 border-2 border-[var(--border)] flex items-center justify-center">
+        <svg className="w-10 h-10 text-[var(--foreground)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
       </div>
-      <h3 className="text-lg font-medium text-white mb-2">No recent activity</h3>
-      <p className="text-neutral-400">Start a session to see activity here</p>
+      <h3 className="font-display text-3xl font-bold mb-3 text-[var(--foreground)]">No recent activity</h3>
+      <p className="font-body text-[var(--muted-foreground)] italic">Start a session to see activity here</p>
     </div>
   );
 }
 
 function EmptyActive() {
   return (
-    <div className="text-center py-16">
-      <div className="w-16 h-16 mx-auto mb-4 rounded-xl bg-neutral-800 border border-neutral-700 flex items-center justify-center">
-        <svg className="w-8 h-8 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <div className="text-center py-24 border-2 border-[var(--border)] p-12">
+      <div className="w-20 h-20 mx-auto mb-6 border-2 border-[var(--border)] flex items-center justify-center">
+        <svg className="w-10 h-10 text-[var(--foreground)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
         </svg>
       </div>
-      <h3 className="text-lg font-medium text-white mb-2">No active sessions</h3>
-      <p className="text-neutral-400">All sessions are idle or completed</p>
+      <h3 className="font-display text-3xl font-bold mb-3 text-[var(--foreground)]">No active sessions</h3>
+      <p className="font-body text-[var(--muted-foreground)] italic">All sessions are idle or completed</p>
     </div>
   );
 }
