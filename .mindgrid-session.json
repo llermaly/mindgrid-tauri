@@ -13,11 +13,34 @@
       "role": "system",
       "content": "Session initialized. Model: claude-opus-4-5-20251101",
       "timestamp": 1765242610932
+    },
+    {
+      "id": "msg_015ZUPrTKqsASs5CDTjWZxZP",
+      "role": "assistant",
+      "content": "Chile is a long, narrow country located on the western coast of South America, bordered by Peru to the north, Bolivia to the northeast, Argentina to the east, and the Pacific Ocean to the west.\n\nAs of 2024, Chile has a population of approximately **19.5 million people**.",
+      "timestamp": 1765242614719,
+      "usage": {
+        "input_tokens": 3,
+        "cache_creation_input_tokens": 3777,
+        "cache_read_input_tokens": 15280,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 3777,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_tokens": 1,
+        "service_tier": "standard"
+      }
+    },
+    {
+      "id": "msg-8",
+      "role": "system",
+      "content": "Completed. Cost: $0",
+      "timestamp": 1765242614740
     }
   ],
   "totalCost": 0,
   "model": "claude-opus-4-5-20251101",
   "permissionMode": "bypassPermissions",
   "commitMode": "checkpoint",
-  "savedAt": 1765242612940
+  "savedAt": 1765242616750
 }
