@@ -1,7 +1,7 @@
 import Database from "@tauri-apps/plugin-sql";
 import { load, Store } from "@tauri-apps/plugin-store";
 import type { Project, Session } from "../stores/sessionStore";
-import type { ParsedMessage, PermissionMode, CommitMode } from "./claude-types";
+import type { ParsedMessage } from "./claude-types";
 import { debug } from "../stores/debugStore";
 import { getStoreFilename, getDatabaseUri } from "./dev-mode";
 

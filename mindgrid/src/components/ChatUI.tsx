@@ -1155,6 +1155,7 @@ export function ChatUI({
             </>
           )}
         </div>
+        </div>
 
         <div className="flex items-center gap-2">
           {/* Terminal Toggle Button */}
