@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, useMemo, ReactNode } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useClaudePty } from "../hooks/useClaudePty";
 import type { ClaudeEvent, ParsedMessage, PermissionMode, CommitMode } from "../lib/claude-types";
@@ -74,87 +74,231 @@ const MESSAGE_STYLES: Record<string, { bg: string; color: string; label: string 
   thinking: { bg: "bg-purple-500/10", color: "text-purple-300", label: "Thinking" },
 };
 
-function renderInlineContent(text: string): ReactNode[] {
-  const parts = text.split(/`([^`]+)`/g);
-  return parts.map((part, idx) => {
-    const isCode = idx % 2 === 1;
-    return isCode ? (
-      <code key={`code-${idx}`} className="px-1 py-0.5 rounded bg-zinc-900/70 text-[12px] text-amber-200 border border-zinc-800">
-        {part}
-      </code>
-    ) : (
-      <span key={`text-${idx}`}>{part}</span>
-    );
-  });
-}
+type MarkdownBlock =
+  | { type: "paragraph"; text: string }
+  | { type: "heading"; level: number; text: string }
+  | { type: "list"; items: string[]; ordered?: boolean }
+  | { type: "code"; language?: string; content: string }
+  | { type: "blockquote"; text: string }
+  | { type: "divider" };
 
-function renderMarkdownContent(content: string): ReactNode[] {
-  const nodes: ReactNode[] = [];
-  const codeRegex = /```(\w+)?\n?([\s\S]*?)```/g;
+function renderInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
+  const parts: ReactNode[] = [];
+  const regex = /(`([^`]+)`)|\*\*([^*]+)\*\*|(?:\*|_)([^*_]+)(?:\*|_)|~~([^~]+)~~|\[([^\]]+)\]\(([^)]+)\)/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
-  while ((match = codeRegex.exec(content)) !== null) {
+  while ((match = regex.exec(text))) {
     if (match.index > lastIndex) {
-      const textSegment = content.slice(lastIndex, match.index);
-      nodes.push(...renderTextBlocks(textSegment));
+      parts.push(text.slice(lastIndex, match.index));
     }
 
-    const language = match[1] || "text";
-    const code = match[2].trimEnd();
-    nodes.push(
-      <div key={`code-${nodes.length}`} className="rounded-lg bg-zinc-900/70 border border-zinc-800 overflow-hidden">
-        <div className="flex items-center justify-between px-3 py-2 text-[11px] uppercase tracking-wide text-zinc-500 bg-zinc-900 border-b border-zinc-800">
-          <span className="font-mono">{language}</span>
-          <span className="flex gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse delay-100" />
-            <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse delay-200" />
-          </span>
-        </div>
-        <pre className="p-3 text-xs text-zinc-200 font-mono whitespace-pre-wrap overflow-x-auto bg-gradient-to-br from-zinc-950 to-zinc-900">
-          {code}
-        </pre>
-      </div>
-    );
+    if (match[2]) {
+      parts.push(
+        <code
+          key={`${keyPrefix}-code-${parts.length}`}
+          className="px-1.5 py-0.5 rounded bg-emerald-950/70 text-emerald-50 border border-emerald-800/70 shadow-[0_0_0_1px_rgba(16,185,129,0.25)]"
+        >
+          {match[2]}
+        </code>
+      );
+    } else if (match[3]) {
+      parts.push(
+        <strong key={`${keyPrefix}-strong-${parts.length}`} className="text-zinc-50">
+          {match[3]}
+        </strong>
+      );
+    } else if (match[4]) {
+      parts.push(
+        <em key={`${keyPrefix}-em-${parts.length}`} className="text-zinc-200">
+          {match[4]}
+        </em>
+      );
+    } else if (match[5]) {
+      parts.push(
+        <span key={`${keyPrefix}-strike-${parts.length}`} className="text-zinc-500 line-through decoration-emerald-500/80">
+          {match[5]}
+        </span>
+      );
+    } else if (match[6] && match[7]) {
+      parts.push(
+        <a
+          key={`${keyPrefix}-link-${parts.length}`}
+          href={match[7]}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="text-emerald-300 hover:text-emerald-200 underline decoration-emerald-400/80 underline-offset-4"
+        >
+          {match[6]}
+        </a>
+      );
+    }
 
-    lastIndex = match.index + match[0].length;
+    lastIndex = regex.lastIndex;
   }
 
-  if (lastIndex < content.length) {
-    const remaining = content.slice(lastIndex);
-    nodes.push(...renderTextBlocks(remaining));
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
   }
 
-  return nodes;
+  return parts;
 }
 
-function renderTextBlocks(text: string): ReactNode[] {
-  return text
-    .trim()
-    .split(/\n{2,}/)
-    .filter(Boolean)
-    .map((block, idx) => {
-      const lines = block.split("\n");
-      const isList = lines.every((line) => /^[-*+]\s+/.test(line.trim()));
-      if (isList) {
-        return (
-          <ul key={`list-${idx}`} className="list-disc list-inside text-sm text-zinc-200 space-y-1 pl-2">
-            {lines.map((line, li) => (
-              <li key={`li-${idx}-${li}`} className="leading-relaxed">
-                {renderInlineContent(line.replace(/^[-*+]\s+/, ""))}
-              </li>
-            ))}
-          </ul>
-        );
-      }
+function parseMarkdown(content: string): MarkdownBlock[] {
+  const lines = content.split(/\r?\n/);
+  const blocks: MarkdownBlock[] = [];
+  let i = 0;
 
-      return (
-        <p key={`p-${idx}`} className="text-sm text-zinc-200 leading-relaxed">
-          {renderInlineContent(block)}
-        </p>
-      );
-    });
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.trim()) {
+      i += 1;
+      continue;
+    }
+
+    if (/^\s*-{3,}\s*$/.test(line)) {
+      blocks.push({ type: "divider" });
+      i += 1;
+      continue;
+    }
+
+    if (line.startsWith("```")) {
+      const language = line.replace(/```/, "").trim() || undefined;
+      const codeLines: string[] = [];
+      i += 1;
+      while (i < lines.length && !lines[i].startsWith("```")) {
+        codeLines.push(lines[i]);
+        i += 1;
+      }
+      if (i < lines.length) i += 1; // Skip closing fence
+      blocks.push({ type: "code", language, content: codeLines.join("\n") });
+      continue;
+    }
+
+    const headingMatch = line.match(/^(#{1,3})\s+(.*)$/);
+    if (headingMatch) {
+      blocks.push({ type: "heading", level: headingMatch[1].length, text: headingMatch[2] });
+      i += 1;
+      continue;
+    }
+
+    if (/^\s*>\s+/.test(line)) {
+      const quote: string[] = [];
+      while (i < lines.length && /^\s*>\s+/.test(lines[i])) {
+        quote.push(lines[i].replace(/^\s*>\s+/, "").trim());
+        i += 1;
+      }
+      blocks.push({ type: "blockquote", text: quote.join(" ") });
+      continue;
+    }
+
+    if (/^\s*\d+\.\s+/.test(line)) {
+      const items: string[] = [];
+      while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
+        items.push(lines[i].replace(/^\s*\d+\.\s+/, "").trim());
+        i += 1;
+      }
+      blocks.push({ type: "list", items, ordered: true });
+      continue;
+    }
+
+    if (/^\s*[-*]\s+/.test(line)) {
+      const items: string[] = [];
+      while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) {
+        items.push(lines[i].replace(/^\s*[-*]\s+/, "").trim());
+        i += 1;
+      }
+      blocks.push({ type: "list", items });
+      continue;
+    }
+
+    const paragraph: string[] = [];
+    while (i < lines.length && lines[i].trim()) {
+      paragraph.push(lines[i]);
+      i += 1;
+    }
+    blocks.push({ type: "paragraph", text: paragraph.join(" ") });
+  }
+
+  return blocks.length ? blocks : [{ type: "paragraph", text: content }];
+}
+
+function MarkdownContent({ content }: { content: string }) {
+  const blocks = useMemo(() => parseMarkdown(content), [content]);
+
+  return (
+    <div className="space-y-3 text-sm leading-relaxed text-zinc-200">
+      {blocks.map((block, idx) => {
+        if (block.type === "heading") {
+          const sizes = { 1: "text-xl", 2: "text-lg", 3: "text-base" } as const;
+          return (
+            <h3 key={`h-${idx}`} className={`font-semibold text-emerald-200 ${sizes[block.level as 1 | 2 | 3] || "text-base"}`}>
+              {renderInlineMarkdown(block.text, `heading-${idx}`)}
+            </h3>
+          );
+        }
+
+        if (block.type === "list") {
+          const Tag = block.ordered ? "ol" : "ul";
+          return (
+            <Tag
+              key={`list-${idx}`}
+              className={`${
+                block.ordered ? "list-decimal" : "list-disc"
+              } list-inside space-y-1 text-zinc-200 marker:text-emerald-300`}
+            >
+              {block.items.map((item, itemIdx) => (
+                <li key={`list-${idx}-${itemIdx}`}>{renderInlineMarkdown(item, `list-item-${idx}-${itemIdx}`)}</li>
+              ))}
+            </Tag>
+          );
+        }
+
+        if (block.type === "code") {
+          return (
+            <pre
+              key={`code-${idx}`}
+              className="relative bg-gradient-to-br from-zinc-900/80 via-zinc-900 to-emerald-900/30 border border-emerald-800/60 rounded-xl p-3 text-xs text-emerald-100 overflow-x-auto shadow-inner shadow-emerald-900/30"
+            >
+              {block.language && (
+                <span className="absolute top-2 right-2 text-[10px] uppercase tracking-wide text-emerald-200 bg-emerald-900/50 border border-emerald-700/60 px-2 py-0.5 rounded-full">
+                  {block.language}
+                </span>
+              )}
+              <code className="font-mono whitespace-pre-wrap block">{block.content}</code>
+            </pre>
+          );
+        }
+
+        if (block.type === "blockquote") {
+          return (
+            <div
+              key={`quote-${idx}`}
+              className="border border-emerald-800/60 bg-emerald-950/30 text-emerald-100 rounded-lg px-3 py-2 shadow-[0_10px_40px_-28px_rgba(16,185,129,0.8)]"
+            >
+              <div className="flex items-start gap-2">
+                <svg className="w-4 h-4 text-emerald-300 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <path d="M9 7h-4a4 4 0 0 0-4 4v6h6v-6H5" />
+                  <path d="M23 7h-4a4 4 0 0 0-4 4v6h6v-6h-2" />
+                </svg>
+                <div className="text-sm">{renderInlineMarkdown(block.text, `blockquote-${idx}`)}</div>
+              </div>
+            </div>
+          );
+        }
+
+        if (block.type === "divider") {
+          return <div key={`div-${idx}`} className="h-px bg-gradient-to-r from-transparent via-emerald-800/70 to-transparent" />;
+        }
+
+        return (
+          <p key={`p-${idx}`} className="text-zinc-200">
+            {renderInlineMarkdown(block.text, `p-${idx}`)}
+          </p>
+        );
+      })}
+    </div>
+  );
 }
 
 function MessageItem({ message }: { message: ParsedMessage }) {
@@ -167,14 +311,29 @@ function MessageItem({ message }: { message: ParsedMessage }) {
   const isAssistant = message.role === "assistant";
 
   return (
-    <div className={`rounded-lg ${style.bg} overflow-hidden border border-zinc-800/50`}>
+    <div
+      className={`rounded-lg overflow-hidden border ${
+        isAssistant
+          ? "border-emerald-800/50 bg-gradient-to-br from-emerald-950/40 via-zinc-950/80 to-zinc-900 shadow-[0_10px_40px_-24px_rgba(16,185,129,0.55)]"
+          : `${style.bg} border-zinc-800`
+      }`}
+    >
       <div
         className={`flex items-center gap-2 px-3 py-2 ${
           message.role === "tool" ? "cursor-pointer" : ""
         }`}
         onClick={() => message.role === "tool" && setIsExpanded(!isExpanded)}
       >
-        <span className={`text-xs font-medium ${style.color}`}>{style.label}</span>
+        <span className={`text-xs font-medium ${style.color}`}>
+          {isAssistant ? (
+            <span className="inline-flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              {style.label}
+            </span>
+          ) : (
+            style.label
+          )}
+        </span>
         {message.toolName && (
           <span className="text-xs font-mono text-zinc-500">{message.toolName}</span>
         )}
@@ -213,8 +372,11 @@ function MessageItem({ message }: { message: ParsedMessage }) {
                   {message.content}
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {renderMarkdownContent(message.content)}
+                <div className="relative rounded-xl border border-emerald-900/60 bg-black/20 p-3 overflow-hidden shadow-[0_18px_40px_-28px_rgba(16,185,129,0.55)]">
+                  <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-emerald-500/10 to-transparent blur-xl pointer-events-none" />
+                  <div className="relative">
+                    <MarkdownContent content={message.content} />
+                  </div>
                 </div>
               )
             ) : (
@@ -282,13 +444,24 @@ export function ChatUI({
   const [showUsagePopup, setShowUsagePopup] = useState(false);
   const [usagePopupPos, setUsagePopupPos] = useState({ x: 0, y: 0 });
   const [filtersExpanded, setFiltersExpanded] = useState(false);
-  const [activeFilters, setActiveFilters] = useState<string[]>(['all']);
+  const [activeFilters, setActiveFilters] = useState<string[]>(['thinking', 'text', 'user']);
   const [attachments, setAttachments] = useState<File[]>([]);
   const [isListening, setIsListening] = useState(false);
   const [showTerminal, setShowTerminal] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!filtersExpanded) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setFiltersExpanded(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [filtersExpanded]);
 
   // Parse cwd to extract project path and worktree name
   const pathInfo = useMemo(() => {
@@ -427,6 +600,7 @@ export function ChatUI({
   const criticalUsage = activeAgent === "codex" ? codexCriticalUsage : claudeCriticalUsage;
   const usageLoading = activeAgent === "codex" ? codexLoading : claudeLoading;
   const usageError = activeAgent === "codex" ? codexError : claudeError;
+  const agentLabel = activeAgent === "codex" ? "Codex" : "Claude";
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -449,6 +623,17 @@ export function ChatUI({
     const estimate = Math.min(95, Math.max(5, messages.length * 5));
     setContextUsed(estimate);
   }, [messages.length]);
+
+  // Allow closing filters with Escape for quick cleanup
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && filtersExpanded) {
+        setFiltersExpanded(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [filtersExpanded]);
 
   // Initialize config on mount (no "Start Claude" button needed)
   useEffect(() => {
@@ -601,196 +786,190 @@ export function ChatUI({
     }
   }, [onMergePr, isMergingPr]);
 
+  const headerClasses = isAnswering
+    ? "relative overflow-hidden flex items-center justify-between px-4 py-3 border-b border-emerald-800/60 bg-gradient-to-r from-emerald-950/70 via-emerald-900/55 to-zinc-900/60 shadow-[0_10px_40px_-24px_rgba(16,185,129,0.6)]"
+    : "relative overflow-hidden flex items-center justify-between px-4 py-3 border-b border-zinc-700 bg-zinc-800/50";
+
   return (
     <div className={`flex flex-col h-full bg-zinc-900 ${className}`}>
       {/* Header */}
-      <div
-        className={`flex items-center justify-between px-4 py-3 border-b transition-colors ${
-          isAnswering
-            ? "border-indigo-700/70 bg-gradient-to-r from-zinc-800 via-indigo-900/50 to-zinc-800 shadow-[0_5px_30px_rgba(79,70,229,0.15)]"
-            : "border-zinc-700 bg-zinc-800/50"
-        }`}
-      >
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <div
-              className={`w-2.5 h-2.5 rounded-full ${
+      <div className={headerClasses}>
+        {isAnswering && (
+          <>
+            <div className="absolute inset-0 pointer-events-none bg-gradient-to-r from-emerald-500/10 via-emerald-400/10 to-transparent blur-lg animate-pulse" />
+            <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-emerald-400/70 to-transparent animate-pulse" />
+          </>
+        )}
+
+        <div className="relative flex items-center justify-between w-full">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <div className={`w-2 h-2 rounded-full ${
                 activeAgent === "codex"
-                  ? isCodexRunning
-                    ? "bg-blue-400 animate-pulse shadow-[0_0_0_4px_rgba(59,130,246,0.2)]"
-                    : "bg-blue-500"
-                  : isRunning
-                  ? "bg-emerald-400 animate-pulse shadow-[0_0_0_4px_rgba(16,185,129,0.2)]"
-                  : "bg-zinc-600"
-              }`}
-            />
-            {onModelChange && (
-              <ModelSelector
-                value={model || null}
-                onChange={onModelChange}
-                size="sm"
-              />
-            )}
-            <span
-              className={`text-xs px-2 py-1 rounded border flex items-center gap-1 ${
-                isAnswering
-                  ? "border-indigo-500/70 text-indigo-100 bg-indigo-500/10"
-                  : "border-zinc-700 text-neutral-400"
-              }`}
-            >
-              {isAnswering ? (
-                <>
-                  <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
-                    <path d="M12 2a10 10 0 0 1 10 10" />
-                  </svg>
-                  <span>Answering</span>
-                </>
-              ) : (
-                <>
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full ${
-                      activeAgent === "codex"
-                        ? isCodexRunning
-                          ? "bg-blue-400"
-                          : "bg-blue-600"
-                        : isRunning
-                        ? "bg-emerald-400"
-                        : "bg-zinc-500"
-                    }`}
-                  />
-                  <span>{activeAgent === "codex" ? (isCodexRunning ? "Running" : "Idle") : (isRunning ? "Running" : "Idle")}</span>
-                </>
-              )}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setThinkingMode((v) => !v)}
-              className={`px-2 py-1 rounded text-xs border ${thinkingMode ? "border-purple-500 text-purple-200 bg-purple-500/10" : "border-zinc-700 text-neutral-400"}`}
-              title="Toggle thinking mode"
-            >
-              {thinkingMode ? "Thinking On" : "Thinking Off"}
-            </button>
-            {/* Context Usage Indicator with icon */}
-            <div
-              className="relative"
-              onMouseEnter={(e) => {
-                setContextPopupPos({ x: e.clientX, y: e.clientY });
-                setShowContextPopup(true);
-              }}
-              onMouseLeave={() => setShowContextPopup(false)}
-            >
-              <span
-                className={`flex items-center gap-1 cursor-help px-1.5 py-0.5 rounded hover:bg-zinc-800 transition-colors text-xs ${
-                  contextUsed > 80 ? 'text-red-400' : contextUsed > 50 ? 'text-yellow-400' : 'text-zinc-400'
-                }`}
-              >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"
-                  />
-                </svg>
-                {contextUsed}%
-              </span>
-              {showContextPopup && (
-                <ContextUsagePopup
-                  contextUsed={contextUsed}
-                  model={model}
-                  position={contextPopupPos}
+                  ? (isCodexRunning ? "bg-blue-400 animate-pulse" : "bg-blue-500")
+                  : (isRunning ? "bg-green-500 animate-pulse" : "bg-zinc-600")
+              }`} />
+              {onModelChange && (
+                <ModelSelector
+                  value={model || null}
+                  onChange={onModelChange}
+                  size="sm"
                 />
               )}
-            </div>
-            {/* Account Usage Indicator with icon */}
-            <div
-              className="relative"
-              onMouseEnter={(e) => {
-                setUsagePopupPos({ x: e.clientX, y: e.clientY });
-                setShowUsagePopup(true);
-              }}
-              onMouseLeave={() => setShowUsagePopup(false)}
-            >
-              {usageLoading ? (
-                <span
-                  className="flex items-center gap-1 px-1.5 py-0.5 rounded text-xs text-zinc-500"
-                  title="Loading usage data..."
-                >
-                  <svg className="w-3 h-3 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M13 10V3L4 14h7v7l9-11h-7z"
-                    />
-                  </svg>
-                  <span className="animate-pulse">...</span>
+              <span
+                className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border ${
+                  isAnswering
+                    ? "bg-emerald-900/60 border-emerald-600/70 text-emerald-100 shadow-[0_0_0_1px_rgba(16,185,129,0.3)]"
+                    : "bg-zinc-800/70 border-zinc-700 text-neutral-400"
+                }`}
+              >
+                <svg className={`w-3 h-3 ${isAnswering ? "text-emerald-200 animate-spin" : "text-zinc-500"}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <circle cx="12" cy="12" r="10" strokeOpacity={isAnswering ? 0.6 : 0.25} />
+                  <path d="M12 2a10 10 0 0 1 10 10" />
+                </svg>
+                <span className="flex items-center gap-1">
+                  {isAnswering ? `${agentLabel} answering` : `${agentLabel} idle`}
+                  {isAnswering && (
+                    <span className="flex items-center gap-0.5">
+                      {[0, 1, 2].map((bar) => (
+                        <span
+                          key={bar}
+                          className="w-1 h-2 rounded-full bg-emerald-200 animate-pulse"
+                          style={{ animationDelay: `${bar * 120}ms` }}
+                        />
+                      ))}
+                    </span>
+                  )}
                 </span>
-              ) : criticalUsage ? (
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setThinkingMode((v) => !v)}
+                className={`px-2 py-1 rounded text-xs border ${thinkingMode ? "border-purple-500 text-purple-200 bg-purple-500/10" : "border-zinc-700 text-neutral-400"}`}
+                title="Toggle thinking mode"
+              >
+                {thinkingMode ? "Thinking On" : "Thinking Off"}
+              </button>
+              {/* Context Usage Indicator with icon */}
+              <div
+                className="relative"
+                onMouseEnter={(e) => {
+                  setContextPopupPos({ x: e.clientX, y: e.clientY });
+                  setShowContextPopup(true);
+                }}
+                onMouseLeave={() => setShowContextPopup(false)}
+              >
                 <span
                   className={`flex items-center gap-1 cursor-help px-1.5 py-0.5 rounded hover:bg-zinc-800 transition-colors text-xs ${
-                    criticalUsage.percentage > 80 ? 'text-red-400' : criticalUsage.percentage > 50 ? 'text-yellow-400' : 'text-zinc-400'
+                    contextUsed > 80 ? 'text-red-400' : contextUsed > 50 ? 'text-yellow-400' : 'text-zinc-400'
                   }`}
-                  title={`${criticalUsage.label}: ${criticalUsage.percentage}%`}
                 >
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       strokeWidth={2}
-                      d="M13 10V3L4 14h7v7l9-11h-7z"
+                      d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"
                     />
                   </svg>
-                  {criticalUsage.percentage}%
+                  {contextUsed}%
                 </span>
-              ) : usageError ? (
-                <span
-                  className="flex items-center gap-1 cursor-help px-1.5 py-0.5 rounded hover:bg-zinc-800 transition-colors text-xs text-zinc-600"
-                  title={`Usage data unavailable: ${usageError}`}
-                >
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M13 10V3L4 14h7v7l9-11h-7z"
-                    />
-                  </svg>
-                  --
-                </span>
-              ) : (
-                <span
-                  className="flex items-center gap-1 px-1.5 py-0.5 rounded text-xs text-zinc-600"
-                  title="No usage data"
-                >
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M13 10V3L4 14h7v7l9-11h-7z"
-                    />
-                  </svg>
-                  --
-                </span>
-              )}
-              {showUsagePopup && (
-                activeAgent === "codex" && codexUsageData ? (
-                  <CodexUsagePopup
-                    usageData={codexUsageData}
-                    position={usagePopupPos}
+                {showContextPopup && (
+                  <ContextUsagePopup
+                    contextUsed={contextUsed}
+                    model={model}
+                    position={contextPopupPos}
                   />
-                ) : claudeUsageData ? (
-                  <UsagePopup
-                    usageData={claudeUsageData}
-                    position={usagePopupPos}
-                  />
-                ) : null
-              )}
+                )}
+              </div>
+              {/* Account Usage Indicator with icon */}
+              <div
+                className="relative"
+                onMouseEnter={(e) => {
+                  setUsagePopupPos({ x: e.clientX, y: e.clientY });
+                  setShowUsagePopup(true);
+                }}
+                onMouseLeave={() => setShowUsagePopup(false)}
+              >
+                {usageLoading ? (
+                  <span
+                    className="flex items-center gap-1 px-1.5 py-0.5 rounded text-xs text-zinc-500"
+                    title="Loading usage data..."
+                  >
+                    <svg className="w-3 h-3 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M13 10V3L4 14h7v7l9-11h-7z"
+                      />
+                    </svg>
+                    <span className="animate-pulse">...</span>
+                  </span>
+                ) : criticalUsage ? (
+                  <span
+                    className={`flex items-center gap-1 cursor-help px-1.5 py-0.5 rounded hover:bg-zinc-800 transition-colors text-xs ${
+                      criticalUsage.percentage > 80 ? 'text-red-400' : criticalUsage.percentage > 50 ? 'text-yellow-400' : 'text-zinc-400'
+                    }`}
+                    title={`${criticalUsage.label}: ${criticalUsage.percentage}%`}
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M13 10V3L4 14h7v7l9-11h-7z"
+                      />
+                    </svg>
+                    {criticalUsage.percentage}%
+                  </span>
+                ) : usageError ? (
+                  <span
+                    className="flex items-center gap-1 cursor-help px-1.5 py-0.5 rounded hover:bg-zinc-800 transition-colors text-xs text-zinc-600"
+                    title={`Usage data unavailable: ${usageError}`}
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M13 10V3L4 14h7v7l9-11h-7z"
+                      />
+                    </svg>
+                    --
+                  </span>
+                ) : (
+                  <span
+                    className="flex items-center gap-1 px-1.5 py-0.5 rounded text-xs text-zinc-600"
+                    title="No usage data"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M13 10V3L4 14h7v7l9-11h-7z"
+                      />
+                    </svg>
+                    --
+                  </span>
+                )}
+                {showUsagePopup && (
+                  activeAgent === "codex" && codexUsageData ? (
+                    <CodexUsagePopup
+                      usageData={codexUsageData}
+                      position={usagePopupPos}
+                    />
+                  ) : claudeUsageData ? (
+                    <UsagePopup
+                      usageData={claudeUsageData}
+                      position={usagePopupPos}
+                    />
+                  ) : null
+                )}
+              </div>
             </div>
-          </div>
 
           {/* Permission Mode Selector */}
           <div className="relative">
@@ -997,6 +1176,7 @@ export function ChatUI({
             </>
           )}
         </div>
+        </div>
 
         <div className="flex items-center gap-2">
           {/* Terminal Toggle Button */}
@@ -1178,7 +1358,7 @@ export function ChatUI({
               className="ml-auto px-2 py-1 text-xs text-neutral-500 hover:text-white"
               title="Hide filters"
             >
-              ✕
+              x
             </button>
           </>
         ) : (
@@ -1234,51 +1414,51 @@ export function ChatUI({
 
       {/* Input */}
       <div className="p-4 border-t border-zinc-700 bg-zinc-800/30">
-        <div className="flex gap-3 items-end">
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Send a message..."
-            className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-sm resize-none focus:outline-none focus:border-blue-500 text-zinc-200 placeholder-zinc-500 min-h-[48px] max-h-[200px]"
-            rows={1}
-            disabled={false}
-          />
-          <div className="flex flex-col gap-2 text-xs text-neutral-400">
-            <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-3">
+          <div className="flex items-end gap-3">
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Send a message..."
+              className="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:border-emerald-500 text-zinc-200 placeholder-zinc-500 min-h-[54px] max-h-[200px] shadow-inner shadow-black/40"
+              rows={1}
+              disabled={false}
+            />
+            <div className="flex items-center gap-2 bg-zinc-900/60 border border-zinc-800 rounded-2xl p-1.5 shadow-inner shadow-black/30">
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="p-2 rounded-lg border border-zinc-700 hover:border-zinc-500 hover:text-white text-zinc-400 bg-zinc-900/60"
+                className="p-2.5 rounded-full border border-transparent bg-zinc-800/80 hover:bg-zinc-700 hover:border-emerald-600 text-neutral-300 hover:text-emerald-200 transition-colors"
                 title="Attach files"
               >
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <path d="M21.44 11.05l-9.19 9.19a5 5 0 01-7.07-7.07l9.19-9.19a3 3 0 114.24 4.24l-9.2 9.17a1 1 0 01-1.41-1.41l8.49-8.48" />
+                  <path d="M12.6 6.6 7.2 12a3 3 0 0 0 0 4.2 3 3 0 0 0 4.2 0l5.4-5.4a4 4 0 0 0-5.7-5.7l-6 6" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </button>
               <button
                 onClick={() => setIsListening((v) => !v)}
-                className={`p-2 rounded-lg border transition-colors ${
+                className={`p-2.5 rounded-full border transition-colors ${
                   isListening
-                    ? "border-emerald-500 text-emerald-200 bg-emerald-500/10 shadow-[0_0_0_2px_rgba(16,185,129,0.15)]"
-                    : "border-zinc-700 text-neutral-400 bg-zinc-900/60 hover:border-zinc-500 hover:text-white"
+                    ? "border-emerald-600 bg-emerald-900/40 text-emerald-200 shadow-[0_0_0_1px_rgba(16,185,129,0.35)]"
+                    : "border-transparent bg-zinc-800/80 text-neutral-300 hover:text-white hover:border-emerald-600"
                 }`}
                 title={isListening ? "Stop listening" : "Start voice input"}
               >
-                <svg className={`w-4 h-4 ${isListening ? "animate-pulse" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <path d="M12 18a4 4 0 004-4V6a4 4 0 00-8 0v8a4 4 0 004 4z" />
-                  <path d="M19 11v1a7 7 0 01-14 0v-1" />
-                  <line x1="12" y1="19" x2="12" y2="23" />
-                  <line x1="8" y1="23" x2="16" y2="23" />
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <rect x="9" y="3" width="6" height="11" rx="3" />
+                  <path d="M5 10a7 7 0 0 0 14 0" />
+                  <line x1="12" y1="19" x2="12" y2="22" />
+                  <line x1="8" y1="22" x2="16" y2="22" />
                 </svg>
               </button>
               <button
                 onClick={handleSend}
                 disabled={!input.trim()}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-700 disabled:cursor-not-allowed rounded-lg transition-colors text-white flex items-center gap-2"
-                title="Send message"
+                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-700 disabled:cursor-not-allowed rounded-xl transition-colors text-white shadow-[0_10px_30px_-18px_rgba(16,185,129,0.9)] flex items-center gap-2"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <span className="text-sm font-semibold">Send</span>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -1286,52 +1466,54 @@ export function ChatUI({
                     d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
                   />
                 </svg>
-                <span className="text-sm font-medium hidden sm:inline">Send</span>
               </button>
             </div>
-            {attachments.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {attachments.map((file, idx) => (
-                  <span key={`${file.name}-${idx}`} className="px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-[11px]">
-                    {file.name}
-                  </span>
-                ))}
+          </div>
+
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-2 text-xs text-neutral-300">
+              {attachments.map((file, idx) => (
+                <span key={`${file.name}-${idx}`} className="px-2 py-1 bg-zinc-800 border border-zinc-700 rounded-md">
+                  {file.name}
+                </span>
+              ))}
+            </div>
+          )}
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={handleAttachment}
+          />
+
+          <div className="flex items-center gap-4 text-xs text-zinc-500">
+            <span>Press Enter to send, Shift+Enter for new line</span>
+            {pathInfo && (
+              <div className="flex items-center gap-1 ml-auto">
+                <button
+                  onClick={() => openInEditor(pathInfo.projectPath)}
+                  className="hover:text-emerald-400 hover:underline cursor-pointer transition-colors"
+                  title={`Open project in VS Code: ${pathInfo.projectPath}`}
+                >
+                  {pathInfo.projectName}
+                </button>
+                {pathInfo.isWorktree && pathInfo.worktreeName && pathInfo.worktreePath && (
+                  <>
+                    <span className="text-zinc-600">/</span>
+                    <button
+                      onClick={() => openInEditor(pathInfo.worktreePath!)}
+                      className="hover:text-emerald-400 hover:underline cursor-pointer transition-colors"
+                      title={`Open worktree in VS Code: ${pathInfo.worktreePath}`}
+                    >
+                      {pathInfo.worktreeName}
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </div>
-        </div>
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          className="hidden"
-          onChange={handleAttachment}
-        />
-        <div className="flex items-center gap-4 mt-2 text-xs text-zinc-500">
-          <span>Press Enter to send, Shift+Enter for new line</span>
-          {pathInfo && (
-            <div className="flex items-center gap-1 ml-auto">
-              <button
-                onClick={() => openInEditor(pathInfo.projectPath)}
-                className="hover:text-blue-400 hover:underline cursor-pointer transition-colors"
-                title={`Open project in VS Code: ${pathInfo.projectPath}`}
-              >
-                {pathInfo.projectName}
-              </button>
-              {pathInfo.isWorktree && pathInfo.worktreeName && pathInfo.worktreePath && (
-                <>
-                  <span className="text-zinc-600">/</span>
-                  <button
-                    onClick={() => openInEditor(pathInfo.worktreePath!)}
-                    className="hover:text-blue-400 hover:underline cursor-pointer transition-colors"
-                    title={`Open worktree in VS Code: ${pathInfo.worktreePath}`}
-                  >
-                    {pathInfo.worktreeName}
-                  </button>
-                </>
-              )}
-            </div>
-          )}
         </div>
       </div>
     </div>

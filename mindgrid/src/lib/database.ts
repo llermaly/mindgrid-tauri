@@ -75,6 +75,8 @@ export async function loadProjects(): Promise<Project[]> {
   return projects.map((p) => ({
     ...p,
     sessions: p.sessions || [], // Ensure sessions array exists
+    defaultPermissionMode: p.defaultPermissionMode || 'bypassPermissions', // Default for existing projects
+    defaultCommitMode: p.defaultCommitMode || 'checkpoint', // Default for existing projects
   }));
 }
 

@@ -61,6 +61,7 @@ export function ChatPage({ sessionId, isNewChat }: ChatPageProps) {
           debug.info("ChatPage", "Triggering auto-checkpoint after Claude response");
           checkpointCommit(sessionId);
         }
+
       }
     },
     [sessionId, storeHandleClaudeEvent, session?.commitMode, checkpointCommit]

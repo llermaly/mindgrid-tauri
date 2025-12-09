@@ -24,6 +24,9 @@ interface CreateSessionDialogProps {
   projectName: string;
   projectPath: string;
   existingSessionCount: number;
+  defaultModel?: string | null;
+  defaultPermissionMode?: PermissionMode;
+  defaultCommitMode?: CommitMode;
   onClose: () => void;
   onCreate: (config: SessionConfig) => Promise<void>;
 }
@@ -45,6 +48,9 @@ export function CreateSessionDialog({
   projectName,
   projectPath,
   existingSessionCount,
+  defaultModel,
+  defaultPermissionMode,
+  defaultCommitMode,
   onClose,
   onCreate,
 }: CreateSessionDialogProps) {
@@ -65,9 +71,9 @@ export function CreateSessionDialog({
     if (isOpen) {
       setSessionName(generateDefaultSessionName(existingSessionCount));
       setPrompt("");
-      setModel(null);
-      setPermissionMode("default");
-      setCommitMode("checkpoint");
+      setModel(defaultModel ?? null);
+      setPermissionMode(defaultPermissionMode ?? "default");
+      setCommitMode(defaultCommitMode ?? "checkpoint");
       setToolType("claude");
       setFilesToCopy([]);
       setShowAdvanced(false);
@@ -78,7 +84,7 @@ export function CreateSessionDialog({
         inputRef.current?.select();
       }, 50);
     }
-  }, [isOpen, existingSessionCount]);
+  }, [isOpen, existingSessionCount, defaultModel, defaultPermissionMode, defaultCommitMode]);
 
   const handleNameChange = (value: string) => {
     setSessionName(value);

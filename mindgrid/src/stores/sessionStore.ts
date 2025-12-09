@@ -98,6 +98,8 @@ export interface Project {
   path: string;
   sessions: string[]; // Session IDs
   defaultModel: string | null; // Default model for new sessions
+  defaultPermissionMode: PermissionMode; // Default permission mode for new sessions
+  defaultCommitMode: CommitMode; // Default commit mode for new sessions
   createdAt: number;
   updatedAt: number;
 }
@@ -159,6 +161,8 @@ interface SessionState {
   setSessionModel: (sessionId: string, model: string) => void;
   setPanelModel: (sessionId: string, panelType: PanelType, model: string) => void;
   setProjectDefaultModel: (projectId: string, model: string | null) => void;
+  setProjectDefaultPermissionMode: (projectId: string, mode: PermissionMode) => void;
+  setProjectDefaultCommitMode: (projectId: string, mode: CommitMode) => void;
 
   // Panel-specific actions for workspace mode
   addPanelMessage: (sessionId: string, panelType: PanelType, message: ParsedMessage) => void;
@@ -279,6 +283,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       path,
       sessions: [],
       defaultModel: null, // Will use system default
+      defaultPermissionMode: 'bypassPermissions', // Default for new sessions
+      defaultCommitMode: 'checkpoint', // Default for new sessions
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -465,9 +471,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       debug.error("SessionStore", "Failed to create worktree", err);
     }
 
-    // Get project's default model
-    const projectForModel = get().projects[projectId];
-    const defaultModel = projectForModel?.defaultModel || null;
+    // Get project's defaults
+    const projectDefaults = get().projects[projectId];
+    const defaultModel = projectDefaults?.defaultModel || null;
+    const defaultPermissionMode = projectDefaults?.defaultPermissionMode || 'bypassPermissions';
+    const defaultCommitMode = projectDefaults?.defaultCommitMode || 'checkpoint';
 
     const session: Session = {
       id,
@@ -482,8 +490,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       cwd: sessionCwd,
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      permissionMode: 'bypassPermissions',
-      commitMode: 'checkpoint',
+      permissionMode: defaultPermissionMode, // Inherit from project default
+      commitMode: defaultCommitMode, // Inherit from project default
     };
 
     debug.info("SessionStore", "Creating session", { name, projectId, id: session.id, cwd: session.cwd });
@@ -670,7 +678,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
       if (event.type === "system" && event.subtype === "init") {
         updates.claudeSessionId = event.session_id || null;
-        updates.model = event.model || null;
+        // Only set model from init event if session doesn't already have one
+        // This prevents overwriting user's selected model (e.g., Opus) with CLI's default (Haiku)
+        if (!session.model && event.model) {
+          updates.model = event.model;
+        }
 
         // Persist Claude session ID to database for session resumption
         if (event.session_id) {
@@ -1045,6 +1057,36 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     if (!project) return;
 
     const updated = { ...project, defaultModel: model, updatedAt: Date.now() };
+
+    set((state) => ({
+      projects: { ...state.projects, [projectId]: updated },
+    }));
+
+    // Persist to database
+    await db.saveProject(updated);
+  },
+
+  setProjectDefaultPermissionMode: async (projectId, mode) => {
+    debug.info("SessionStore", "Setting project default permission mode", { projectId, mode });
+    const project = get().projects[projectId];
+    if (!project) return;
+
+    const updated = { ...project, defaultPermissionMode: mode, updatedAt: Date.now() };
+
+    set((state) => ({
+      projects: { ...state.projects, [projectId]: updated },
+    }));
+
+    // Persist to database
+    await db.saveProject(updated);
+  },
+
+  setProjectDefaultCommitMode: async (projectId, mode) => {
+    debug.info("SessionStore", "Setting project default commit mode", { projectId, mode });
+    const project = get().projects[projectId];
+    if (!project) return;
+
+    const updated = { ...project, defaultCommitMode: mode, updatedAt: Date.now() };
 
     set((state) => ({
       projects: { ...state.projects, [projectId]: updated },
