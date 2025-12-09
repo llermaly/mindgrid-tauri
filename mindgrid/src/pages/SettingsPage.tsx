@@ -34,7 +34,7 @@ const DEFAULT_SETTINGS: SettingsState = {
   additionalPaths: [],
 };
 
-const NAV_ITEMS: { id: SettingsSection; label: string; icon: JSX.Element }[] = [
+const NAV_ITEMS: { id: SettingsSection; label: string; icon: React.ReactElement }[] = [
   {
     id: "appearance",
     label: "Appearance",

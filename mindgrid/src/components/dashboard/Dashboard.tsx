@@ -11,12 +11,13 @@ import { ProjectCard } from "./ProjectCard";
 import { ProjectDetailView } from "./ProjectDetailView";
 import { SessionDetailView } from "./SessionDetailView";
 import { UsageLimitsCard } from "./UsageLimitsCard";
-import type { DashboardProject, DashboardSession, DashboardActivity, DashboardGitInfo } from "./types";
+import type { DashboardProject, DashboardSession, DashboardActivity, DashboardGitInfo, DashboardSessionStatus } from "./types";
 import { SettingsPage } from "../../pages/SettingsPage";
+import { AnalyticsPage } from "../../pages/AnalyticsPage";
 import { CreateSessionDialog, type SessionConfig } from "../CreateSessionDialog";
 import { PathLink } from "../PathLink";
 
-type DashboardView = "all" | "recent" | "active" | "settings";
+type DashboardView = "all" | "recent" | "active" | "analytics" | "settings";
 
 export function Dashboard() {
   const {
@@ -116,6 +117,7 @@ export function Dashboard() {
   );
 
   const isSettingsView = activeView === "settings";
+  const isAnalyticsView = activeView === "analytics";
 
   const handleOpenSession = (project: DashboardProject, session: DashboardSession) => {
     const liveSession = sessions[session.id];
@@ -259,7 +261,9 @@ export function Dashboard() {
             <div className="w-3 h-3 rounded-full bg-green-500" />
           </div>
           <span className="text-lg font-semibold">MindGrid</span>
-          <span className="text-xs text-neutral-500 px-2 py-0.5 bg-neutral-800 rounded">{isSettingsView ? "Settings" : "Dashboard"}</span>
+          <span className="text-xs text-neutral-500 px-2 py-0.5 bg-neutral-800 rounded">
+            {isSettingsView ? "Settings" : isAnalyticsView ? "Analytics" : "Dashboard"}
+          </span>
           {worktreeName && (
             <span className="text-xs text-orange-400 px-2 py-0.5 bg-orange-500/20 border border-orange-500/30 rounded flex items-center gap-1.5">
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -270,7 +274,7 @@ export function Dashboard() {
           )}
         </div>
 
-        {!isSettingsView && (
+        {!isSettingsView && !isAnalyticsView && (
           <div className="flex items-center gap-3">
             <div className="relative">
               <input
@@ -355,7 +359,21 @@ export function Dashboard() {
             />
           </nav>
 
-          <div className="border-t border-neutral-800 pt-4">
+          <div className="border-t border-neutral-800 pt-4 space-y-1">
+            <SidebarButton
+              label="Analytics"
+              icon={
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+              }
+              active={isAnalyticsView}
+              onClick={() => {
+                setSelectedProjectId(null);
+                setSelectedSessionId(null);
+                setActiveView("analytics");
+              }}
+            />
             <SidebarButton
               label="Settings"
               icon={
@@ -377,6 +395,8 @@ export function Dashboard() {
         <div className="flex-1 overflow-hidden">
           {isSettingsView ? (
             <SettingsPage onBack={() => setActiveView("all")} />
+          ) : isAnalyticsView ? (
+            <AnalyticsPage onBack={() => setActiveView("all")} />
           ) : selectedSessionId && sessions[selectedSessionId] ? (
             <SessionDetailView
               session={sessions[selectedSessionId]}
