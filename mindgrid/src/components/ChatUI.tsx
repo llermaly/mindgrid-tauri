@@ -786,19 +786,20 @@ export function ChatUI({
     }
   }, [onMergePr, isMergingPr]);
 
+  const baseHeaderClasses = "relative overflow-visible flex items-center justify-between px-4 py-3 border-b";
   const headerClasses = isAnswering
-    ? "relative overflow-hidden flex items-center justify-between px-4 py-3 border-b border-emerald-800/60 bg-gradient-to-r from-emerald-950/70 via-emerald-900/55 to-zinc-900/60 shadow-[0_10px_40px_-24px_rgba(16,185,129,0.6)]"
-    : "relative overflow-hidden flex items-center justify-between px-4 py-3 border-b border-zinc-700 bg-zinc-800/50";
+    ? `${baseHeaderClasses} border-emerald-800/60 bg-gradient-to-r from-emerald-950/70 via-emerald-900/55 to-zinc-900/60 shadow-[0_10px_40px_-24px_rgba(16,185,129,0.6)]`
+    : `${baseHeaderClasses} border-zinc-700 bg-zinc-800/50`;
 
   return (
     <div className={`flex flex-col h-full bg-zinc-900 ${className}`}>
       {/* Header */}
       <div className={headerClasses}>
         {isAnswering && (
-          <>
-            <div className="absolute inset-0 pointer-events-none bg-gradient-to-r from-emerald-500/10 via-emerald-400/10 to-transparent blur-lg animate-pulse" />
+          <div className="absolute inset-0 pointer-events-none overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/10 via-emerald-400/10 to-transparent blur-lg animate-pulse" />
             <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-emerald-400/70 to-transparent animate-pulse" />
-          </>
+          </div>
         )}
 
         <div className="relative flex items-center justify-between w-full">

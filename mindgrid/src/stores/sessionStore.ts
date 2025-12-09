@@ -282,7 +282,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       name,
       path,
       sessions: [],
-      defaultModel: null, // Will use system default
+      defaultModel: 'opus', // Default to Claude Opus 4.5
       defaultPermissionMode: 'bypassPermissions', // Default for new sessions
       defaultCommitMode: 'checkpoint', // Default for new sessions
       createdAt: Date.now(),
@@ -473,7 +473,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
     // Get project's defaults
     const projectDefaults = get().projects[projectId];
-    const defaultModel = projectDefaults?.defaultModel || null;
+    const defaultModel = projectDefaults?.defaultModel ?? 'opus';
     const defaultPermissionMode = projectDefaults?.defaultPermissionMode || 'bypassPermissions';
     const defaultCommitMode = projectDefaults?.defaultCommitMode || 'checkpoint';
 
