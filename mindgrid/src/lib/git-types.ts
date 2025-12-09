@@ -39,6 +39,15 @@ export interface GitFileDiff {
   is_binary: boolean;
 }
 
+export interface ConflictInfo {
+  has_conflicts: boolean;
+  conflicting_files: string[];
+  conflicting_commits?: {
+    ours: string[];
+    theirs: string[];
+  };
+}
+
 export interface GitErrorDetails {
   title: string;
   message: string;
