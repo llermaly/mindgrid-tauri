@@ -15,47 +15,6 @@ export interface CodexUsageData {
   rawOutput: string;
 }
 
-// ccusage types (from CLI JSON output)
-export interface DailyUsage {
-  date: string;
-  inputTokens: number;
-  outputTokens: number;
-  cacheCreationTokens: number;
-  cacheReadTokens: number;
-  totalTokens: number;
-  totalCost: number;
-  modelsUsed: string[];
-  modelBreakdowns: {
-    modelName: string;
-    inputTokens: number;
-    outputTokens: number;
-    cacheCreationTokens: number;
-    cacheReadTokens: number;
-    cost: number;
-  }[];
-}
-
-export interface SessionUsage {
-  sessionId: string;
-  projectPath?: string;
-  inputTokens: number;
-  outputTokens: number;
-  cacheCreationTokens: number;
-  cacheReadTokens: number;
-  totalTokens: number;
-  totalCost: number;
-  lastActivity: string;
-  modelsUsed: string[];
-  modelBreakdowns: {
-    modelName: string;
-    inputTokens: number;
-    outputTokens: number;
-    cacheCreationTokens: number;
-    cacheReadTokens: number;
-    cost: number;
-  }[];
-}
-
 interface UsageStore {
   // Claude
   claudeUsageData: UsageData | null;
@@ -67,17 +26,10 @@ interface UsageStore {
   codexLoading: boolean;
   codexError: string | null;
 
-  // Analytics (from ccusage library)
-  sessionAnalytics: SessionUsage[] | null;
-  dailyAnalytics: DailyUsage[] | null;
-  analyticsLoading: boolean;
-  analyticsError: string | null;
-
   // Actions
   fetchClaudeUsage: () => Promise<void>;
   fetchCodexUsage: () => Promise<void>;
   fetchAll: () => Promise<void>;
-  fetchAnalytics: () => Promise<void>;
 
   // Computed
   getClaudeCriticalUsage: () => { percentage: number; label: string; resetTime?: string } | null;
@@ -130,12 +82,6 @@ export const useUsageStore = create<UsageStore>((set, get) => ({
   codexLoading: false,
   codexError: null,
 
-  // Analytics state
-  sessionAnalytics: null,
-  dailyAnalytics: null,
-  analyticsLoading: false,
-  analyticsError: null,
-
   fetchClaudeUsage: async () => {
     set({ claudeLoading: true, claudeError: null });
     try {
@@ -163,45 +109,6 @@ export const useUsageStore = create<UsageStore>((set, get) => ({
   fetchAll: async () => {
     const { fetchClaudeUsage, fetchCodexUsage } = get();
     await Promise.all([fetchClaudeUsage(), fetchCodexUsage()]);
-  },
-
-  fetchAnalytics: async () => {
-    set({ analyticsLoading: true, analyticsError: null });
-    try {
-      // Call ccusage CLI via Rust backend
-      const [dailyResult, sessionResult] = await Promise.all([
-        invoke<string>("get_ccusage_daily"),
-        invoke<string>("get_ccusage_session"),
-      ]);
-
-      // Parse JSON output from ccusage CLI
-      const dailyJson = JSON.parse(dailyResult);
-      const sessionJson = JSON.parse(sessionResult);
-
-      // Extract data arrays from ccusage JSON structure
-      const dailyData: DailyUsage[] = dailyJson.daily || [];
-      const sessionData: SessionUsage[] = sessionJson.sessions || [];
-
-      // Sort daily by date descending (most recent first)
-      const sortedDaily = [...dailyData].sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-      );
-
-      set({
-        sessionAnalytics: sessionData,
-        dailyAnalytics: sortedDaily,
-        analyticsLoading: false,
-      });
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      console.error('[Analytics] Failed to load analytics:', err);
-      set({
-        analyticsError: errorMsg,
-        analyticsLoading: false,
-        sessionAnalytics: null,
-        dailyAnalytics: null,
-      });
-    }
   },
 
   getClaudeCriticalUsage: () => {

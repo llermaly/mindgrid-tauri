@@ -14,13 +14,13 @@ function Router() {
 
   console.log("[Router] path:", path, "sessionId:", sessionId, "mode:", mode);
 
-  // Workspace window - load App which handles workspace mode internally
-  if (mode === "workspace") {
-    console.log("[Router] Loading App in workspace mode for session:", sessionId);
+  // Terminal mode - load App which handles terminal mode internally
+  if (mode === "terminal") {
+    console.log("[Router] Loading App in terminal mode");
     return <App />;
   }
 
-  // Chat window route - either via /chat path or via sessionId query param (but not workspace)
+  // Chat window route - either via /chat path or via sessionId query param
   if (path === "/chat" || sessionId) {
     const isNewChat = params.get("newChat") === "true";
 

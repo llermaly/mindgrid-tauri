@@ -17,44 +17,6 @@ fn is_dev_mode() -> bool {
     DEV_MODE.load(Ordering::Relaxed)
 }
 
-/// Get daily usage analytics from ccusage CLI
-#[tauri::command]
-fn get_ccusage_daily() -> Result<String, String> {
-    use std::process::Command;
-
-    let output = Command::new("npx")
-        .args(["ccusage", "daily", "--json"])
-        .output()
-        .map_err(|e| format!("Failed to run ccusage: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("ccusage failed: {}", stderr));
-    }
-
-    String::from_utf8(output.stdout)
-        .map_err(|e| format!("Invalid UTF-8 output: {}", e))
-}
-
-/// Get session usage analytics from ccusage CLI
-#[tauri::command]
-fn get_ccusage_session() -> Result<String, String> {
-    use std::process::Command;
-
-    let output = Command::new("npx")
-        .args(["ccusage", "session", "--json"])
-        .output()
-        .map_err(|e| format!("Failed to run ccusage: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("ccusage failed: {}", stderr));
-    }
-
-    String::from_utf8(output.stdout)
-        .map_err(|e| format!("Invalid UTF-8 output: {}", e))
-}
-
 /// Get worktree info if running from a git worktree
 /// Returns None if running from main repo, Some(worktree_name) if running from a worktree
 #[tauri::command]
@@ -279,8 +241,6 @@ pub fn run() {
             codex::run_codex,
             is_dev_mode,
             get_worktree_info,
-            get_ccusage_daily,
-            get_ccusage_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

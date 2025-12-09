@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { PRESETS, CHAT_TYPES, type ProjectPreset, type ChatType } from "../lib/presets";
+import { PRESETS, type ChatType } from "../lib/presets";
 import { GitignoreFilesSelector } from "./GitignoreFilesSelector";
 import { ModelSelector } from "./ModelSelector";
 import type { SessionVariantConfig } from "./CreateSessionDialog";
@@ -47,7 +47,7 @@ type WizardStep = 'project' | 'configure' | 'variants';
 
 const WIZARD_STEPS: Array<{ id: WizardStep; label: string; helper: string }> = [
   { id: 'project', label: 'Select repository', helper: 'Choose where to work' },
-  { id: 'configure', label: 'Session setup', helper: 'Name, prompt, workflow' },
+  { id: 'configure', label: 'Session setup', helper: 'Name and prompt' },
   { id: 'variants', label: 'Variants (optional)', helper: 'Parallel sessions' },
 ];
 
@@ -61,20 +61,18 @@ export function ProjectWizardDialog({
   const [loadingRepos, setLoadingRepos] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRepo, setSelectedRepo] = useState<GitRepoInfo | null>(null);
-  const [selectedPreset, setSelectedPreset] = useState<ProjectPreset | null>(null);
   const [projectPath, setProjectPath] = useState("");
   const [projectName, setProjectName] = useState("");
   const [sessionName, setSessionName] = useState(() => generateDefaultSessionName(0));
   const [prompt, setPrompt] = useState("Create a HELLO.md markdown file with MINDGRID CREATION as a content.");
   const [model, setModel] = useState<string | null>(null);
-  const [chatTypes, setChatTypes] = useState<ChatType[]>([]);
+  const [chatTypes] = useState<ChatType[]>([]);
   const [filesToCopy, setFilesToCopy] = useState<string[]>([]);
   const [buildCommand, setBuildCommand] = useState("");
   const [runCommand, setRunCommand] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conflictProject, setConflictProject] = useState<string | null>(null);
-  const [variantsEnabled, setVariantsEnabled] = useState(false);
   const [variants, setVariants] = useState<SessionVariantConfig[]>([]);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const repoListRef = useRef<HTMLDivElement>(null);
@@ -85,20 +83,17 @@ export function ProjectWizardDialog({
       setStep('project');
       setSearchQuery("");
       setSelectedRepo(null);
-      setSelectedPreset(null);
       setProjectPath("");
       setProjectName("");
       setSessionName(generateDefaultSessionName(0));
       setPrompt("Create a HELLO.md markdown file with MINDGRID CREATION as a content.");
       setModel(null);
-      setChatTypes([]);
       setFilesToCopy([]);
       setBuildCommand("");
       setRunCommand("");
       setIsCreating(false);
       setError(null);
       setConflictProject(null);
-      setVariantsEnabled(false);
       setVariants([]);
       loadRepos();
       setTimeout(() => searchInputRef.current?.focus(), 50);
@@ -181,12 +176,6 @@ export function ProjectWizardDialog({
     }
   };
 
-  const handlePresetSelect = (preset: ProjectPreset) => {
-    setSelectedPreset(preset);
-    setChatTypes([...preset.chatTypes]);
-    setModel(preset.defaults.model || null);
-  };
-
   const handleNextFromProject = () => {
     if (!selectedRepo) {
       setError("Select a repository to continue");
@@ -194,10 +183,8 @@ export function ProjectWizardDialog({
     }
     setError(null);
     setStep('configure');
-    // Auto-select first preset if none selected
-    if (!selectedPreset) {
-      setSelectedPreset(PRESETS[0]);
-      setChatTypes([...PRESETS[0].chatTypes]);
+    // Set default model if not already set
+    if (!model) {
       setModel(PRESETS[0].defaults.model || null);
     }
   };
@@ -246,11 +233,7 @@ export function ProjectWizardDialog({
       return;
     }
     let normalizedVariants: SessionVariantConfig[] | undefined;
-    if (variantsEnabled) {
-      if (variants.length === 0) {
-        setError("Add at least one variant");
-        return;
-      }
+    if (variants.length > 0) {
       normalizedVariants = variants.map((variant, index) => {
         const fallbackName = `Session #${index + 2}`;
         const name = variant.name.trim() || fallbackName;
@@ -296,7 +279,7 @@ export function ProjectWizardDialog({
         {
           prompt: prompt.trim(),
           model,
-          variants: variantsEnabled ? normalizedVariants : undefined,
+          variants: normalizedVariants,
         }
       );
       onClose();
@@ -326,13 +309,6 @@ export function ProjectWizardDialog({
     }
   };
 
-  const toggleChatType = (type: ChatType) => {
-    if (chatTypes.includes(type)) {
-      setChatTypes(chatTypes.filter(t => t !== type));
-    } else {
-      setChatTypes([...chatTypes, type]);
-    }
-  };
 
   const generateVariantId = () => Math.random().toString(36).slice(2);
 
@@ -351,7 +327,6 @@ export function ProjectWizardDialog({
   };
 
   const handleAddVariant = () => {
-    setVariantsEnabled(true);
     setVariants((current) => {
       const nextIndex = current.length + 2;
       return [...current, createVariantFromBase(nextIndex)];
@@ -580,80 +555,7 @@ export function ProjectWizardDialog({
                     Preferred model <span className="text-neutral-500">(optional)</span>
                   </label>
                   <ModelSelector value={model} onChange={setModel} />
-                  <p className="text-xs text-neutral-500">
-                    Defaults to the workflow preset. You can override per variant later.
-                  </p>
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-zinc-300">
-                  Workflow
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {PRESETS.slice(0, 6).map(preset => (
-                    <div
-                      key={preset.id}
-                      onClick={() => handlePresetSelect(preset)}
-                      className={`p-3 border rounded-lg cursor-pointer transition-all text-center ${
-                        selectedPreset?.id === preset.id
-                          ? 'border-blue-500 bg-blue-500/10'
-                          : 'border-zinc-700 hover:border-zinc-600'
-                      }`}
-                    >
-                      <div
-                        className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold text-white mx-auto mb-2"
-                        style={{ backgroundColor: preset.color }}
-                      >
-                        {preset.icon}
-                      </div>
-                      <div className="text-xs font-medium text-white">{preset.name}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-zinc-300">
-                  Chat windows to open
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  {Object.values(CHAT_TYPES).map(info => {
-                    const isSelected = chatTypes.includes(info.id);
-                    return (
-                      <div
-                        key={info.id}
-                        onClick={() => toggleChatType(info.id)}
-                        className={`p-2.5 border rounded-lg cursor-pointer transition-colors ${
-                          isSelected
-                            ? 'border-blue-500 bg-blue-500/10'
-                            : 'border-zinc-700 hover:border-zinc-600'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <div
-                            className="w-5 h-5 rounded flex items-center justify-center text-xs font-bold"
-                            style={{ backgroundColor: `${info.color}30`, color: info.color }}
-                          >
-                            {info.icon}
-                          </div>
-                          <span className="text-sm text-white">{info.name}</span>
-                          {isSelected && (
-                            <svg className="w-4 h-4 text-blue-400 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {chatTypes.length === 0 && (
-                  <p className="mt-2 text-xs text-zinc-500">
-                    No chat windows will open on launch. You can add them later.
-                  </p>
-                )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -695,76 +597,6 @@ export function ProjectWizardDialog({
                     Launch additional sessions to compare models, prompt tweaks, or split features.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setVariantsEnabled(false);
-                    setVariants([]);
-                    setError(null);
-                  }}
-                  className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
-                    variantsEnabled
-                      ? "border-zinc-700 text-neutral-300 hover:border-zinc-600"
-                      : "border-emerald-500 bg-emerald-500/10 text-emerald-300"
-                  }`}
-                  title="Keep only the primary session"
-                >
-                  {variantsEnabled ? "Keep single session" : "Single session ready"}
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {[
-                  {
-                    title: "Model comparison",
-                    body: "Duplicate the current prompt across multiple models to compare outputs side by side.",
-                    action: () => {
-                      setError(null);
-                      setVariantsEnabled(true);
-                      setVariants([
-                        createVariantFromBase(2, { prompt, model: "haiku", name: "Session #2 - Haiku" }),
-                        createVariantFromBase(3, { prompt, model: "sonnet", name: "Session #3 - Sonnet" }),
-                        createVariantFromBase(4, { prompt, model: "opus", name: "Session #4 - Opus" }),
-                        createVariantFromBase(5, { prompt, model: "gpt-5.1-codex-mini", name: "Session #5 - Codex Mini" }),
-                        createVariantFromBase(6, { prompt, model: "gpt-5.1-codex", name: "Session #6 - Codex" }),
-                        createVariantFromBase(7, { prompt, model: "gpt-5.1-codex-max", name: "Session #7 - Codex Max" }),
-                      ]);
-                    },
-                  },
-                  {
-                    title: "Prompt tweaks",
-                    body: "Spin up slight variations of the same task to refine wording.",
-                    action: () => {
-                      setError(null);
-                      setVariantsEnabled(true);
-                      setVariants([
-                        createVariantFromBase(2, { prompt }),
-                        createVariantFromBase(3, { prompt: `${prompt || "Try a shorter brief"}` }),
-                      ]);
-                    },
-                  },
-                  {
-                    title: "Feature lanes",
-                    body: "Create parallel tracks for different features or spikes.",
-                    action: () => {
-                      setError(null);
-                      setVariantsEnabled(true);
-                      setVariants([
-                        createVariantFromBase(2, { name: "Session #2 - Feature A", prompt: "" }),
-                        createVariantFromBase(3, { name: "Session #3 - Feature B", prompt: "" }),
-                      ]);
-                    },
-                  },
-                ].map((template) => (
-                  <button
-                    key={template.title}
-                    onClick={template.action}
-                    className="text-left p-3 border border-zinc-700 rounded-lg bg-zinc-900 hover:border-blue-500 hover:bg-blue-500/5 transition-colors"
-                  >
-                    <div className="text-sm font-semibold text-white mb-1">{template.title}</div>
-                    <p className="text-xs text-neutral-400">{template.body}</p>
-                  </button>
-                ))}
               </div>
 
               <div className="p-3 border border-dashed border-zinc-700 rounded-lg bg-zinc-900/50 space-y-3">
@@ -772,7 +604,7 @@ export function ProjectWizardDialog({
                   <div>
                     <div className="text-sm font-medium text-zinc-200">Custom variants</div>
                     <p className="text-xs text-zinc-500">
-                      Name and tailor each additional session. First variant starts at Session #2. Your current prompt is applied to every variant by default.
+                      Add additional sessions. Your current prompt is applied to every variant by default.
                     </p>
                   </div>
                   <button
@@ -785,11 +617,11 @@ export function ProjectWizardDialog({
                   </button>
                 </div>
 
-                {variantsEnabled && variants.length === 0 && (
-                  <div className="text-xs text-zinc-500">Add a variant to get started.</div>
+                {variants.length === 0 && (
+                  <div className="text-xs text-zinc-500">No variants added. Click "Add variant" to create parallel sessions.</div>
                 )}
 
-                {variantsEnabled && variants.length > 0 && (
+                {variants.length > 0 && (
                   <div className="space-y-3">
                     {variants.map((variant, index) => (
                       <div key={variant.id} className="p-3 rounded-lg border border-zinc-700 bg-zinc-900 space-y-3">
@@ -806,18 +638,16 @@ export function ProjectWizardDialog({
                               placeholder={`Session #${index + 2}`}
                             />
                           </div>
-                          {variants.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveVariant(variant.id)}
-                              className="p-2 rounded text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                              aria-label="Remove variant"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                              </svg>
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveVariant(variant.id)}
+                            className="p-2 rounded text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                            aria-label="Remove variant"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -848,11 +678,6 @@ export function ProjectWizardDialog({
                   </div>
                 )}
 
-                {!variantsEnabled && (
-                  <div className="text-xs text-zinc-500">
-                    Variants are off. Turn them on using a template above or Add variant.
-                  </div>
-                )}
               </div>
 
               <GitignoreFilesSelector
@@ -910,11 +735,6 @@ export function ProjectWizardDialog({
             <div className="text-sm text-white truncate">{sessionName || "Not set"}</div>
           </div>
           <div>
-            <div className="text-xs uppercase text-neutral-500 mb-1">Workflow</div>
-            <div className="text-sm text-white">{selectedPreset?.name || "Not selected"}</div>
-            <div className="text-[11px] text-neutral-500">{chatTypes.length} chat window{chatTypes.length === 1 ? "" : "s"}</div>
-          </div>
-          <div>
             <div className="text-xs uppercase text-neutral-500 mb-1">Prompt / Model</div>
             <div className="text-sm text-white truncate">{prompt || "No prompt"}</div>
             <div className="text-[11px] text-neutral-500">{model || "Default model"}</div>
@@ -922,7 +742,7 @@ export function ProjectWizardDialog({
           <div>
             <div className="text-xs uppercase text-neutral-500 mb-1">Variants</div>
             <div className="text-sm text-white">
-              {variantsEnabled ? `${variants.length} variant${variants.length === 1 ? "" : "s"}` : "Single session"}
+              {variants.length > 0 ? `${variants.length} variant${variants.length === 1 ? "" : "s"}` : "Single session"}
             </div>
           </div>
           <div>

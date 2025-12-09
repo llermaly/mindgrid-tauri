@@ -19,11 +19,10 @@ const TABS = [
   { id: "overview", label: "Overview" },
   { id: "sessions", label: "Sessions" },
   { id: "github", label: "GitHub" },
-  { id: "history", label: "History" },
 ];
 
 export function ProjectDetailView({ project, preset, onClose, onOpenSession, onCreateSession, onDeleteProject, onDeleteSession, onRunProject }: ProjectDetailViewProps) {
-  const [activeTab, setActiveTab] = useState<"overview" | "sessions" | "github" | "history">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "sessions" | "github">("overview");
   const [showDeleteProjectModal, setShowDeleteProjectModal] = useState(false);
   const [showDeleteSessionModal, setShowDeleteSessionModal] = useState<string | null>(null);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
@@ -188,30 +187,6 @@ export function ProjectDetailView({ project, preset, onClose, onOpenSession, onC
               </div>
             </div>
 
-            {project.chatHistory.length > 0 && (
-              <div className="card p-5">
-                <h3 className="text-sm font-medium text-[var(--text-primary)] mb-4">Recent Activity</h3>
-                <div className="space-y-3">
-                  {project.chatHistory.slice(0, 3).map((item) => (
-                    <div key={item.id} className="flex items-start gap-3">
-                      <div
-                        className={`w-6 h-6 rounded flex items-center justify-center text-xs font-medium flex-shrink-0 ${
-                          item.agent === "coding" ? "bg-[var(--accent-primary-muted)] text-[var(--accent-primary)]" : "bg-[rgba(34,197,94,0.15)] text-[var(--accent-success)]"
-                        }`}
-                      >
-                        {item.agent === "coding" ? "C" : "R"}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm text-[var(--text-secondary)] truncate">{item.message}</p>
-                        <p className="text-xs text-[var(--text-tertiary)]">
-                          {item.sessionName} - {item.time}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         )}
 
@@ -370,42 +345,6 @@ export function ProjectDetailView({ project, preset, onClose, onOpenSession, onC
           </div>
         )}
 
-        {activeTab === "history" && (
-          <div className="space-y-3">
-            {project.chatHistory.length === 0 ? (
-              <div className="text-center py-12">
-                <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-default)] flex items-center justify-center">
-                  <svg className="w-6 h-6 text-[var(--text-tertiary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <p className="text-[var(--text-secondary)]">No recent activity</p>
-                <p className="text-sm text-[var(--text-tertiary)]">Start a session to see updates here</p>
-              </div>
-            ) : (
-              project.chatHistory.map((item) => (
-                <div key={item.id} className="card p-4">
-                  <div className="flex items-start gap-3">
-                    <div
-                      className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-medium flex-shrink-0 ${
-                        item.agent === "coding" ? "bg-[var(--accent-primary-muted)] text-[var(--accent-primary)]" : "bg-[rgba(34,197,94,0.15)] text-[var(--accent-success)]"
-                      }`}
-                    >
-                      {item.agent === "coding" ? "C" : "R"}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs font-medium text-[var(--text-secondary)]">{item.sessionName}</span>
-                        <span className="text-xs text-[var(--text-tertiary)]">{item.time}</span>
-                      </div>
-                      <p className="text-sm text-[var(--text-primary)]">{item.message}</p>
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        )}
       </div>
 
       {/* Delete Project Modal */}
