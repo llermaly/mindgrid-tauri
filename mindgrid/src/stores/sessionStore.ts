@@ -670,7 +670,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
       if (event.type === "system" && event.subtype === "init") {
         updates.claudeSessionId = event.session_id || null;
-        updates.model = event.model || null;
+        // Only set model from init event if session doesn't already have one
+        // This prevents overwriting user's selected model (e.g., Opus) with CLI's default (Haiku)
+        if (!session.model && event.model) {
+          updates.model = event.model;
+        }
 
         // Persist Claude session ID to database for session resumption
         if (event.session_id) {
