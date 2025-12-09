@@ -138,7 +138,7 @@ export function Dashboard() {
     const newSession = await createSession(targetProjectId, config.name, project.path);
 
     // Update session with additional config
-    const { setPermissionMode, setCommitMode, setSessionModel } = useSessionStore.getState();
+    const { setPermissionMode, setCommitMode, setSessionModel, updateSession } = useSessionStore.getState();
 
     if (config.permissionMode !== "default") {
       setPermissionMode(newSession.id, config.permissionMode);
@@ -148,6 +148,9 @@ export function Dashboard() {
     }
     if (config.model) {
       setSessionModel(newSession.id, config.model);
+    }
+    if (config.prompt) {
+      await updateSession(newSession.id, { initialPrompt: config.prompt });
     }
 
     // Navigate to the newly created session
@@ -631,6 +634,7 @@ function buildDashboardProjects(projects: Project[], sessions: Record<string, Se
       status: session.isRunning ? "running" : "idle",
       agents: deriveAgents(session),
       updatedAt: session.updatedAt || session.createdAt || Date.now(),
+      initialPrompt: session.initialPrompt,
     }));
 
     const chatHistory: DashboardActivity[] = projectSessions

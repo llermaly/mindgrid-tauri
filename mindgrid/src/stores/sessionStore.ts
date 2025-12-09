@@ -89,6 +89,7 @@ export interface Session {
   gitStatusLoading?: boolean;
   permissionMode: PermissionMode;
   commitMode: CommitMode;
+  initialPrompt?: string; // The initial prompt used when creating the session
 }
 
 export interface Project {

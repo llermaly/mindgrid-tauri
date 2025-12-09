@@ -8,6 +8,7 @@ export interface DashboardSession {
   status: DashboardSessionStatus;
   agents: string[];
   updatedAt: number;
+  initialPrompt?: string;
 }
 
 export interface DashboardGitInfo {
