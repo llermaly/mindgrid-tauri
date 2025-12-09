@@ -114,6 +114,7 @@ interface SessionState {
   sessions: Record<string, Session>;
   activeSessionId: string | null;
   activeProjectId: string | null;
+  activeChatSessions: Set<string>; // Sessions with open chat windows
   isLoading: boolean;
   isInitialized: boolean;
   ghAvailable: boolean;
@@ -132,6 +133,12 @@ interface SessionState {
   updateSession: (id: string, updates: Partial<Session>) => Promise<void>;
   deleteSession: (id: string) => Promise<void>;
   setActiveSession: (id: string | null) => void;
+
+  // Active chat session tracking
+  markSessionChatOpen: (sessionId: string) => void;
+  markSessionChatClosed: (sessionId: string) => void;
+  refreshActiveChatSessions: () => Promise<void>;
+  isSessionActive: (sessionId: string) => boolean;
 
   // Message actions
   addMessage: (sessionId: string, message: ParsedMessage) => Promise<void>;
@@ -178,6 +185,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: {},
   activeSessionId: null,
   activeProjectId: null,
+  activeChatSessions: new Set<string>(),
   isLoading: false,
   isInitialized: false,
   ghAvailable: false,
@@ -1177,5 +1185,51 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       debug.error("SessionStore", "PR merge error", err);
       return { success: false, error: errorMessage };
     }
+  },
+
+  // Active chat session tracking
+  markSessionChatOpen: (sessionId) => {
+    set((state) => {
+      const newActiveChatSessions = new Set(state.activeChatSessions);
+      newActiveChatSessions.add(sessionId);
+      debug.info("SessionStore", "Marked session chat as open", { sessionId, activeCount: newActiveChatSessions.size });
+      return { activeChatSessions: newActiveChatSessions };
+    });
+  },
+
+  markSessionChatClosed: (sessionId) => {
+    set((state) => {
+      const newActiveChatSessions = new Set(state.activeChatSessions);
+      newActiveChatSessions.delete(sessionId);
+      debug.info("SessionStore", "Marked session chat as closed", { sessionId, activeCount: newActiveChatSessions.size });
+      return { activeChatSessions: newActiveChatSessions };
+    });
+  },
+
+  refreshActiveChatSessions: async () => {
+    try {
+      const { getAllWebviewWindows } = await import("@tauri-apps/api/webviewWindow");
+      const windows = await getAllWebviewWindows();
+      const chatWindows = windows.filter(w => w.label.startsWith("chat-") || w.label.startsWith("workspace-"));
+
+      const activeSessions = new Set<string>();
+      for (const window of chatWindows) {
+        // Extract session ID from window label
+        // Format: "chat-{sessionId}" or "chat-{sessionId}-{timestamp}" or "workspace-{sessionId}"
+        const match = window.label.match(/^(?:chat|workspace)-([a-f0-9-]+)/);
+        if (match) {
+          activeSessions.add(match[1]);
+        }
+      }
+
+      set({ activeChatSessions: activeSessions });
+      debug.info("SessionStore", "Refreshed active chat sessions", { count: activeSessions.size });
+    } catch (err) {
+      debug.error("SessionStore", "Failed to refresh active chat sessions", err);
+    }
+  },
+
+  isSessionActive: (sessionId) => {
+    return get().activeChatSessions.has(sessionId);
   },
 }));

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Session, PanelType, PanelState } from "../../stores/sessionStore";
+import { useSessionStore } from "../../stores/sessionStore";
 import type { GitStatus, GitDiffFile, GitDiffResult } from "../../lib/git-types";
 import { getGitStatusConfig } from "../../lib/git-types";
 import { StatusBadge } from "./StatusBadge";
@@ -106,7 +107,17 @@ export function SessionDetailView({
     }
   };
 
-  const sessionStatus: DashboardSessionStatus = session.isRunning ? "running" : "idle";
+  const isSessionActive = useSessionStore((state) => state.isSessionActive);
+  const isActive = isSessionActive(session.id);
+
+  // Determine status based on whether chat window is open and if Claude is running
+  let sessionStatus: DashboardSessionStatus;
+  if (isActive) {
+    sessionStatus = session.isRunning ? "running" : "waiting";
+  } else {
+    sessionStatus = "idle";
+  }
+
   const panels = session.panelStates ? Object.entries(session.panelStates) as [PanelType, PanelState][] : [];
   const hasMultiplePanels = panels.length > 0;
 
@@ -191,7 +202,11 @@ export function SessionDetailView({
             <>
               {/* Overview Stats */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <StatCard label="Status" value={sessionStatus === "running" ? "Active" : "Idle"} highlight={sessionStatus === "running"} />
+                <StatCard
+                  label="Status"
+                  value={isActive ? (sessionStatus === "running" ? "Active (Running)" : "Active (Waiting)") : "Idle"}
+                  highlight={isActive}
+                />
                 <StatCard label="Messages" value={totalMessages.toString()} />
                 <StatCard label="Total Cost" value={`$${totalCost.toFixed(4)}`} />
                 <StatCard label="Model" value={session.model || "Default"} />

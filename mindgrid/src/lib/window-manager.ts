@@ -1,5 +1,6 @@
 import { WebviewWindow, getAllWebviewWindows } from "@tauri-apps/api/webviewWindow";
 import { currentMonitor, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
+import { useSessionStore } from "../stores/sessionStore";
 
 export interface ChatWindowOptions {
   sessionId: string;
@@ -179,10 +180,23 @@ export async function openChatWindow(options: ChatWindowOptions): Promise<Webvie
     // Listen for window events
     webview.once("tauri://created", () => {
       console.log(`[window-manager] Chat window created: ${windowLabel}`);
+      // Mark session as active
+      useSessionStore.getState().markSessionChatOpen(sessionId);
     });
 
     webview.once("tauri://error", (e) => {
       console.error(`[window-manager] Chat window error: ${windowLabel}`, e);
+    });
+
+    // Listen for window close
+    webview.once("tauri://destroyed", () => {
+      console.log(`[window-manager] Chat window closed: ${windowLabel}`);
+      // Check if this was the last window for this session
+      void getSessionChatWindowCount(sessionId).then(count => {
+        if (count === 0) {
+          useSessionStore.getState().markSessionChatClosed(sessionId);
+        }
+      });
     });
 
     return webview;
@@ -602,10 +616,23 @@ export async function openWorkspaceWindow(options: ChatWindowOptions): Promise<W
     // Listen for window events
     webview.once("tauri://created", () => {
       console.log(`[window-manager] Workspace window created: ${windowLabel}`);
+      // Mark session as active
+      useSessionStore.getState().markSessionChatOpen(sessionId);
     });
 
     webview.once("tauri://error", (e) => {
       console.error(`[window-manager] Workspace window error: ${windowLabel}`, e);
+    });
+
+    // Listen for window close
+    webview.once("tauri://destroyed", () => {
+      console.log(`[window-manager] Workspace window closed: ${windowLabel}`);
+      // Check if this was the last window for this session
+      void getSessionChatWindowCount(sessionId).then(count => {
+        if (count === 0) {
+          useSessionStore.getState().markSessionChatClosed(sessionId);
+        }
+      });
     });
 
     return webview;
