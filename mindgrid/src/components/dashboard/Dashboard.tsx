@@ -14,6 +14,7 @@ import { UsageLimitsCard } from "./UsageLimitsCard";
 import type { DashboardProject, DashboardSession, DashboardActivity, DashboardGitInfo } from "./types";
 import { SettingsPage } from "../../pages/SettingsPage";
 import { CreateSessionDialog, type SessionConfig } from "../CreateSessionDialog";
+import { PathLink } from "../PathLink";
 
 type DashboardView = "all" | "recent" | "active" | "settings";
 
@@ -492,7 +493,7 @@ export function Dashboard() {
                                   </div>
                                   <div className="flex-1">
                                     <div className="font-medium text-white">{project.name}</div>
-                                    <div className="text-xs text-neutral-500">{project.path}</div>
+                                    <PathLink path={project.path} className="text-xs text-neutral-500" />
                                   </div>
                                   <span className="text-xs text-blue-400">{activeSessions.length} active</span>
                                 </div>

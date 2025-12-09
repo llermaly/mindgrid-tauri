@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import type { ProjectPreset } from "../../lib/presets";
 import { StatusBadge } from "./StatusBadge";
 import type { DashboardProject, DashboardSession } from "./types";
+import { PathLink } from "../PathLink";
 
 interface ProjectDetailViewProps {
   project: DashboardProject;
@@ -102,7 +103,7 @@ export function ProjectDetailView({ project, preset, onClose, onOpenSession, onC
             </div>
             <div>
               <h2 className="font-semibold text-white">{project.name}</h2>
-              <p className="text-xs text-neutral-500">{project.path}</p>
+              <PathLink path={project.path} className="text-xs text-neutral-500" />
             </div>
           </div>
         </div>
