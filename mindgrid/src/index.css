@@ -1,6 +1,55 @@
 @import "tailwindcss";
+@import "./assets/fonts/fonts.css";
 
-/* Base styles for the app */
+/* ============================================================================
+   MINIMALIST MONOCHROME DESIGN SYSTEM
+   Pure black & white • Serif typography • Sharp corners • Editorial luxury
+   ============================================================================ */
+
+/* CSS Custom Properties - Design Tokens */
+:root {
+  /* COLORS - Pure monochrome palette */
+  --background: #FFFFFF;          /* Pure white */
+  --foreground: #000000;          /* Pure black */
+  --muted: #F5F5F5;              /* Off-white for subtle backgrounds */
+  --muted-foreground: #525252;   /* Dark gray for secondary text */
+  --accent: #000000;             /* Black IS the accent */
+  --accent-foreground: #FFFFFF;  /* White on black */
+  --border: #000000;             /* Black borders */
+  --border-light: #E5E5E5;       /* Light gray for subtle dividers */
+  --card: #FFFFFF;               /* White cards */
+  --card-foreground: #000000;    /* Black text on cards */
+  --ring: #000000;               /* Black focus rings */
+
+  /* TYPOGRAPHY - Serif system */
+  --font-display: "Playfair Display", Georgia, serif;
+  --font-body: "Source Serif 4", Georgia, serif;
+  --font-mono: "JetBrains Mono", "Courier New", monospace;
+
+  /* BORDER RADIUS - All zero */
+  --radius: 0px;
+
+  /* SPACING - Generous scale */
+  --space-section: 10rem;  /* 160px between sections */
+  --space-container: 3rem; /* 48px container padding */
+
+  /* BORDERS - Line weights */
+  --border-hairline: 1px solid var(--border-light);
+  --border-thin: 1px solid var(--border);
+  --border-medium: 2px solid var(--border);
+  --border-thick: 4px solid var(--border);
+  --border-ultra: 8px solid var(--border);
+
+  /* TRANSITIONS - Instant or very fast */
+  --transition-instant: 0ms;
+  --transition-fast: 100ms;
+  --transition-smooth: 300ms;
+}
+
+/* ============================================================================
+   BASE STYLES
+   ============================================================================ */
+
 html, body, #root {
   height: 100%;
   margin: 0;
@@ -8,10 +57,91 @@ html, body, #root {
 }
 
 body {
-  background-color: #18181b; /* zinc-900 */
-  color: #f4f4f5; /* zinc-100 */
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.625;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  /* Global horizontal line texture - subtle paper-like quality */
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 1px,
+    #000 1px,
+    #000 2px
+  );
+  background-size: 100% 4px;
+  background-attachment: fixed;
+  opacity: 0.98;
 }
+
+body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.015;
+  pointer-events: none;
+  z-index: 9999;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+}
+
+/* ============================================================================
+   TYPOGRAPHY
+   ============================================================================ */
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  margin: 0;
+}
+
+h1 {
+  font-size: 6rem; /* 96px */
+  line-height: 1;
+}
+
+h2 {
+  font-size: 4.5rem; /* 72px */
+  line-height: 1;
+}
+
+h3 {
+  font-size: 3.5rem; /* 56px */
+}
+
+h4 {
+  font-size: 2.5rem; /* 40px */
+}
+
+h5 {
+  font-size: 2rem; /* 32px */
+}
+
+h6 {
+  font-size: 1.5rem; /* 24px */
+}
+
+p {
+  margin: 0 0 1rem 0;
+}
+
+/* Monospace for technical content */
+code, pre, kbd {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+}
+
+/* ============================================================================
+   SCROLLBAR CUSTOMIZATION - Monochrome
+   ============================================================================ */
 
 .scrollbar-thin::-webkit-scrollbar {
   width: 6px;
@@ -19,32 +149,322 @@ body {
 }
 
 .scrollbar-thin::-webkit-scrollbar-track {
-  background: #171717;
+  background: var(--muted);
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: #404040;
-  border-radius: 3px;
+  background: var(--foreground);
+  border-radius: 0; /* Sharp corners */
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: #525252;
+  background: var(--muted-foreground);
 }
+
+/* ============================================================================
+   ANIMATIONS
+   ============================================================================ */
 
 @keyframes pulse-dot {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  50% { opacity: 0.3; }
 }
 
 .animate-pulse-dot {
   animation: pulse-dot 1.5s ease-in-out infinite;
 }
 
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* ============================================================================
+   FOCUS STATES - Accessibility critical
+   ============================================================================ */
+
+/* Primary interactive elements (buttons, links) */
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible {
+  outline: 3px solid var(--foreground);
+  outline-offset: 3px;
+}
+
+/* Inputs - thicken border instead of outline */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  border-color: var(--foreground);
+  border-width: 3px;
+}
+
+/* ============================================================================
+   UTILITY CLASSES
+   ============================================================================ */
+
+/* Container */
+.container {
+  max-width: 72rem; /* 1152px */
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 3rem;
+  padding-right: 3rem;
+}
+
+@media (max-width: 768px) {
+  .container {
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+}
+
+/* Section spacing */
+.section {
+  padding-top: var(--space-section);
+  padding-bottom: var(--space-section);
+}
+
+@media (max-width: 768px) {
+  .section {
+    padding-top: 6rem;
+    padding-bottom: 6rem;
+  }
+}
+
+/* Horizontal rule - editorial divider */
+.hr-thick {
+  border: none;
+  border-top: var(--border-thick);
+  margin: 0;
+}
+
+.hr-ultra {
+  border: none;
+  border-top: var(--border-ultra);
+  margin: 0;
+}
+
+/* Inverted section */
+.section-inverted {
+  background-color: var(--foreground);
+  color: var(--background);
+  position: relative;
+}
+
+.section-inverted::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  /* Vertical line texture for dark sections */
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent,
+    transparent 1px,
+    #fff 1px,
+    #fff 2px
+  );
+  background-size: 4px 100%;
+  opacity: 0.03;
+}
+
+/* Card styles */
+.card {
+  background: var(--card);
+  border: var(--border-thin);
+  padding: 2rem;
+  transition: border-width var(--transition-fast);
+}
+
+.card:hover {
+  border-width: 2px;
+}
+
+.card-inverted {
+  background: var(--foreground);
+  color: var(--background);
+  padding: 2rem;
+}
+
+/* Button base */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1rem 2rem;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  border: none;
+  transition: all var(--transition-instant);
+  outline: none;
+}
+
+.btn:focus-visible {
+  outline: 3px solid var(--foreground);
+  outline-offset: 3px;
+}
+
+.btn-primary {
+  background: var(--foreground);
+  color: var(--background);
+}
+
+.btn-primary:hover {
+  background: var(--background);
+  color: var(--foreground);
+  border: 2px solid var(--foreground);
+  padding: calc(1rem - 2px) calc(2rem - 2px);
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--foreground);
+  border: 2px solid var(--foreground);
+  padding: calc(1rem - 2px) calc(2rem - 2px);
+}
+
+.btn-secondary:hover {
+  background: var(--foreground);
+  color: var(--background);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--foreground);
+  text-decoration: underline;
+  padding: 1rem 0;
+}
+
+.btn-ghost:hover {
+  text-decoration-thickness: 2px;
+}
+
+/* Project card hover - color inversion */
 .project-card {
-  transition: all 0.2s ease;
+  transition: all var(--transition-fast);
+  background: var(--background);
+  border: var(--border-thin);
 }
 
 .project-card:hover {
-  transform: translateY(-2px);
-  border-color: #3b82f6;
+  background: var(--foreground);
+  color: var(--background);
+  border: var(--border-medium);
+  transform: none; /* Remove translateY, keep it flat */
+}
+
+/* Inverted text for hover states */
+.project-card:hover * {
+  color: inherit;
+}
+
+/* Override specific color utilities in hover state */
+.project-card:hover .text-neutral-400,
+.project-card:hover .text-neutral-500 {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.project-card:hover .text-blue-400,
+.project-card:hover .text-blue-500 {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* ============================================================================
+   TEXTURE PATTERNS - Strategic application
+   ============================================================================ */
+
+.texture-grid {
+  position: relative;
+}
+
+.texture-grid::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  background-image:
+    linear-gradient(#00000008 1px, transparent 1px),
+    linear-gradient(90deg, #00000008 1px, transparent 1px);
+  background-size: 40px 40px;
+  opacity: 0.015;
+}
+
+.texture-diagonal {
+  position: relative;
+}
+
+.texture-diagonal::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 40px,
+    #00000008 40px,
+    #00000008 42px
+  );
+  opacity: 0.01;
+}
+
+/* ============================================================================
+   RESPONSIVE OVERRIDES
+   ============================================================================ */
+
+@media (max-width: 768px) {
+  h1 {
+    font-size: 3.5rem; /* 56px on mobile */
+  }
+
+  h2 {
+    font-size: 3rem; /* 48px on mobile */
+  }
+
+  h3 {
+    font-size: 2rem; /* 32px on mobile */
+  }
+
+  .btn {
+    padding: 0.875rem 1.5rem;
+    font-size: 0.75rem;
+  }
+}
+
+/* ============================================================================
+   RESET TAILWIND DEFAULTS
+   ============================================================================ */
+
+/* Ensure all border-radius values are 0 */
+* {
+  border-radius: 0 !important;
+}
+
+/* Remove default transitions from Tailwind */
+.transition-colors {
+  transition-duration: var(--transition-fast);
+}
+
+.transition-all {
+  transition-duration: var(--transition-fast);
 }
