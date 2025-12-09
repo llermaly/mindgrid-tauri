@@ -4,6 +4,7 @@ import { PRESETS, type ChatType } from "../../lib/presets";
 import { openChatWindow, openMultipleChatWindows } from "../../lib/window-manager";
 import { useSessionStore, type Project, type Session } from "../../stores/sessionStore";
 import { useUsageStore } from "../../stores/usageStore";
+import { getWorktreeInfo } from "../../lib/dev-mode";
 import { ProjectWizardDialog } from "../ProjectWizardDialog";
 import { ProjectCard } from "./ProjectCard";
 import { ProjectDetailView } from "./ProjectDetailView";
@@ -35,6 +36,13 @@ export function Dashboard() {
   const [activeView, setActiveView] = useState<DashboardView>("all");
   const [showProjectWizard, setShowProjectWizard] = useState(false);
   const [showCreateSessionDialog, setShowCreateSessionDialog] = useState(false);
+  const [createSessionForProjectId, setCreateSessionForProjectId] = useState<string | null>(null);
+  const [worktreeName, setWorktreeName] = useState<string | null>(null);
+
+  // Check if running from a worktree
+  useEffect(() => {
+    getWorktreeInfo().then(setWorktreeName);
+  }, []);
 
   // Fetch usage data on mount and refresh every 30 seconds
   useEffect(() => {
@@ -114,16 +122,20 @@ export function Dashboard() {
     }
   };
 
-  const handleOpenCreateSessionDialog = () => {
+  const handleOpenCreateSessionDialog = (projectId?: string) => {
+    if (projectId) {
+      setCreateSessionForProjectId(projectId);
+    }
     setShowCreateSessionDialog(true);
   };
 
   const handleCreateSession = async (config: SessionConfig) => {
-    if (!selectedProjectId) return;
-    const project = projects[selectedProjectId];
+    const targetProjectId = createSessionForProjectId || selectedProjectId;
+    if (!targetProjectId) return;
+    const project = projects[targetProjectId];
     if (!project) return;
 
-    const newSession = await createSession(selectedProjectId, config.name, project.path);
+    const newSession = await createSession(targetProjectId, config.name, project.path);
 
     // Update session with additional config
     const { setPermissionMode, setCommitMode, setSessionModel } = useSessionStore.getState();
@@ -138,7 +150,10 @@ export function Dashboard() {
       setSessionModel(newSession.id, config.model);
     }
 
+    // Navigate to the newly created session
+    setSelectedProjectId(targetProjectId);
     setSelectedSessionId(newSession.id);
+    setCreateSessionForProjectId(null);
   };
 
   const handleCreateProjectWithChats = async (
@@ -147,22 +162,27 @@ export function Dashboard() {
     sessionName: string,
     chatTypes: ChatType[]
   ) => {
-    const project = await createProject(projectName, projectPath);
-    const session = await createSession(project.id, sessionName, projectPath);
+    try {
+      const project = await createProject(projectName, projectPath);
+      const session = await createSession(project.id, sessionName, projectPath);
 
-    if (chatTypes.length > 0) {
-      await openMultipleChatWindows(
-        {
-          sessionId: session.id,
-          sessionName: session.name,
-          projectName: project.name,
-          cwd: session.cwd,
-        },
-        chatTypes.length
-      );
+      if (chatTypes.length > 0) {
+        await openMultipleChatWindows(
+          {
+            sessionId: session.id,
+            sessionName: session.name,
+            projectName: project.name,
+            cwd: session.cwd,
+          },
+          chatTypes.length
+        );
+      }
+
+      setSelectedProjectId(project.id);
+    } catch (err) {
+      // Show error to user (the error will bubble up to ProjectWizardDialog)
+      throw err;
     }
-
-    setSelectedProjectId(project.id);
   };
 
   return (
@@ -176,6 +196,14 @@ export function Dashboard() {
           </div>
           <span className="text-lg font-semibold">MindGrid</span>
           <span className="text-xs text-neutral-500 px-2 py-0.5 bg-neutral-800 rounded">{isSettingsView ? "Settings" : "Dashboard"}</span>
+          {worktreeName && (
+            <span className="text-xs text-orange-400 px-2 py-0.5 bg-orange-500/20 border border-orange-500/30 rounded flex items-center gap-1.5">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+              TESTING: {worktreeName}
+            </span>
+          )}
         </div>
 
         {!isSettingsView && (
@@ -334,6 +362,8 @@ export function Dashboard() {
                             preset={presetMap[project.presetId]}
                             onOpen={(p) => setSelectedProjectId(p.id)}
                             onOpenSession={handleOpenSession}
+                            onOpenSessionChat={handleOpenSessionChat}
+                            onCreateSession={(p) => handleOpenCreateSessionDialog(p.id)}
                             onDeleteProject={handleDeleteProject}
                             onDeleteSession={handleDeleteSession}
                           />
@@ -476,15 +506,23 @@ export function Dashboard() {
         onCreate={handleCreateProjectWithChats}
       />
 
-      {selectedProject && (
-        <CreateSessionDialog
-          isOpen={showCreateSessionDialog}
-          projectName={selectedProject.name}
-          existingSessionCount={selectedProject.sessions.length}
-          onClose={() => setShowCreateSessionDialog(false)}
-          onCreate={handleCreateSession}
-        />
-      )}
+      {(() => {
+        const dialogProject = createSessionForProjectId
+          ? activeProjects.find(p => p.id === createSessionForProjectId)
+          : selectedProject;
+        return dialogProject && (
+          <CreateSessionDialog
+            isOpen={showCreateSessionDialog}
+            projectName={dialogProject.name}
+            existingSessionCount={dialogProject.sessions.length}
+            onClose={() => {
+              setShowCreateSessionDialog(false);
+              setCreateSessionForProjectId(null);
+            }}
+            onCreate={handleCreateSession}
+          />
+        );
+      })()}
     </div>
   );
 }

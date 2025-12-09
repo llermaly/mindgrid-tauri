@@ -1,7 +1,17 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useUsageStore } from "../../stores/usageStore";
 
+const USAGE_LIMITS_VISIBLE_KEY = "mindgrid_usage_limits_visible";
+
 export function UsageLimitsCard() {
+  const [isVisible, setIsVisible] = useState(() => {
+    const stored = localStorage.getItem(USAGE_LIMITS_VISIBLE_KEY);
+    return stored === null ? true : stored === "true";
+  });
+
+  useEffect(() => {
+    localStorage.setItem(USAGE_LIMITS_VISIBLE_KEY, String(isVisible));
+  }, [isVisible]);
   const {
     claudeUsageData,
     claudeLoading,
@@ -36,19 +46,35 @@ export function UsageLimitsCard() {
 
   return (
     <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
-      <div className="flex items-center gap-2 mb-4">
-        <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M13 10V3L4 14h7v7l9-11h-7z"
-          />
-        </svg>
-        <h3 className="text-sm font-medium text-white">Usage Limits</h3>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M13 10V3L4 14h7v7l9-11h-7z"
+            />
+          </svg>
+          <h3 className="text-sm font-medium text-white">Usage Limits</h3>
+        </div>
+        <button
+          onClick={() => setIsVisible(!isVisible)}
+          className="p-1 rounded hover:bg-neutral-800 text-neutral-500 hover:text-neutral-300 transition-colors"
+          title={isVisible ? "Hide usage limits" : "Show usage limits"}
+        >
+          <svg
+            className={`w-4 h-4 transition-transform ${isVisible ? "rotate-180" : ""}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
       </div>
 
-      <div className="space-y-4">
+      {isVisible && <div className="space-y-4">
         {/* Claude Limits */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
@@ -226,7 +252,7 @@ export function UsageLimitsCard() {
             </div>
           )}
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

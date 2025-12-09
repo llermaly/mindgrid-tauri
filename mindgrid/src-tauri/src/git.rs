@@ -81,8 +81,23 @@ pub async fn validate_git_repository(project_path: String) -> Result<bool, Strin
 
 #[tauri::command]
 pub async fn get_git_worktrees() -> Result<Vec<HashMap<String, String>>, String> {
-    let output = tokio::process::Command::new("git")
-        .args(&["worktree", "list", "--porcelain"])
+    get_git_worktrees_for_path(None).await
+}
+
+#[tauri::command]
+pub async fn get_project_worktrees(project_path: String) -> Result<Vec<HashMap<String, String>>, String> {
+    get_git_worktrees_for_path(Some(&project_path)).await
+}
+
+async fn get_git_worktrees_for_path(path: Option<&str>) -> Result<Vec<HashMap<String, String>>, String> {
+    let mut cmd = tokio::process::Command::new("git");
+    cmd.args(&["worktree", "list", "--porcelain"]);
+
+    if let Some(p) = path {
+        cmd.current_dir(p);
+    }
+
+    let output = cmd
         .output()
         .await
         .map_err(|e| format!("Failed to execute git worktree list: {}", e))?;
@@ -118,7 +133,17 @@ pub async fn get_git_worktrees() -> Result<Vec<HashMap<String, String>>, String>
         worktrees.push(current_worktree);
     }
 
-    Ok(worktrees)
+    // Filter to only include mindgrid worktrees
+    let mindgrid_worktrees: Vec<_> = worktrees
+        .into_iter()
+        .filter(|wt| {
+            wt.get("path")
+                .map(|p| p.contains(".mindgrid/worktrees/"))
+                .unwrap_or(false)
+        })
+        .collect();
+
+    Ok(mindgrid_worktrees)
 }
 
 #[tauri::command]
@@ -1270,4 +1295,40 @@ pub async fn open_in_editor(path: String) -> Result<(), String> {
     drop(status);
 
     Ok(())
+}
+
+/// Save session data to the worktree's .mindgrid folder
+#[tauri::command]
+pub async fn save_session_to_worktree(worktree_path: String, session_data: String) -> Result<(), String> {
+    let path = Path::new(&worktree_path);
+
+    // Create .mindgrid directory in the worktree if it doesn't exist
+    let mindgrid_dir = path.join(".mindgrid");
+    if !mindgrid_dir.exists() {
+        std::fs::create_dir_all(&mindgrid_dir)
+            .map_err(|e| format!("Failed to create .mindgrid directory: {}", e))?;
+    }
+
+    // Save session data
+    let session_file = mindgrid_dir.join("session.json");
+    std::fs::write(&session_file, &session_data)
+        .map_err(|e| format!("Failed to write session data: {}", e))?;
+
+    Ok(())
+}
+
+/// Load session data from the worktree's .mindgrid folder
+#[tauri::command]
+pub async fn load_session_from_worktree(worktree_path: String) -> Result<Option<String>, String> {
+    let path = Path::new(&worktree_path);
+    let session_file = path.join(".mindgrid").join("session.json");
+
+    if !session_file.exists() {
+        return Ok(None);
+    }
+
+    let data = std::fs::read_to_string(&session_file)
+        .map_err(|e| format!("Failed to read session data: {}", e))?;
+
+    Ok(Some(data))
 }

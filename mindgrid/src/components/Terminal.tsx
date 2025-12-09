@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
@@ -19,7 +19,6 @@ export function Terminal({
   className = "",
   mode = "stream-json",
   cwd,
-  claudeSessionId,
   onClaudeEvent,
   onClaudeMessage,
 }: TerminalProps) {
@@ -27,7 +26,7 @@ export function Terminal({
   const [terminal, setTerminal] = useState<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
 
-  const { spawn, spawnClaude, write, kill, isRunning } = usePty(terminal, {
+  const { spawn, write, isRunning } = usePty(terminal, {
     mode,
     onEvent: onClaudeEvent,
     onMessage: onClaudeMessage,
@@ -109,78 +108,27 @@ export function Terminal({
     };
   }, [terminal, isRunning, write]);
 
-  const handleSpawnClaude = useCallback(async () => {
-    if (!terminal) return;
+  // Auto-start shell when terminal is ready
+  useEffect(() => {
+    if (!terminal || isRunning) return;
 
-    terminal.clear();
-    if (claudeSessionId) {
-      terminal.writeln(`Resuming Claude Code session (${mode} mode)...\r\n`);
-    } else {
-      terminal.writeln(`Starting Claude Code (${mode} mode)...\r\n`);
-    }
-    if (cwd) {
-      terminal.writeln(`Working directory: ${cwd}\r\n`);
-    }
-    debug.info("Terminal", "Spawning Claude", { mode, cwd, claudeSessionId });
+    const startShell = async () => {
+      debug.info("Terminal", "Auto-spawning shell", { cwd });
 
-    await spawnClaude(cwd, claudeSessionId);
-  }, [terminal, spawnClaude, mode, cwd, claudeSessionId]);
+      await spawn({
+        cmd: "/bin/zsh",
+        args: [],
+        cols: terminal.cols,
+        rows: terminal.rows,
+        cwd,
+      });
+    };
 
-  const handleSpawnShell = useCallback(async () => {
-    if (!terminal) return;
-
-    terminal.clear();
-    terminal.writeln("Starting shell...\r\n");
-    debug.info("Terminal", "Spawning shell", { cwd });
-
-    await spawn({
-      cmd: "/bin/zsh",
-      args: [],
-      cols: terminal.cols,
-      rows: terminal.rows,
-      cwd,
-    });
-  }, [terminal, spawn, cwd]);
-
-  const handleKill = useCallback(async () => {
-    await kill();
-    terminal?.writeln("\r\n[Killed]");
-  }, [kill, terminal]);
+    startShell();
+  }, [terminal]); // Only run once when terminal is ready
 
   return (
     <div className={`flex flex-col h-full ${className}`}>
-      <div className="flex items-center justify-between px-3 py-2 bg-zinc-800 border-b border-zinc-700">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-zinc-300">Terminal</span>
-          <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-400">
-            {mode}
-          </span>
-        </div>
-        <div className="flex gap-2">
-          {isRunning && (
-            <button
-              onClick={handleKill}
-              className="px-3 py-1 text-xs font-medium rounded bg-red-600 hover:bg-red-500 text-zinc-100"
-            >
-              Kill
-            </button>
-          )}
-          <button
-            onClick={handleSpawnShell}
-            disabled={isRunning || !terminal}
-            className="px-3 py-1 text-xs font-medium rounded bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed text-zinc-200"
-          >
-            Shell
-          </button>
-          <button
-            onClick={handleSpawnClaude}
-            disabled={isRunning || !terminal}
-            className="px-3 py-1 text-xs font-medium rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-zinc-100"
-          >
-            {isRunning ? "Running..." : "Claude"}
-          </button>
-        </div>
-      </div>
       <div ref={containerRef} className="flex-1 bg-zinc-900 p-1" />
     </div>
   );

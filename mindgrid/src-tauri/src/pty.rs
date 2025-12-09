@@ -85,13 +85,30 @@ pub fn spawn_pty(
         cmd.env(key, value);
     }
 
-    // Set TERM=dumb to disable fancy TUI output for CLI tools like Claude Code
-    cmd.env("TERM", "dumb");
-    // Disable color output
-    cmd.env("NO_COLOR", "1");
-    // Signal CI/non-interactive mode
-    cmd.env("CI", "true");
-    cmd.env("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1");
+    // Check if this is Claude CLI or a regular shell
+    let is_claude = args.cmd == "claude";
+
+    if is_claude {
+        // Set TERM=dumb to disable fancy TUI output for CLI tools like Claude Code
+        cmd.env("TERM", "dumb");
+        // Disable color output
+        cmd.env("NO_COLOR", "1");
+        // Signal CI/non-interactive mode
+        cmd.env("CI", "true");
+        cmd.env("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1");
+    } else {
+        // For interactive shells, use full color terminal
+        cmd.env("TERM", "xterm-256color");
+        // Enable colors
+        cmd.env("CLICOLOR", "1");
+        cmd.env("CLICOLOR_FORCE", "1");
+        // Mark as mindgrid shell for custom prompt detection
+        cmd.env("MINDGRID_SHELL", "1");
+        // Use custom zsh config directory for our prompt
+        let mut zdotdir = std::env::temp_dir();
+        zdotdir.push("mindgrid-zsh");
+        cmd.env("ZDOTDIR", zdotdir.to_string_lossy().to_string());
+    }
 
     let child = pair
         .slave

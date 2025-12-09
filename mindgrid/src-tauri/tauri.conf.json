@@ -2,10 +2,10 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "mindgrid",
   "version": "0.1.0",
-  "identifier": "com.ichnaea.mindgrid",
+  "identifier": "com.ichnaea.mindgrid.dev",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:1424",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
@@ -27,7 +27,7 @@
   },
   "plugins": {
     "sql": {
-      "preload": ["sqlite:mindgrid.db"]
+      "preload": ["sqlite:mindgrid-dev.db"]
     }
   },
   "bundle": {

@@ -5,6 +5,62 @@ import type { GitStatus } from "../lib/git-types";
 import { debug } from "./debugStore";
 import * as db from "../lib/database";
 
+// Data structure for session data saved to worktree
+interface WorktreeSessionData {
+  name: string;
+  claudeSessionId: string | null;
+  messages: ParsedMessage[];
+  totalCost: number;
+  model: string | null;
+  permissionMode: PermissionMode;
+  commitMode: CommitMode;
+  panelStates?: Record<string, unknown>;
+  savedAt: number;
+}
+
+// Helper to save session data to worktree (debounced)
+const saveToWorktreeDebounced = (() => {
+  const timers: Record<string, ReturnType<typeof setTimeout>> = {};
+
+  return (session: Session) => {
+    // Only save if cwd is a worktree
+    if (!session.cwd.includes(".mindgrid/worktrees/")) {
+      return;
+    }
+
+    // Clear existing timer for this session
+    if (timers[session.id]) {
+      clearTimeout(timers[session.id]);
+    }
+
+    // Debounce save by 2 seconds
+    timers[session.id] = setTimeout(async () => {
+      try {
+        const data: WorktreeSessionData = {
+          name: session.name,
+          claudeSessionId: session.claudeSessionId,
+          messages: session.messages,
+          totalCost: session.totalCost,
+          model: session.model,
+          permissionMode: session.permissionMode,
+          commitMode: session.commitMode,
+          panelStates: session.panelStates as Record<string, unknown>,
+          savedAt: Date.now(),
+        };
+
+        await invoke("save_session_to_worktree", {
+          worktreePath: session.cwd,
+          sessionData: JSON.stringify(data, null, 2),
+        });
+
+        debug.info("SessionStore", "Saved session to worktree", { sessionId: session.id, cwd: session.cwd });
+      } catch (err) {
+        console.error("Failed to save session to worktree:", err);
+      }
+    }, 2000);
+  };
+})();
+
 export type PanelType = 'research' | 'coding' | 'review' | 'terminal' | 'browser' | 'foundations' | 'git';
 
 export interface PanelState {
@@ -202,6 +258,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   createProject: async (name, path) => {
+    // Check if project with same path already exists
+    const existingProject = Object.values(get().projects).find(p => p.path === path);
+    if (existingProject) {
+      throw new Error(`Project already exists at this path: ${existingProject.name}`);
+    }
+
     const project: Project = {
       id: generateId(),
       name,
@@ -213,6 +275,81 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     };
 
     debug.info("SessionStore", "Creating project", { name, path, id: project.id });
+
+    // Check for existing worktrees and create sessions for them
+    try {
+      debug.info("SessionStore", "Checking for existing worktrees", { projectPath: path });
+      const worktrees = await invoke<Array<{ path: string; branch?: string }>>("get_project_worktrees", { projectPath: path });
+      debug.info("SessionStore", "Worktree check result", { count: worktrees.length, worktrees });
+
+      if (worktrees.length > 0) {
+        debug.info("SessionStore", "Found existing worktrees", { count: worktrees.length });
+
+        for (const wt of worktrees) {
+          // Extract session name from worktree path (e.g., ".mindgrid/worktrees/session-name-abc123")
+          const wtName = wt.path.split("/").pop() || "Imported Session";
+
+          // Try to load saved session data from worktree
+          let savedData: WorktreeSessionData | null = null;
+          try {
+            const savedJson = await invoke<string | null>("load_session_from_worktree", { worktreePath: wt.path });
+            if (savedJson) {
+              savedData = JSON.parse(savedJson) as WorktreeSessionData;
+              debug.info("SessionStore", "Loaded saved session data from worktree", { wtPath: wt.path, messageCount: savedData.messages?.length || 0 });
+            }
+          } catch (err) {
+            debug.warn("SessionStore", "Failed to load session data from worktree", { wtPath: wt.path, error: String(err) });
+          }
+
+          const session: Session = {
+            id: generateId(),
+            name: savedData?.name || wtName,
+            projectId: project.id,
+            claudeSessionId: savedData?.claudeSessionId || null,
+            ptyId: null,
+            messages: savedData?.messages || [],
+            isRunning: false,
+            totalCost: savedData?.totalCost || 0,
+            model: savedData?.model || null,
+            cwd: wt.path,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            permissionMode: savedData?.permissionMode || "default",
+            commitMode: savedData?.commitMode || "checkpoint",
+            panelStates: savedData?.panelStates as Partial<Record<PanelType, PanelState>> | undefined,
+          };
+
+          project.sessions.push(session.id);
+
+          // Save session to DB
+          await db.saveSession(session);
+
+          // Also save messages to DB if we recovered them
+          if (savedData?.messages) {
+            for (const msg of savedData.messages) {
+              try {
+                await db.saveMessage(session.id, msg);
+              } catch (err) {
+                // Ignore duplicate message errors
+              }
+            }
+          }
+
+          set((state) => ({
+            sessions: { ...state.sessions, [session.id]: session },
+          }));
+
+          debug.info("SessionStore", "Imported worktree as session", {
+            wtPath: wt.path,
+            sessionId: session.id,
+            recoveredMessages: savedData?.messages?.length || 0
+          });
+        }
+      }
+    } catch (err) {
+      console.error("Failed to check for existing worktrees:", err);
+      debug.warn("SessionStore", "Failed to check for existing worktrees", { error: String(err) });
+    }
 
     // Save to DB
     await db.saveProject(project);
@@ -500,6 +637,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         await db.saveMessage(sessionId, message);
       } catch (err) {
         console.error("[SessionStore] Failed to save message to store:", err);
+      }
+
+      // Also save to worktree for persistence
+      const updatedSession = get().sessions[sessionId];
+      if (updatedSession) {
+        saveToWorktreeDebounced(updatedSession);
       }
     }
   },

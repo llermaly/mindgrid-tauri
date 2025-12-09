@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 // Cache the dev mode status to avoid repeated calls
 let devModeCache: boolean | null = null;
+let worktreeInfoCache: string | null | undefined = undefined;
 
 /**
  * Check if the application is running in developer mode.
@@ -48,4 +49,31 @@ export async function getDatabaseUri(): Promise<string> {
  */
 export function isDevModeSync(): boolean {
   return devModeCache ?? false;
+}
+
+/**
+ * Get worktree info if running from a git worktree.
+ * Returns null if running from main repo, worktree name if running from a worktree.
+ */
+export async function getWorktreeInfo(): Promise<string | null> {
+  if (worktreeInfoCache !== undefined) {
+    return worktreeInfoCache;
+  }
+
+  try {
+    worktreeInfoCache = await invoke<string | null>("get_worktree_info");
+    return worktreeInfoCache;
+  } catch (err) {
+    console.warn("Failed to get worktree info:", err);
+    worktreeInfoCache = null;
+    return null;
+  }
+}
+
+/**
+ * Synchronous check for worktree info (only works after initial async check).
+ * Returns null if not checked yet or not in a worktree.
+ */
+export function getWorktreeInfoSync(): string | null {
+  return worktreeInfoCache ?? null;
 }
