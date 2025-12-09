@@ -230,6 +230,8 @@ pub fn run() {
             git::open_in_editor,
             git::save_session_to_worktree,
             git::load_session_from_worktree,
+            git::list_gitignored_files,
+            git::copy_files_to_worktree,
             codex::codex_list_models,
             codex::run_codex,
             is_dev_mode,

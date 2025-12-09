@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useSessionStore, type Project, type Session } from "../stores/sessionStore";
 import { debug } from "../stores/debugStore";
 import { GitStatusIndicator } from "./GitStatusIndicator";
@@ -38,10 +39,11 @@ export function Sidebar({ activePage, onOpenSettings, onNavigateHome }: SidebarP
     projectName: string,
     projectPath: string,
     sessionName: string,
-    chatTypes: ChatType[]
+    chatTypes: ChatType[],
+    filesToCopy?: string[]
   ) => {
     try {
-      debug.info("Sidebar", "Creating project with wizard", { projectName, projectPath, sessionName, chatTypes });
+      debug.info("Sidebar", "Creating project with wizard", { projectName, projectPath, sessionName, chatTypes, filesToCopy });
 
       // Create the project
       const project = await createProject(projectName, projectPath);
@@ -52,6 +54,23 @@ export function Sidebar({ activePage, onOpenSettings, onNavigateHome }: SidebarP
       // Create ONE session for this project
       const session = await createSession(project.id, sessionName, projectPath);
       debug.info("Sidebar", "Session created", { id: session.id, name: sessionName });
+
+      // Copy selected gitignored files to worktree
+      if (filesToCopy && filesToCopy.length > 0 && session.cwd !== projectPath) {
+        try {
+          debug.info("Sidebar", "Copying files to worktree", { files: filesToCopy, dest: session.cwd });
+          const copied = await invoke<string[]>("copy_files_to_worktree", {
+            projectPath,
+            worktreePath: session.cwd,
+            files: filesToCopy,
+          });
+          debug.info("Sidebar", "Files copied successfully", { copied });
+        } catch (copyErr) {
+          debug.error("Sidebar", "Failed to copy files to worktree", copyErr);
+          console.error("Failed to copy files:", copyErr);
+          // Don't fail the whole operation, just log the error
+        }
+      }
 
       // Navigate to the new session
       onNavigateHome();
@@ -80,7 +99,25 @@ export function Sidebar({ activePage, onOpenSettings, onNavigateHome }: SidebarP
 
   const handleCreateSessionConfirm = async (config: SessionConfig) => {
     if (!createSessionForProject) return;
-    const newSession = await createSession(createSessionForProject.id, config.name, createSessionForProject.path);
+    const projectPath = createSessionForProject.path;
+    const newSession = await createSession(createSessionForProject.id, config.name, projectPath);
+
+    // Copy selected gitignored files to worktree
+    if (config.filesToCopy && config.filesToCopy.length > 0 && newSession.cwd !== projectPath) {
+      try {
+        debug.info("Sidebar", "Copying files to worktree", { files: config.filesToCopy, dest: newSession.cwd });
+        const copied = await invoke<string[]>("copy_files_to_worktree", {
+          projectPath,
+          worktreePath: newSession.cwd,
+          files: config.filesToCopy,
+        });
+        debug.info("Sidebar", "Files copied successfully", { copied });
+      } catch (copyErr) {
+        debug.error("Sidebar", "Failed to copy files to worktree", copyErr);
+        console.error("Failed to copy files:", copyErr);
+        // Don't fail the whole operation, just log the error
+      }
+    }
 
     // Apply additional config
     const { setPermissionMode, setCommitMode, setSessionModel } = useSessionStore.getState();
@@ -188,6 +225,7 @@ export function Sidebar({ activePage, onOpenSettings, onNavigateHome }: SidebarP
       <CreateSessionDialog
         isOpen={createSessionForProject !== null}
         projectName={createSessionForProject?.name ?? ""}
+        projectPath={createSessionForProject?.path ?? ""}
         existingSessionCount={createSessionForProject?.sessions.length ?? 0}
         onClose={() => setCreateSessionForProject(null)}
         onCreate={handleCreateSessionConfirm}

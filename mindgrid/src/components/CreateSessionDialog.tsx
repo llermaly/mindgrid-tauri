@@ -6,6 +6,7 @@ import {
   getSessionNameSuggestions,
 } from "../lib/session-utils";
 import { ModelSelector } from "./ModelSelector";
+import { GitignoreFilesSelector } from "./GitignoreFilesSelector";
 import type { PermissionMode, CommitMode } from "../lib/claude-types";
 
 export interface SessionConfig {
@@ -15,11 +16,13 @@ export interface SessionConfig {
   permissionMode: PermissionMode;
   commitMode: CommitMode;
   toolType: "claude" | "codex" | "none";
+  filesToCopy?: string[];
 }
 
 interface CreateSessionDialogProps {
   isOpen: boolean;
   projectName: string;
+  projectPath: string;
   existingSessionCount: number;
   onClose: () => void;
   onCreate: (config: SessionConfig) => Promise<void>;
@@ -40,6 +43,7 @@ const COMMIT_MODES: { value: CommitMode; label: string; description: string }[] 
 export function CreateSessionDialog({
   isOpen,
   projectName,
+  projectPath,
   existingSessionCount,
   onClose,
   onCreate,
@@ -50,6 +54,7 @@ export function CreateSessionDialog({
   const [permissionMode, setPermissionMode] = useState<PermissionMode>("default");
   const [commitMode, setCommitMode] = useState<CommitMode>("checkpoint");
   const [toolType, setToolType] = useState<"claude" | "codex" | "none">("claude");
+  const [filesToCopy, setFilesToCopy] = useState<string[]>([]);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -64,6 +69,7 @@ export function CreateSessionDialog({
       setPermissionMode("default");
       setCommitMode("checkpoint");
       setToolType("claude");
+      setFilesToCopy([]);
       setShowAdvanced(false);
       setError(null);
       setIsCreating(false);
@@ -95,6 +101,7 @@ export function CreateSessionDialog({
         permissionMode,
         commitMode,
         toolType,
+        filesToCopy,
       });
       onClose();
     } catch (err) {
@@ -323,6 +330,14 @@ export function CreateSessionDialog({
               </div>
             </div>
           )}
+
+          {/* Gitignored Files Selector */}
+          <GitignoreFilesSelector
+            projectPath={projectPath}
+            selectedFiles={filesToCopy}
+            onSelectionChange={setFilesToCopy}
+            disabled={isCreating}
+          />
         </div>
 
         {/* Footer */}
