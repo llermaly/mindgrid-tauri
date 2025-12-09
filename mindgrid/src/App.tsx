@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState } from "react";
 import { Dashboard } from "./components/dashboard/Dashboard";
 import { SessionWorkspace } from "./components/workspace/SessionWorkspace";
 import { AgentPanel } from "./components/workspace/panels/AgentPanel";
@@ -10,6 +10,12 @@ import type { ParsedMessage, ClaudeEvent } from "./lib/claude-types";
 import { useSessionStore, type Session, type PanelType } from "./stores/sessionStore";
 import { isDevMode, getWorktreeInfo } from "./lib/dev-mode";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import {
+  useGlobalShortcuts,
+  focusMainWindow,
+  cycleNextWindow,
+  cyclePrevWindow,
+} from "./hooks/useGlobalShortcuts";
 
 function getWindowParams(): { mode: "main" | "workspace" | "terminal"; sessionId: string | null; runCommand: string | null; cwd: string | null } {
   const params = new URLSearchParams(window.location.search);
@@ -27,6 +33,12 @@ function getWindowParams(): { mode: "main" | "workspace" | "terminal"; sessionId
 
 function App() {
   const { mode: windowMode, sessionId: urlSessionId, runCommand, cwd: urlCwd } = getWindowParams();
+
+  // State for triggering actions from global shortcuts
+  const [shortcutTrigger, setShortcutTrigger] = useState<{
+    action: "newChat" | "toggleTransformer" | "runAll" | null;
+    timestamp: number;
+  }>({ action: null, timestamp: 0 });
 
   const {
     activeSessionId,
@@ -48,6 +60,26 @@ function App() {
     clearPanelSession,
     getPanelState,
   } = useSessionStore();
+
+  // Global shortcuts - only register in main window
+  useGlobalShortcuts({
+    enabled: windowMode === "main",
+    onNewChat: () => {
+      console.log("[Shortcuts] New chat triggered");
+      setShortcutTrigger({ action: "newChat", timestamp: Date.now() });
+    },
+    onToggleTransformer: () => {
+      console.log("[Shortcuts] Toggle transformer triggered");
+      setShortcutTrigger({ action: "toggleTransformer", timestamp: Date.now() });
+    },
+    onRunAll: () => {
+      console.log("[Shortcuts] Run all triggered");
+      setShortcutTrigger({ action: "runAll", timestamp: Date.now() });
+    },
+    onNextWindow: cycleNextWindow,
+    onPrevWindow: cyclePrevWindow,
+    onFocusMain: focusMainWindow,
+  });
 
   useEffect(() => {
     initialize();
@@ -206,7 +238,12 @@ function App() {
     );
   }
 
-  return <Dashboard />;
+  return (
+    <Dashboard
+      shortcutTrigger={shortcutTrigger}
+      onShortcutHandled={() => setShortcutTrigger({ action: null, timestamp: 0 })}
+    />
+  );
 }
 
 export default App;

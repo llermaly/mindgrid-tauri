@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { PRESETS, type ChatType } from "../../lib/presets";
-import { openAllProjectSessionChats, openMultipleChatWindows, openRunCommandWindow, openWorkspaceWindow } from "../../lib/window-manager";
+import { openAllProjectSessionChats, openMultipleChatWindows, openRunCommandWindow, openWorkspaceWindow, runAllProjectSessions } from "../../lib/window-manager";
 import { useSessionStore, type Project, type Session } from "../../stores/sessionStore";
 import { useUsageStore } from "../../stores/usageStore";
 import { getWorktreeInfo } from "../../lib/dev-mode";
@@ -16,10 +16,21 @@ import { SettingsPage } from "../../pages/SettingsPage";
 import { AnalyticsPage } from "../../pages/AnalyticsPage";
 import { CreateSessionDialog, type SessionConfig, type SessionVariantConfig } from "../CreateSessionDialog";
 import { PathLink } from "../PathLink";
+import { CustomTitlebar } from "../CustomTitlebar";
+import { TransformerModeIndicator } from "../TransformerTabBar";
+import { useTransformerStore } from "../../stores/transformerStore";
 
 type DashboardView = "all" | "recent" | "active" | "analytics" | "settings";
 
-export function Dashboard() {
+interface DashboardProps {
+  shortcutTrigger?: {
+    action: "newChat" | "toggleTransformer" | "runAll" | null;
+    timestamp: number;
+  };
+  onShortcutHandled?: () => void;
+}
+
+export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps) {
   const {
     projects,
     sessions,
@@ -35,6 +46,7 @@ export function Dashboard() {
   } = useSessionStore();
 
   const fetchAll = useUsageStore((state) => state.fetchAll);
+  const toggleTransformerMode = useTransformerStore((state) => state.toggleTransformerMode);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -51,6 +63,59 @@ export function Dashboard() {
   useEffect(() => {
     getWorktreeInfo().then(setWorktreeName);
   }, []);
+
+  // Handle global shortcut triggers
+  useEffect(() => {
+    if (!shortcutTrigger?.action) return;
+
+    switch (shortcutTrigger.action) {
+      case "newChat":
+        // If we have a selected project, create session for it; otherwise show project wizard
+        if (selectedProjectId) {
+          setCreateSessionForProjectId(selectedProjectId);
+          setShowCreateSessionDialog(true);
+        } else if (Object.keys(projects).length > 0) {
+          // Open create session for the first project
+          const firstProject = Object.values(projects)[0];
+          setCreateSessionForProjectId(firstProject.id);
+          setShowCreateSessionDialog(true);
+        } else {
+          setShowProjectWizard(true);
+        }
+        break;
+      case "toggleTransformer":
+        toggleTransformerMode();
+        break;
+      case "runAll":
+        // Run command in all sessions for the selected project
+        if (selectedProjectId) {
+          const project = projects[selectedProjectId];
+          if (project) {
+            const projectSessions = Object.values(sessions).filter(s => s.projectId === selectedProjectId);
+            if (projectSessions.length > 0 && project.runCommand) {
+              // Run the project's configured command in all sessions
+              const sessionData = projectSessions.map(s => ({
+                sessionId: s.id,
+                sessionName: s.name,
+                cwd: s.cwd,
+              }));
+              runAllProjectSessions(sessionData, project.name, project.runCommand);
+            } else if (projectSessions.length > 0) {
+              // No run command configured, open all chats instead
+              const sessionData = projectSessions.map(s => ({
+                sessionId: s.id,
+                sessionName: s.name,
+                cwd: s.cwd,
+              }));
+              openAllProjectSessionChats(sessionData, project.name);
+            }
+          }
+        }
+        break;
+    }
+
+    onShortcutHandled?.();
+  }, [shortcutTrigger, selectedProjectId, projects, sessions, onShortcutHandled]);
 
   // Fetch usage data on mount and refresh every 30 seconds
   useEffect(() => {
@@ -328,46 +393,42 @@ export function Dashboard() {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-white text-black" style={{ fontFamily: 'var(--font-body)' }}>
-      {/* Header - Minimalist monochrome with thick bottom border */}
-      <div className="h-16 bg-white border-b-2 border-black flex items-center justify-between px-6 flex-shrink-0">
-        <div className="flex items-center gap-4">
-          {/* macOS traffic lights - kept but monochrome */}
-          <div className="flex gap-2">
-            <div className="w-3 h-3 bg-black border border-black" />
-            <div className="w-3 h-3 bg-black border border-black" />
-            <div className="w-3 h-3 bg-black border border-black" />
-          </div>
-          {/* Title - Serif display font */}
-          <span className="text-2xl font-bold tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>MindGrid</span>
-          {/* Context badge - monospace */}
-          <span className="text-xs px-3 py-1 bg-black text-white border border-black" style={{ fontFamily: 'var(--font-mono)', letterSpacing: '0.1em' }}>
-            {isSettingsView ? "SETTINGS" : isAnalyticsView ? "ANALYTICS" : "DASHBOARD"}
+    <div className="h-screen flex flex-col bg-[var(--bg-primary)] text-[var(--text-primary)]">
+      {/* Custom Titlebar */}
+      <CustomTitlebar
+        title="MindGrid"
+        subtitle={isSettingsView ? "Settings" : isAnalyticsView ? "Analytics" : "Dashboard"}
+      >
+        {worktreeName && (
+          <span className="badge badge-warning">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+            {worktreeName}
           </span>
-          {worktreeName && (
-            <span className="text-xs px-3 py-1 bg-white text-black border-2 border-black flex items-center gap-2" style={{ fontFamily: 'var(--font-mono)', letterSpacing: '0.05em' }}>
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
-              TESTING: {worktreeName}
-            </span>
-          )}
-        </div>
+        )}
+      </CustomTitlebar>
 
-        {!isSettingsView && !isAnalyticsView && (
-          <div className="flex items-center gap-4">
-            {/* Search input - bottom border only */}
+      {/* Header - Search and actions */}
+      {!isSettingsView && !isAnalyticsView && (
+        <div className="h-14 bg-[var(--bg-secondary)] border-b border-[var(--border-subtle)] flex items-center justify-between px-6 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <span className="text-lg font-semibold text-[var(--text-primary)]">Projects</span>
+            <span className="badge badge-default">{activeProjects.length}</span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {/* Search input */}
             <div className="relative">
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search projects..."
-                className="w-64 px-3 py-2 pl-10 bg-white border-b-2 border-black text-sm text-black placeholder:text-gray-500 focus:outline-none focus:border-b-4 transition-all"
-                style={{ fontFamily: 'var(--font-body)' }}
+                className="w-64 h-9 px-3 pl-9 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent-primary)] focus:ring-2 focus:ring-[var(--accent-primary-muted)] transition-all"
               />
               <svg
-                className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"
+                className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -376,22 +437,24 @@ export function Dashboard() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
             </div>
-            {/* Primary button - black bg with instant inversion on hover */}
+            {/* New Project button */}
             <button
               onClick={() => setShowProjectWizard(true)}
-              className="px-6 py-2 bg-black text-white border-2 border-black hover:bg-white hover:text-black text-sm font-medium flex items-center gap-2 transition-all duration-0 uppercase tracking-wider"
-              style={{ fontFamily: 'var(--font-mono)', letterSpacing: '0.1em' }}
+              className="h-9 px-4 bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-hover)] text-white text-sm font-medium rounded-lg flex items-center gap-2 transition-all hover:shadow-lg hover:shadow-[var(--accent-primary-muted)]"
             >
-              <span className="text-lg">+</span> New Project
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              New Project
             </button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       <div className="flex-1 overflow-hidden flex">
-        {/* Sidebar - Minimalist with black border */}
-        <div className="w-64 border-r-2 border-black p-6 flex flex-col min-h-0 bg-white">
-          <nav className="space-y-2 flex-1">
+        {/* Sidebar */}
+        <div className="w-56 bg-[var(--bg-secondary)] border-r border-[var(--border-subtle)] p-4 flex flex-col min-h-0">
+          <nav className="space-y-1 flex-1">
             <SidebarButton
               label="All Projects"
               icon={
@@ -436,17 +499,19 @@ export function Dashboard() {
               }}
               badge={
                 allActiveSessions.length > 0 ? (
-                  <span className="flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse-dot" />
-                    <span className="text-xs text-blue-400">{allActiveSessions.length}</span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-[var(--accent-success)] animate-pulse-dot" />
+                    <span className="text-xs text-[var(--accent-success)]">{allActiveSessions.length}</span>
                   </span>
                 ) : undefined
               }
             />
           </nav>
 
-          {/* Divider line */}
-          <div className="border-t-2 border-black pt-4 mt-4 space-y-2">
+          {/* Divider */}
+          <div className="divider" />
+
+          <div className="space-y-1">
             <SidebarButton
               label="Analytics"
               icon={
@@ -505,23 +570,13 @@ export function Dashboard() {
               onRunProject={handleRunProject}
             />
           ) : (
-            <div className="h-full overflow-y-auto scrollbar-thin p-8 bg-white">
-              <div className="max-w-6xl mx-auto">
+            <div className="h-full overflow-y-auto scrollbar-thin p-6 bg-[var(--bg-primary)]">
+              <div className="max-w-5xl mx-auto">
                 {activeView === "all" && (
                   <>
                     {/* Usage Limits Card */}
-                    <div className="mb-8">
+                    <div className="mb-6">
                       <UsageLimitsCard />
-                    </div>
-
-                    {/* Page header - Display serif */}
-                    <div className="flex items-center justify-between mb-8 pb-6 border-b-2 border-black">
-                      <h1 className="text-5xl font-bold tracking-tight text-black" style={{ fontFamily: 'var(--font-display)' }}>Projects</h1>
-                      <div className="flex items-center gap-2 text-sm" style={{ fontFamily: 'var(--font-mono)', letterSpacing: '0.05em' }}>
-                        <span className="text-gray-600">
-                          {filteredProjects.length} project{filteredProjects.length !== 1 ? "s" : ""}
-                        </span>
-                      </div>
                     </div>
 
                     {filteredProjects.length === 0 ? (
@@ -549,7 +604,7 @@ export function Dashboard() {
                 {activeView === "recent" && (
                   <>
                     <div className="flex items-center justify-between mb-6">
-                      <h1 className="text-2xl font-semibold text-white">Recent Activity</h1>
+                      <h1 className="text-2xl font-semibold text-[var(--text-primary)]">Recent Activity</h1>
                       <div className="flex items-center gap-3">
                         <select
                           value={activityFilterProject || ""}
@@ -557,7 +612,7 @@ export function Dashboard() {
                             setActivityFilterProject(e.target.value || null);
                             setActivityFilterSession(null);
                           }}
-                          className="px-3 py-1.5 bg-neutral-800 border border-neutral-700 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500"
+                          className="px-3 py-1.5 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)] focus:ring-2 focus:ring-[var(--accent-primary-muted)]"
                         >
                           <option value="">All Projects</option>
                           {activeProjects.map((project) => (
@@ -570,7 +625,7 @@ export function Dashboard() {
                           <select
                             value={activityFilterSession || ""}
                             onChange={(e) => setActivityFilterSession(e.target.value || null)}
-                            className="px-3 py-1.5 bg-neutral-800 border border-neutral-700 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500"
+                            className="px-3 py-1.5 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)] focus:ring-2 focus:ring-[var(--accent-primary-muted)]"
                           >
                             <option value="">All Sessions</option>
                             {activeProjects
@@ -588,7 +643,7 @@ export function Dashboard() {
                               setActivityFilterProject(null);
                               setActivityFilterSession(null);
                             }}
-                            className="px-3 py-1.5 bg-neutral-700 hover:bg-neutral-600 rounded-lg text-sm text-neutral-300 transition-colors"
+                            className="px-3 py-1.5 bg-[var(--bg-hover)] hover:bg-[var(--bg-active)] rounded-lg text-sm text-[var(--text-secondary)] transition-colors"
                           >
                             Clear
                           </button>
@@ -605,23 +660,23 @@ export function Dashboard() {
                           return (
                             <div
                               key={`${item.project.id}-${item.id}`}
-                              className="p-4 bg-neutral-900 border border-neutral-800 rounded-xl hover:border-neutral-700 transition-colors cursor-pointer"
+                              className="card p-4 hover:border-[var(--border-default)] cursor-pointer"
                               onClick={() => setSelectedProjectId(item.project.id)}
                             >
                               <div className="flex items-start gap-3">
                                 <div
                                   className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-medium flex-shrink-0 ${
-                                    item.agent === "coding" ? "bg-blue-500/20 text-blue-400" : "bg-green-500/20 text-green-400"
+                                    item.agent === "coding" ? "bg-[var(--accent-primary-muted)] text-[var(--accent-primary)]" : "bg-[rgba(34,197,94,0.15)] text-[var(--accent-success)]"
                                   }`}
                                 >
                                   {item.agent === "coding" ? "C" : "R"}
                                 </div>
                                 <div className="min-w-0 flex-1">
                                   <div className="flex items-center gap-2 mb-1">
-                                    <span className="text-xs font-medium text-neutral-300">{item.sessionName}</span>
-                                    <span className="text-xs text-neutral-500">{item.time}</span>
+                                    <span className="text-xs font-medium text-[var(--text-secondary)]">{item.sessionName}</span>
+                                    <span className="text-xs text-[var(--text-tertiary)]">{item.time}</span>
                                   </div>
-                                  <p className="text-sm text-neutral-200 mb-2">{item.message}</p>
+                                  <p className="text-sm text-[var(--text-primary)] mb-2">{item.message}</p>
                                   <div className="flex items-center gap-2">
                                     <div
                                       className="w-4 h-4 rounded flex items-center justify-center text-xs"
@@ -629,7 +684,7 @@ export function Dashboard() {
                                     >
                                       {preset?.icon || "?"}
                                     </div>
-                                    <span className="text-xs text-neutral-500">{item.project.name}</span>
+                                    <span className="text-xs text-[var(--text-tertiary)]">{item.project.name}</span>
                                   </div>
                                 </div>
                               </div>
@@ -644,9 +699,9 @@ export function Dashboard() {
                 {activeView === "active" && (
                   <>
                     <div className="flex items-center justify-between mb-6">
-                      <h1 className="text-2xl font-semibold text-white">Active Sessions</h1>
-                      <div className="flex items-center gap-2 text-sm text-neutral-400">
-                        <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse-dot" />
+                      <h1 className="text-2xl font-semibold text-[var(--text-primary)]">Active Sessions</h1>
+                      <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+                        <span className="w-2 h-2 rounded-full bg-[var(--accent-success)] animate-pulse-dot" />
                         <span>{allActiveSessions.length} active</span>
                       </div>
                     </div>
@@ -663,9 +718,9 @@ export function Dashboard() {
                               (session) => session.status === "running" || session.status === "waiting"
                             );
                             return (
-                              <div key={project.id} className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden">
+                              <div key={project.id} className="card overflow-hidden">
                                 <div
-                                  className="flex items-center gap-3 p-4 border-b border-neutral-800 cursor-pointer hover:bg-neutral-800/50 transition-colors"
+                                  className="flex items-center gap-3 p-4 border-b border-[var(--border-subtle)] cursor-pointer hover:bg-[var(--bg-hover)] transition-colors"
                                   onClick={() => setSelectedProjectId(project.id)}
                                 >
                                   <div
@@ -675,28 +730,28 @@ export function Dashboard() {
                                     {preset?.icon || "?"}
                                   </div>
                                   <div className="flex-1">
-                                    <div className="font-medium text-white">{project.name}</div>
-                                    <PathLink path={project.path} className="text-xs text-neutral-500" />
+                                    <div className="font-medium text-[var(--text-primary)]">{project.name}</div>
+                                    <PathLink path={project.path} className="text-xs text-[var(--text-tertiary)]" />
                                   </div>
-                                  <span className="text-xs text-blue-400">{activeSessions.length} active</span>
+                                  <span className="text-xs text-[var(--accent-primary)]">{activeSessions.length} active</span>
                                 </div>
-                                <div className="divide-y divide-neutral-800">
+                                <div className="divide-y divide-[var(--border-subtle)]">
                                   {activeSessions.map((session) => (
                                     <div
                                       key={session.id}
-                                      className="flex items-center justify-between p-4 hover:bg-neutral-800/30 transition-colors cursor-pointer"
+                                      className="flex items-center justify-between p-4 hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
                                       onClick={() => handleOpenSession(project, session)}
                                     >
                                       <div className="flex items-center gap-3">
                                         <StatusDot status={session.status} />
                                         <div>
-                                          <div className="text-sm text-white">{session.name}</div>
-                                          <div className="text-xs text-neutral-500">
+                                          <div className="text-sm text-[var(--text-primary)]">{session.name}</div>
+                                          <div className="text-xs text-[var(--text-tertiary)]">
                                             {session.agents.join(", ") || "Coding"}
                                           </div>
                                         </div>
                                       </div>
-                                      <button className="p-1.5 hover:bg-neutral-700 rounded text-neutral-400 hover:text-white">
+                                      <button className="p-1.5 hover:bg-[var(--bg-active)] rounded-lg text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors">
                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                                         </svg>
@@ -746,6 +801,9 @@ export function Dashboard() {
           />
         );
       })()}
+
+      {/* Transformer Mode Indicator - shows floating indicator when active */}
+      <TransformerModeIndicator />
     </div>
   );
 }
@@ -768,16 +826,19 @@ function SidebarButton({
   return (
     <button
       onClick={onClick}
-      className={`w-full px-4 py-3 text-left text-sm flex items-center gap-3 transition-all duration-100 ${
+      className={`w-full px-3 py-2 text-left text-sm flex items-center gap-3 rounded-lg transition-all ${
         active
-          ? "bg-black text-white border-2 border-black"
-          : "bg-white text-black border-2 border-transparent hover:border-black"
+          ? "bg-[var(--accent-primary-muted)] text-[var(--accent-primary)]"
+          : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
       }`}
-      style={{ fontFamily: 'var(--font-body)' }}
     >
       {icon}
-      {label}
-      {typeof count === "number" && <span className="ml-auto text-xs" style={{ fontFamily: 'var(--font-mono)' }}>{count}</span>}
+      <span className="flex-1">{label}</span>
+      {typeof count === "number" && (
+        <span className="text-xs px-1.5 py-0.5 rounded bg-[var(--bg-hover)] text-[var(--text-tertiary)]">
+          {count}
+        </span>
+      )}
       {badge && <span className="ml-auto">{badge}</span>}
     </button>
   );
@@ -786,18 +847,16 @@ function SidebarButton({
 function EmptyState({ onCreate }: { onCreate: () => void }) {
   return (
     <div className="text-center py-24">
-      {/* Sharp square icon container */}
-      <div className="w-20 h-20 mx-auto mb-6 bg-white border-4 border-black flex items-center justify-center">
-        <svg className="w-10 h-10 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+      <div className="w-20 h-20 mx-auto mb-6 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-2xl flex items-center justify-center">
+        <svg className="w-10 h-10 text-[var(--text-tertiary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
         </svg>
       </div>
-      <h3 className="text-3xl font-bold text-black mb-3" style={{ fontFamily: 'var(--font-display)' }}>No projects yet</h3>
-      <p className="text-gray-600 mb-8" style={{ fontFamily: 'var(--font-body)' }}>Create your first project to get started</p>
+      <h3 className="text-2xl font-semibold text-[var(--text-primary)] mb-3">No projects yet</h3>
+      <p className="text-[var(--text-secondary)] mb-8">Create your first project to get started</p>
       <button
         onClick={onCreate}
-        className="px-8 py-4 bg-black text-white border-2 border-black hover:bg-white hover:text-black font-medium transition-all duration-100 uppercase tracking-wider text-sm"
-        style={{ fontFamily: 'var(--font-mono)', letterSpacing: '0.1em' }}
+        className="px-6 py-3 bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-hover)] text-white font-medium rounded-lg transition-all hover:shadow-lg hover:shadow-[var(--accent-primary-muted)]"
       >
         Create Project
       </button>
@@ -808,13 +867,13 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
 function EmptyActivity() {
   return (
     <div className="text-center py-24">
-      <div className="w-20 h-20 mx-auto mb-6 bg-white border-4 border-black flex items-center justify-center">
-        <svg className="w-10 h-10 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+      <div className="w-20 h-20 mx-auto mb-6 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-2xl flex items-center justify-center">
+        <svg className="w-10 h-10 text-[var(--text-tertiary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
       </div>
-      <h3 className="text-3xl font-bold text-black mb-3" style={{ fontFamily: 'var(--font-display)' }}>No recent activity</h3>
-      <p className="text-gray-600" style={{ fontFamily: 'var(--font-body)' }}>Start a session to see activity here</p>
+      <h3 className="text-2xl font-semibold text-[var(--text-primary)] mb-3">No recent activity</h3>
+      <p className="text-[var(--text-secondary)]">Start a session to see activity here</p>
     </div>
   );
 }
@@ -822,28 +881,32 @@ function EmptyActivity() {
 function EmptyActive() {
   return (
     <div className="text-center py-24">
-      <div className="w-20 h-20 mx-auto mb-6 bg-white border-4 border-black flex items-center justify-center">
-        <svg className="w-10 h-10 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+      <div className="w-20 h-20 mx-auto mb-6 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-2xl flex items-center justify-center">
+        <svg className="w-10 h-10 text-[var(--text-tertiary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
         </svg>
       </div>
-      <h3 className="text-3xl font-bold text-black mb-3" style={{ fontFamily: 'var(--font-display)' }}>No active sessions</h3>
-      <p className="text-gray-600" style={{ fontFamily: 'var(--font-body)' }}>All sessions are idle or completed</p>
+      <h3 className="text-2xl font-semibold text-[var(--text-primary)] mb-3">No active sessions</h3>
+      <p className="text-[var(--text-secondary)]">All sessions are idle or completed</p>
     </div>
   );
 }
 
 function StatusDot({ status }: { status: DashboardSession["status"] }) {
-  const className =
-    status === "running"
-      ? "bg-black"
-      : status === "waiting"
-        ? "bg-gray-500"
-        : status === "completed"
-          ? "bg-gray-300"
-          : "bg-gray-400";
+  const colors = {
+    running: "bg-[var(--accent-success)]",
+    waiting: "bg-[var(--accent-primary)]",
+    completed: "bg-[var(--text-tertiary)]",
+    idle: "bg-[var(--text-tertiary)]",
+  };
 
-  return <span className={`w-2 h-2 bg-black ${className}`} />;
+  const animate = status === "running" || status === "waiting";
+
+  return (
+    <span
+      className={`w-2 h-2 rounded-full ${colors[status] || colors.idle} ${animate ? "animate-pulse-dot" : ""}`}
+    />
+  );
 }
 
 function buildDashboardProjects(

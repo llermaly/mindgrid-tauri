@@ -7,6 +7,8 @@ import {
 } from "../lib/session-utils";
 import { ModelSelector } from "./ModelSelector";
 import { GitignoreFilesSelector } from "./GitignoreFilesSelector";
+import { TemplateQuickSelect } from "./BulkSessionTemplateGrid";
+import type { SessionTemplate } from "../lib/session-templates";
 import type { PermissionMode, CommitMode } from "../lib/claude-types";
 
 export interface SessionVariantConfig {
@@ -79,6 +81,7 @@ export function CreateSessionDialog({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [variantsEnabled, setVariantsEnabled] = useState(false);
   const [variants, setVariants] = useState<SessionVariantConfig[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState<SessionTemplate | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -95,6 +98,7 @@ export function CreateSessionDialog({
       setFilesToCopy([]);
       setVariantsEnabled(false);
       setVariants([]);
+      setSelectedTemplate(null);
       setShowAdvanced(false);
       setError(null);
       setIsCreating(false);
@@ -118,6 +122,29 @@ export function CreateSessionDialog({
     prompt,
     model,
   });
+
+  const handleTemplateSelect = (template: SessionTemplate | null) => {
+    setSelectedTemplate(template);
+    if (template) {
+      setVariantsEnabled(true);
+      // Create variants based on template
+      const newVariants: SessionVariantConfig[] = [];
+      for (let i = 0; i < template.sessionCount; i++) {
+        newVariants.push({
+          id: generateVariantId(),
+          name: template.defaultNames?.[i] || `${template.name} ${i + 1}`,
+          prompt,
+          model,
+        });
+      }
+      setVariants(newVariants);
+      setError(null);
+    } else {
+      setVariantsEnabled(false);
+      setVariants([]);
+      setError(validateSessionName(sessionName));
+    }
+  };
 
   const handleAddVariant = () => {
     setVariants((current) => {
@@ -287,11 +314,11 @@ export function CreateSessionDialog({
           </div>
 
           {/* Variants */}
-          <div className="p-3 border border-dashed border-zinc-700 rounded-lg bg-zinc-900/50 space-y-3">
+          <div className="p-3 border border-dashed border-[var(--border-default)] rounded-lg bg-[var(--bg-surface)] space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm font-medium text-zinc-200">Create variants</div>
-                <p className="text-xs text-zinc-500">
+                <div className="text-sm font-medium text-[var(--text-primary)]">Create variants</div>
+                <p className="text-xs text-[var(--text-tertiary)]">
                   Launch multiple sessions with different prompts or models.
                 </p>
               </div>
@@ -300,6 +327,7 @@ export function CreateSessionDialog({
                 onClick={() => {
                   const enable = !variantsEnabled;
                   setVariantsEnabled(enable);
+                  setSelectedTemplate(null);
                   if (enable && variants.length === 0) {
                     setVariants([createVariantFromBase()]);
                     setError(null);
@@ -309,13 +337,24 @@ export function CreateSessionDialog({
                 }}
                 className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
                   variantsEnabled
-                    ? "border-emerald-500 bg-emerald-500/10 text-emerald-300"
-                    : "border-zinc-700 hover:border-zinc-600 text-zinc-300"
+                    ? "border-[var(--accent-success)] bg-[rgba(34,197,94,0.1)] text-[var(--accent-success)]"
+                    : "border-[var(--border-default)] hover:border-[var(--border-subtle)] text-[var(--text-secondary)]"
                 }`}
               >
                 {variantsEnabled ? "Variants on" : "Enable variants"}
               </button>
             </div>
+
+            {/* Template Quick Select */}
+            {!variantsEnabled && (
+              <div>
+                <p className="text-xs text-[var(--text-tertiary)] mb-2">Quick templates:</p>
+                <TemplateQuickSelect
+                  selectedTemplate={selectedTemplate}
+                  onSelectTemplate={handleTemplateSelect}
+                />
+              </div>
+            )}
 
             {variantsEnabled && (
               <div className="space-y-3">

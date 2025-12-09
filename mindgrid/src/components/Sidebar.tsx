@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useSessionStore, type Project, type Session } from "../stores/sessionStore";
 import { debug } from "../stores/debugStore";
 import { GitStatusIndicator } from "./GitStatusIndicator";
-import { openChatWindow, openNewChatInSession, openMultipleChatWindows, openAllProjectSessionChats } from "../lib/window-manager";
+import { openChatWindow, openNewChatInSession, openAllProjectSessionChats, openWorkspaceWindow } from "../lib/window-manager";
 import { CreateSessionDialog, type SessionConfig, type SessionVariantConfig } from "./CreateSessionDialog";
 import { ProjectWizardDialog } from "./ProjectWizardDialog";
 import { ModelSelector } from "./ModelSelector";
@@ -98,28 +98,18 @@ export function Sidebar({ activePage, onOpenSettings, onNavigateHome }: SidebarP
         createdSessions.push(newSession);
       }
 
-      // Navigate to the new session
+      // Navigate to the new session and open the workspace (no auto chat windows)
       onNavigateHome();
-      setActiveSession(createdSessions[0]?.id ?? null);
-
-      if (createdSessions.length > 1) {
-        debug.info("Sidebar", "Opening variant chat windows", { count: createdSessions.length });
-        await openAllProjectSessionChats(
-          createdSessions.map((session) => ({
-            sessionId: session.id,
-            sessionName: session.name,
-            cwd: session.cwd,
-          })),
-          project.name
-        );
-      } else if (createdSessions[0] && chatTypes.length > 0) {
-        debug.info("Sidebar", "Opening chat windows", { count: chatTypes.length });
-        await openMultipleChatWindows({
+      if (createdSessions[0]) {
+        setActiveSession(createdSessions[0].id);
+        await openWorkspaceWindow({
           sessionId: createdSessions[0].id,
           sessionName: createdSessions[0].name,
           projectName: project.name,
           cwd: createdSessions[0].cwd,
-        }, chatTypes.length);
+        });
+      } else {
+        setActiveSession(null);
       }
     } catch (err) {
       debug.error("Sidebar", "Failed to create project", err);

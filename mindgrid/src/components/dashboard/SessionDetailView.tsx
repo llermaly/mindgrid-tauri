@@ -193,13 +193,13 @@ export function SessionDetailView({
     : session.messages?.length || 0;
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col bg-[var(--bg-primary)]">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-800">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-subtle)]">
         <div className="flex items-center gap-4">
           <button
             onClick={onClose}
-            className="p-1.5 hover:bg-neutral-800 rounded text-neutral-400 hover:text-white transition-colors"
+            className="p-1.5 hover:bg-[var(--bg-hover)] rounded-lg text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -208,15 +208,15 @@ export function SessionDetailView({
           <div className="flex items-center gap-3">
             <StatusBadge status={sessionStatus} size="lg" />
             <div>
-              <h2 className="font-semibold text-white">{session.name}</h2>
-              <p className="text-xs text-neutral-500">{projectName}</p>
+              <h2 className="font-semibold text-[var(--text-primary)]">{session.name}</h2>
+              <p className="text-xs text-[var(--text-tertiary)]">{projectName}</p>
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={onOpenChat}
-            className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium text-white flex items-center gap-2 transition-colors"
+            className="px-4 py-1.5 bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-hover)] rounded-lg text-sm font-medium text-white flex items-center gap-2 transition-colors"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
@@ -225,7 +225,7 @@ export function SessionDetailView({
           </button>
           <button
             onClick={() => setShowDeleteModal(true)}
-            className="p-1.5 hover:bg-neutral-800 rounded text-neutral-400 hover:text-red-400 transition-colors"
+            className="p-1.5 hover:bg-[rgba(239,68,68,0.15)] rounded-lg text-[var(--text-tertiary)] hover:text-[var(--accent-error)] transition-colors"
             title="Delete session"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -241,13 +241,13 @@ export function SessionDetailView({
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex gap-1 px-6 py-2 border-b border-neutral-800">
+      <div className="flex gap-1 px-6 py-2 border-b border-[var(--border-subtle)]">
         {SESSION_TABS.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as typeof activeTab)}
             className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-              activeTab === tab.id ? "bg-neutral-800 text-white" : "text-neutral-400 hover:text-white hover:bg-neutral-800/50"
+              activeTab === tab.id ? "bg-[var(--accent-primary-muted)] text-[var(--accent-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
             }`}
           >
             {tab.label}
@@ -375,26 +375,26 @@ export function SessionDetailView({
       {/* Delete Modal */}
       {showDeleteModal && (
         <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50"
           onClick={() => setShowDeleteModal(false)}
           onKeyDown={handleModalKeyDown}
         >
           <div
-            className="bg-neutral-800 border border-neutral-700 rounded-lg p-4 max-w-sm mx-4 shadow-xl"
+            className="bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-xl p-6 max-w-md mx-4 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-sm font-medium text-neutral-200 mb-2">Delete Session</h3>
-            <p className="text-xs text-neutral-400 mb-4">
+            <h3 className="text-xl font-semibold text-[var(--text-primary)] mb-3">Delete Session</h3>
+            <p className="text-sm text-[var(--text-secondary)] mb-4">
               Are you sure you want to delete "{session.name}"? This action cannot be undone.
             </p>
-            <p className="text-xs text-neutral-500 mb-4">
-              Press Enter to confirm, Escape to cancel
+            <p className="text-xs text-[var(--text-tertiary)] mb-6">
+              Press ENTER to confirm or ESC to cancel
             </p>
-            <div className="flex gap-2 justify-end">
+            <div className="flex gap-3 justify-end">
               <button
                 onClick={() => setShowDeleteModal(false)}
                 disabled={isDeleting}
-                className="px-3 py-1.5 text-xs font-medium rounded bg-neutral-700 hover:bg-neutral-600 text-neutral-300 disabled:opacity-50"
+                className="px-4 py-2 text-sm font-medium bg-[var(--bg-hover)] text-[var(--text-secondary)] rounded-lg hover:bg-[var(--bg-active)] hover:text-[var(--text-primary)] disabled:opacity-50 transition-colors"
               >
                 Cancel
               </button>
@@ -402,11 +402,11 @@ export function SessionDetailView({
                 ref={deleteButtonRef}
                 onClick={handleDelete}
                 disabled={isDeleting}
-                className="px-3 py-1.5 text-xs font-medium rounded bg-red-600 hover:bg-red-500 text-white disabled:opacity-50 flex items-center gap-1 focus:outline-none focus:ring-2 focus:ring-red-400"
+                className="px-4 py-2 text-sm font-medium bg-[var(--accent-error)] text-white rounded-lg hover:bg-[#dc2626] disabled:opacity-50 flex items-center gap-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent-error)] focus-visible:outline-offset-2 transition-colors"
               >
                 {isDeleting ? (
                   <>
-                    <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                     </svg>
@@ -426,9 +426,9 @@ export function SessionDetailView({
 
 function StatCard({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }) {
   return (
-    <div className="bg-neutral-800/50 border border-neutral-700 rounded-xl p-4">
-      <div className={`text-2xl font-semibold ${highlight ? "text-blue-400" : "text-white"}`}>{value}</div>
-      <div className="text-sm text-neutral-400">{label}</div>
+    <div className="card p-4">
+      <div className={`text-2xl font-semibold ${highlight ? "text-[var(--accent-primary)]" : "text-[var(--text-primary)]"}`}>{value}</div>
+      <div className="text-sm text-[var(--text-tertiary)]">{label}</div>
     </div>
   );
 }
@@ -1056,8 +1056,8 @@ function FullMessagesTab({
 function InfoRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex justify-between">
-      <span className="text-neutral-400">{label}</span>
-      <span className={`text-neutral-200 ${mono ? "font-mono text-xs" : ""}`}>{value}</span>
+      <span className="text-[var(--text-tertiary)]">{label}</span>
+      <span className={`text-[var(--text-primary)] ${mono ? "font-mono text-xs" : ""}`}>{value}</span>
     </div>
   );
 }

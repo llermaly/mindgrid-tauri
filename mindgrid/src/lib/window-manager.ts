@@ -753,3 +753,87 @@ export async function getRunWindowCount(sessionId: string): Promise<number> {
   }
 }
 
+/**
+ * Opens run command windows for all sessions in a project, arranged side-by-side
+ * This is useful for running the same command (e.g., npm run dev) across all project variants
+ */
+export async function runAllProjectSessions(
+  sessions: Array<{ sessionId: string; sessionName: string; cwd: string }>,
+  projectName: string,
+  command: string
+): Promise<WebviewWindow[]> {
+  const windows: WebviewWindow[] = [];
+  const count = sessions.length;
+
+  if (count === 0) return windows;
+
+  console.log("[window-manager] Running command for all project sessions:", { projectName, count, command });
+
+  // Calculate positions for all windows
+  const positions = await calculateWindowPositions(count);
+
+  // Create windows with a small delay between each to prevent race conditions
+  for (let i = 0; i < count; i++) {
+    const session = sessions[i];
+    const timestamp = Date.now() + i;
+    const windowLabel = `run-${session.sessionId}-${timestamp}`;
+
+    try {
+      const url = `index.html?mode=terminal&cwd=${encodeURIComponent(session.cwd)}&runCommand=${encodeURIComponent(command)}`;
+
+      const webview = new WebviewWindow(windowLabel, {
+        url,
+        title: `Run - ${session.sessionName} - ${projectName}`,
+        x: Math.round(positions[i].x),
+        y: Math.round(positions[i].y),
+        width: Math.round(positions[i].width),
+        height: Math.round(positions[i].height),
+        minWidth: WINDOW_DEFAULTS.minWidth,
+        minHeight: WINDOW_DEFAULTS.minHeight,
+        decorations: true,
+        resizable: true,
+        focus: false, // Don't steal focus when opening multiple
+      });
+
+      webview.once("tauri://created", () => {
+        console.log(`[window-manager] Run window created: ${windowLabel}`);
+        useSessionStore.getState().markSessionRunOpen(session.sessionId);
+      });
+
+      webview.once("tauri://error", (e) => {
+        console.error(`[window-manager] Run window error: ${windowLabel}`, e);
+      });
+
+      webview.once("tauri://destroyed", () => {
+        console.log(`[window-manager] Run window closed: ${windowLabel}`);
+        void getRunWindowCount(session.sessionId).then(runCount => {
+          if (runCount === 0) {
+            useSessionStore.getState().markSessionRunClosed(session.sessionId);
+          }
+        });
+      });
+
+      windows.push(webview);
+    } catch (error) {
+      console.error(`[window-manager] Failed to create run window for ${session.sessionId}:`, error);
+    }
+
+    // Small delay between window creation
+    if (i < count - 1) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+
+  // Focus the first window after all are created
+  if (windows.length > 0) {
+    await new Promise(resolve => setTimeout(resolve, 200));
+    try {
+      await windows[0].setFocus();
+    } catch (e) {
+      console.log("[window-manager] Could not focus first window:", e);
+    }
+  }
+
+  return windows;
+}
+

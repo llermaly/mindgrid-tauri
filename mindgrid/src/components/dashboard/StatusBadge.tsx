@@ -4,10 +4,10 @@ interface StatusBadgeProps {
 }
 
 const STATUS_STYLES: Record<StatusBadgeProps["status"], { label: string; className: string }> = {
-  running: { label: "Running", className: "bg-blue-500/20 text-blue-400 border-blue-500/40" },
-  waiting: { label: "Waiting", className: "bg-amber-500/20 text-amber-300 border-amber-500/40" },
-  idle: { label: "Idle", className: "bg-zinc-700/40 text-zinc-300 border-zinc-600" },
-  completed: { label: "Completed", className: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" },
+  running: { label: "Running", className: "bg-[var(--accent-primary-muted)] text-[var(--accent-primary)] border-[var(--accent-primary)]/30" },
+  waiting: { label: "Waiting", className: "bg-[rgba(245,158,11,0.15)] text-[var(--accent-warning)] border-[var(--accent-warning)]/30" },
+  idle: { label: "Idle", className: "bg-[var(--bg-hover)] text-[var(--text-tertiary)] border-[var(--border-subtle)]" },
+  completed: { label: "Completed", className: "bg-[rgba(34,197,94,0.15)] text-[var(--accent-success)] border-[var(--accent-success)]/30" },
 };
 
 const SIZE_STYLES: Record<NonNullable<StatusBadgeProps["size"]>, string> = {

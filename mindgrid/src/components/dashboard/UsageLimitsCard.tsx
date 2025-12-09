@@ -45,10 +45,10 @@ export function UsageLimitsCard() {
   };
 
   return (
-    <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
+    <div className="card p-4">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4 text-[var(--text-tertiary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -56,11 +56,11 @@ export function UsageLimitsCard() {
               d="M13 10V3L4 14h7v7l9-11h-7z"
             />
           </svg>
-          <h3 className="text-sm font-medium text-white">Usage Limits</h3>
+          <h3 className="text-sm font-medium text-[var(--text-primary)]">Usage Limits</h3>
         </div>
         <button
           onClick={() => setIsVisible(!isVisible)}
-          className="p-1 rounded hover:bg-neutral-800 text-neutral-500 hover:text-neutral-300 transition-colors"
+          className="p-1 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
           title={isVisible ? "Hide usage limits" : "Show usage limits"}
         >
           <svg
@@ -80,17 +80,17 @@ export function UsageLimitsCard() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 group relative">
               <div className="w-2 h-2 rounded-full bg-purple-500" />
-              <span className="text-xs font-medium text-neutral-300 cursor-help">Claude</span>
+              <span className="text-xs font-medium text-[var(--text-secondary)] cursor-help">Claude</span>
               {claudeUsageData?.rawOutput && (
-                <div className="absolute left-0 top-full mt-1 z-50 hidden group-hover:block bg-neutral-800 border border-neutral-700 rounded p-2 max-w-md max-h-64 overflow-auto shadow-lg">
-                  <pre className="text-[10px] text-neutral-400 whitespace-pre-wrap font-mono">{claudeUsageData.rawOutput}</pre>
+                <div className="absolute left-0 top-full mt-1 z-50 hidden group-hover:block bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg p-2 max-w-md max-h-64 overflow-auto shadow-lg">
+                  <pre className="text-[10px] text-[var(--text-tertiary)] whitespace-pre-wrap font-mono">{claudeUsageData.rawOutput}</pre>
                 </div>
               )}
             </div>
             <button
               onClick={handleRefreshClaude}
               disabled={isRefreshingClaude || claudeLoading}
-              className="p-1 rounded hover:bg-neutral-800 text-neutral-500 hover:text-neutral-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="p-1 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               title="Refresh Claude usage"
             >
               <svg
@@ -110,20 +110,20 @@ export function UsageLimitsCard() {
           </div>
 
           {claudeLoading && !claudeUsageData ? (
-            <div className="text-xs text-neutral-500 pl-4 flex items-center gap-2">
-              <div className="w-3 h-3 border-2 border-neutral-600 border-t-neutral-400 rounded-full animate-spin" />
+            <div className="text-xs text-[var(--text-tertiary)] pl-4 flex items-center gap-2">
+              <div className="w-3 h-3 border-2 border-[var(--border-default)] border-t-[var(--text-tertiary)] rounded-full animate-spin" />
               Loading...
             </div>
           ) : claudeError ? (
-            <div className="text-xs text-neutral-500 pl-4">
+            <div className="text-xs text-[var(--text-tertiary)] pl-4">
               {claudeError.includes('command not found') ? 'Claude CLI not found' : `Error: ${claudeError}`}
             </div>
           ) : !claudeUsageData ? (
-            <div className="text-xs text-neutral-500 pl-4">No data</div>
+            <div className="text-xs text-[var(--text-tertiary)] pl-4">No data</div>
           ) : (
             <div className="space-y-3 pl-4">
               {!claudeUsageData.currentSession && !claudeUsageData.currentWeekAll && !claudeUsageData.currentWeekSonnet && !claudeUsageData.extraUsage && (
-                <div className="text-xs text-neutral-500">No usage data available (hover Claude label to see raw output)</div>
+                <div className="text-xs text-[var(--text-tertiary)]">No usage data available (hover Claude label to see raw output)</div>
               )}
 
               {claudeUsageData.currentSession && (
@@ -151,7 +151,7 @@ export function UsageLimitsCard() {
               )}
 
               {claudeUsageData.extraUsage && (
-                <div className="space-y-1.5 pt-2 border-t border-neutral-700/50">
+                <div className="space-y-1.5 pt-2 border-t border-[var(--border-subtle)]">
                   <UsageLimitBar
                     label="Extra Usage"
                     percentage={claudeUsageData.extraUsage.percentage}
@@ -159,8 +159,8 @@ export function UsageLimitsCard() {
                   />
                   {claudeUsageData.extraUsage.spent !== undefined && claudeUsageData.extraUsage.limit !== undefined && (
                     <div className="flex items-center justify-between text-[11px]">
-                      <span className="text-neutral-400">Spent</span>
-                      <span className={`font-semibold ${claudeUsageData.extraUsage.spent > claudeUsageData.extraUsage.limit ? 'text-red-400' : 'text-neutral-200'}`}>
+                      <span className="text-[var(--text-tertiary)]">Spent</span>
+                      <span className={`font-semibold ${claudeUsageData.extraUsage.spent > claudeUsageData.extraUsage.limit ? 'text-[var(--accent-error)]' : 'text-[var(--text-primary)]'}`}>
                         ${claudeUsageData.extraUsage.spent.toFixed(2)} / ${claudeUsageData.extraUsage.limit.toFixed(2)}
                       </span>
                     </div>
@@ -172,16 +172,16 @@ export function UsageLimitsCard() {
         </div>
 
         {/* Codex Limits */}
-        <div className="space-y-2 pt-3 border-t border-neutral-800">
+        <div className="space-y-2 pt-3 border-t border-[var(--border-subtle)]">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-green-500" />
-              <span className="text-xs font-medium text-neutral-300">Codex</span>
+              <div className="w-2 h-2 rounded-full bg-[var(--accent-success)]" />
+              <span className="text-xs font-medium text-[var(--text-secondary)]">Codex</span>
             </div>
             <button
               onClick={handleRefreshCodex}
               disabled={isRefreshingCodex || codexLoading}
-              className="p-1 rounded hover:bg-neutral-800 text-neutral-500 hover:text-neutral-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="p-1 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               title="Refresh Codex usage"
             >
               <svg
@@ -201,28 +201,28 @@ export function UsageLimitsCard() {
           </div>
 
           {codexLoading && !codexUsageData ? (
-            <div className="text-xs text-neutral-500 pl-4 flex items-center gap-2">
-              <div className="w-3 h-3 border-2 border-neutral-600 border-t-neutral-400 rounded-full animate-spin" />
+            <div className="text-xs text-[var(--text-tertiary)] pl-4 flex items-center gap-2">
+              <div className="w-3 h-3 border-2 border-[var(--border-default)] border-t-[var(--text-tertiary)] rounded-full animate-spin" />
               Loading...
             </div>
           ) : codexError ? (
-            <div className="text-xs text-neutral-500 pl-4">
+            <div className="text-xs text-[var(--text-tertiary)] pl-4">
               <details className="cursor-pointer">
-                <summary className="hover:text-neutral-300">
+                <summary className="hover:text-[var(--text-secondary)]">
                   {codexError.includes('command not found') ? 'Codex CLI not found' : 'Error (click to expand)'}
                 </summary>
-                <pre className="mt-2 text-[10px] text-neutral-400 whitespace-pre-wrap font-mono bg-neutral-800 border border-neutral-700 rounded p-2 max-w-md max-h-64 overflow-auto">{codexError}</pre>
+                <pre className="mt-2 text-[10px] text-[var(--text-tertiary)] whitespace-pre-wrap font-mono bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg p-2 max-w-md max-h-64 overflow-auto">{codexError}</pre>
               </details>
             </div>
           ) : !codexUsageData ? (
-            <div className="text-xs text-neutral-500 pl-4">No data</div>
+            <div className="text-xs text-[var(--text-tertiary)] pl-4">No data</div>
           ) : (
             <div className="space-y-3 pl-4">
               {!codexUsageData.fiveHourLimit && !codexUsageData.weeklyLimit && (
-                <div className="text-xs text-neutral-500">
+                <div className="text-xs text-[var(--text-tertiary)]">
                   <details className="cursor-pointer">
-                    <summary className="hover:text-neutral-300">No usage data available (click for raw output)</summary>
-                    <pre className="mt-2 text-[10px] text-neutral-400 whitespace-pre-wrap font-mono bg-neutral-800 border border-neutral-700 rounded p-2 max-w-md max-h-64 overflow-auto">{codexUsageData.rawOutput}</pre>
+                    <summary className="hover:text-[var(--text-secondary)]">No usage data available (click for raw output)</summary>
+                    <pre className="mt-2 text-[10px] text-[var(--text-tertiary)] whitespace-pre-wrap font-mono bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg p-2 max-w-md max-h-64 overflow-auto">{codexUsageData.rawOutput}</pre>
                   </details>
                 </div>
               )}
@@ -244,9 +244,9 @@ export function UsageLimitsCard() {
               )}
 
               {(codexUsageData.fiveHourLimit || codexUsageData.weeklyLimit) && (
-                <details className="cursor-pointer text-xs text-neutral-500">
-                  <summary className="hover:text-neutral-300">Raw output</summary>
-                  <pre className="mt-2 text-[10px] text-neutral-400 whitespace-pre-wrap font-mono bg-neutral-800 border border-neutral-700 rounded p-2 max-w-md max-h-64 overflow-auto">{codexUsageData.rawOutput}</pre>
+                <details className="cursor-pointer text-xs text-[var(--text-tertiary)]">
+                  <summary className="hover:text-[var(--text-secondary)]">Raw output</summary>
+                  <pre className="mt-2 text-[10px] text-[var(--text-tertiary)] whitespace-pre-wrap font-mono bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg p-2 max-w-md max-h-64 overflow-auto">{codexUsageData.rawOutput}</pre>
                 </details>
               )}
             </div>
@@ -267,10 +267,10 @@ function UsageLimitBar({ label, percentage, resetTime }: UsageLimitBarProps) {
   const displayPercentage = Math.min(100, Math.max(0, percentage));
 
   const getColors = (pct: number) => {
-    if (pct >= 90) return { bar: 'bg-red-500', text: 'text-red-400' };
-    if (pct >= 70) return { bar: 'bg-orange-500', text: 'text-orange-400' };
+    if (pct >= 90) return { bar: 'bg-[var(--accent-error)]', text: 'text-[var(--accent-error)]' };
+    if (pct >= 70) return { bar: 'bg-[var(--accent-warning)]', text: 'text-[var(--accent-warning)]' };
     if (pct >= 50) return { bar: 'bg-yellow-500', text: 'text-yellow-400' };
-    return { bar: 'bg-emerald-500', text: 'text-emerald-400' };
+    return { bar: 'bg-[var(--accent-success)]', text: 'text-[var(--accent-success)]' };
   };
 
   const colors = getColors(displayPercentage);
@@ -278,19 +278,19 @@ function UsageLimitBar({ label, percentage, resetTime }: UsageLimitBarProps) {
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-neutral-200">{label}</span>
+        <span className="text-xs font-medium text-[var(--text-primary)]">{label}</span>
         <span className={`text-xs font-bold ${colors.text}`}>
           {displayPercentage}%
         </span>
       </div>
-      <div className="w-full h-2 bg-neutral-700/50 rounded-full overflow-hidden">
+      <div className="w-full h-2 bg-[var(--bg-hover)] rounded-full overflow-hidden">
         <div
           className={`h-full ${colors.bar} rounded-full transition-all duration-300`}
           style={{ width: `${displayPercentage}%` }}
         />
       </div>
       {resetTime && (
-        <div className="text-[11px] text-neutral-400">
+        <div className="text-[11px] text-[var(--text-tertiary)]">
           Resets {resetTime}
         </div>
       )}
