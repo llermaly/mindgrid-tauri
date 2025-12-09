@@ -2,17 +2,20 @@ import { useState, useRef, useEffect } from "react";
 import type { ProjectPreset } from "../../lib/presets";
 import { StatusBadge } from "./StatusBadge";
 import type { DashboardProject, DashboardSession } from "./types";
+import { PathLink } from "../PathLink";
 
 interface ProjectCardProps {
   project: DashboardProject;
   preset?: ProjectPreset;
   onOpen: (project: DashboardProject) => void;
   onOpenSession: (project: DashboardProject, session: DashboardSession) => void;
+  onOpenSessionChat: (sessionId: string) => void;
+  onCreateSession: (project: DashboardProject) => void;
   onDeleteProject: (projectId: string) => Promise<void>;
   onDeleteSession: (sessionId: string) => Promise<void>;
 }
 
-export function ProjectCard({ project, preset, onOpen, onOpenSession, onDeleteProject, onDeleteSession }: ProjectCardProps) {
+export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSessionChat, onCreateSession, onDeleteProject, onDeleteSession }: ProjectCardProps) {
   const [showDeleteProjectModal, setShowDeleteProjectModal] = useState(false);
   const [showDeleteSessionModal, setShowDeleteSessionModal] = useState<string | null>(null);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
@@ -90,10 +93,27 @@ export function ProjectCard({ project, preset, onOpen, onOpenSession, onDeletePr
           </div>
           <div className="min-w-0 flex-1">
             <h3 className="font-medium text-white truncate">{project.name}</h3>
-            <p className="text-xs text-neutral-500 truncate">{project.path}</p>
+            <PathLink path={project.path} className="text-xs text-neutral-500" />
           </div>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onCreateSession(project);
+            }}
+            className="p-1.5 hover:bg-neutral-800 rounded text-neutral-400 hover:text-emerald-400"
+            title="New session"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 4v16m8-8H4"
+              />
+            </svg>
+          </button>
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -165,9 +185,26 @@ export function ProjectCard({ project, preset, onOpen, onOpenSession, onDeletePr
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
+                      onOpenSessionChat(session.id);
+                    }}
+                    className="p-1 hover:bg-neutral-600 rounded text-neutral-400 hover:text-blue-400"
+                    title="Open chat"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                      />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
                       setShowDeleteSessionModal(session.id);
                     }}
-                    className="p-1 hover:bg-neutral-700 rounded text-neutral-400 hover:text-red-400"
+                    className="p-1 hover:bg-neutral-600 rounded text-neutral-400 hover:text-red-400"
                     title="Delete session"
                   >
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

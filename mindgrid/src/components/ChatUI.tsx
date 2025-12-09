@@ -11,6 +11,7 @@ import { CodexUsagePopup } from "./CodexUsagePopup";
 import { useCodexRunner } from "../hooks/useCodexRunner";
 import { useUsageStore } from "../stores/usageStore";
 import { getModelById } from "../lib/models";
+import { Terminal } from "./Terminal";
 
 interface PrInfo {
   number: number;
@@ -186,6 +187,7 @@ export function ChatUI({
   const [activeFilters, setActiveFilters] = useState<string[]>(['all']);
   const [attachments, setAttachments] = useState<File[]>([]);
   const [isListening, setIsListening] = useState(false);
+  const [showTerminal, setShowTerminal] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -434,12 +436,19 @@ export function ChatUI({
     }
   }, [onGitPush, isPushing, onGetPrInfo]);
 
-  // Fetch PR info on mount and after push (only if gh is available)
+  // Use ref for onGetPrInfo to avoid triggering effect on every render
+  const onGetPrInfoRef = useRef(onGetPrInfo);
   useEffect(() => {
-    if (ghAvailable && onGetPrInfo && cwd?.includes('.mindgrid/worktrees')) {
-      onGetPrInfo().then(setPrInfo);
+    onGetPrInfoRef.current = onGetPrInfo;
+  }, [onGetPrInfo]);
+
+  // Fetch PR info on mount (only if gh is available)
+  // Note: We use a ref for the callback to prevent re-fetching on every render
+  useEffect(() => {
+    if (ghAvailable && onGetPrInfoRef.current && cwd?.includes('.mindgrid/worktrees')) {
+      onGetPrInfoRef.current().then(setPrInfo);
     }
-  }, [ghAvailable, onGetPrInfo, cwd]);
+  }, [ghAvailable, cwd]); // Intentionally NOT including onGetPrInfo to prevent excessive API calls
 
   const handleCreatePr = useCallback(async () => {
     if (!onCreatePr || isCreatingPr) return;
@@ -491,20 +500,17 @@ export function ChatUI({
                 ? (isCodexRunning ? "bg-blue-400 animate-pulse" : "bg-blue-500")
                 : (isRunning ? "bg-green-500 animate-pulse" : "bg-zinc-600")
             }`} />
-            <span className="text-sm font-medium text-zinc-200">
-              {activeAgent === "codex" ? "Codex" : "Claude"}
-            </span>
+            {onModelChange && (
+              <ModelSelector
+                value={model || null}
+                onChange={onModelChange}
+                size="sm"
+              />
+            )}
             <span className="text-xs px-2 py-1 rounded border border-zinc-700 text-neutral-400">
               {activeAgent === "codex" ? (isCodexRunning ? "Running" : "Idle") : (isRunning ? "Running" : "Idle")}
             </span>
           </div>
-          {onModelChange && (
-            <ModelSelector
-              value={model || null}
-              onChange={onModelChange}
-              size="sm"
-            />
-          )}
           <div className="flex items-center gap-2">
             <button
               onClick={() => setThinkingMode((v) => !v)}
@@ -631,13 +637,6 @@ export function ChatUI({
                 ) : null
               )}
             </div>
-            <button
-              onClick={() => setFiltersExpanded((v) => !v)}
-              className="px-2 py-1 rounded text-xs border border-zinc-700 text-neutral-400 hover:text-white hover:border-zinc-500"
-              title="Toggle message filters"
-            >
-              Filters
-            </button>
           </div>
 
           {/* Permission Mode Selector */}
@@ -847,6 +846,20 @@ export function ChatUI({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Terminal Toggle Button */}
+          {cwd && (
+            <button
+              onClick={() => setShowTerminal(!showTerminal)}
+              className={`p-1.5 rounded hover:bg-zinc-700 ${showTerminal ? 'text-green-400' : 'text-zinc-400 hover:text-zinc-200'}`}
+              title={showTerminal ? "Hide terminal" : "Show terminal"}
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <polyline points="4 17 10 11 4 5" />
+                <line x1="12" y1="19" x2="20" y2="19" />
+              </svg>
+            </button>
+          )}
+
           {/* Clear Session Button */}
           {messages.length > 0 && onClearSession && (
             <button
@@ -1058,6 +1071,13 @@ export function ChatUI({
         )}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Terminal Panel */}
+      {showTerminal && cwd && (
+        <div className="h-64 border-t border-zinc-700 flex-shrink-0">
+          <Terminal mode="raw" cwd={cwd} />
+        </div>
+      )}
 
       {/* Input */}
       <div className="p-4 border-t border-zinc-700 bg-zinc-800/30">

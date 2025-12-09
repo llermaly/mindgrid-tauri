@@ -8,7 +8,8 @@ import { FoundationsPanel } from "./components/workspace/panels/FoundationsPanel
 import { GitPanel } from "./components/workspace/panels/GitPanel";
 import type { ParsedMessage, ClaudeEvent } from "./lib/claude-types";
 import { useSessionStore, type Session, type PanelType } from "./stores/sessionStore";
-import { isDevMode } from "./lib/dev-mode";
+import { isDevMode, getWorktreeInfo } from "./lib/dev-mode";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 function getWindowParams(): { mode: "main" | "workspace"; sessionId: string | null } {
   const params = new URLSearchParams(window.location.search);
@@ -46,13 +47,27 @@ function App() {
     initialize();
   }, [initialize]);
 
-  // Check dev mode on mount (workspace windows still expect this env flag)
+  // Check dev mode and worktree status on mount
   useEffect(() => {
-    isDevMode().then((enabled) => {
-      if (enabled) {
+    const checkEnvironment = async () => {
+      const devEnabled = await isDevMode();
+      const worktree = await getWorktreeInfo();
+
+      if (devEnabled) {
         console.log("[App] Developer mode enabled");
       }
-    });
+
+      // Update window title if running from a worktree
+      if (worktree) {
+        console.log("[App] Running from worktree:", worktree);
+        const win = getCurrentWindow();
+        const currentTitle = await win.title();
+        if (!currentTitle.includes("TESTING")) {
+          await win.setTitle(`${currentTitle} [TESTING: ${worktree}]`);
+        }
+      }
+    };
+    checkEnvironment();
   }, []);
 
   const effectiveSessionId = windowMode === "workspace" && urlSessionId ? urlSessionId : activeSessionId;

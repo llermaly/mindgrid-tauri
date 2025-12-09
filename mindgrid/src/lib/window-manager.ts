@@ -414,6 +414,74 @@ export async function openMultipleChatWindows(
 }
 
 /**
+ * Opens chat windows for all sessions in a project, arranged side-by-side
+ */
+export async function openAllProjectSessionChats(
+  sessions: Array<{ sessionId: string; sessionName: string; cwd: string }>,
+  projectName: string
+): Promise<WebviewWindow[]> {
+  const windows: WebviewWindow[] = [];
+  const count = sessions.length;
+
+  if (count === 0) return windows;
+
+  console.log("[window-manager] Opening all project sessions:", { projectName, count });
+
+  // Calculate positions for all windows
+  const positions = await calculateWindowPositions(count);
+
+  // Create windows with a small delay between each to prevent race conditions
+  for (let i = 0; i < count; i++) {
+    const session = sessions[i];
+    const windowLabel = `chat-${session.sessionId}`;
+
+    // Check if window already exists
+    try {
+      const existingWindows = await getAllWebviewWindows();
+      const existing = existingWindows.find(w => w.label === windowLabel);
+      if (existing) {
+        // Move existing window to position and focus
+        await existing.setPosition(new PhysicalPosition(Math.round(positions[i].x), Math.round(positions[i].y)));
+        await existing.setSize(new PhysicalSize(Math.round(positions[i].width), Math.round(positions[i].height)));
+        windows.push(existing);
+        continue;
+      }
+    } catch (e) {
+      console.log("[window-manager] Error checking existing window:", e);
+    }
+
+    const options: ChatWindowOptions = {
+      sessionId: session.sessionId,
+      sessionName: session.sessionName,
+      projectName,
+      cwd: session.cwd,
+    };
+
+    const webview = await openChatWindowAtPosition(options, positions[i], windowLabel);
+    if (webview) {
+      windows.push(webview);
+    }
+
+    // Small delay between window creation
+    if (i < count - 1) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+
+  // Focus the first window after all are created
+  if (windows.length > 0) {
+    await new Promise(resolve => setTimeout(resolve, 200));
+    try {
+      await windows[0].setFocus();
+    } catch (e) {
+      console.log("[window-manager] Could not focus first window:", e);
+    }
+  }
+
+  return windows;
+}
+
+/**
  * Close all chat windows for a specific session
  */
 export async function closeAllSessionChatWindows(sessionId: string): Promise<number> {

@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { PRESETS, type ChatType } from "../../lib/presets";
 import { openChatWindow, openMultipleChatWindows } from "../../lib/window-manager";
 import { useSessionStore, type Project, type Session } from "../../stores/sessionStore";
 import { useUsageStore } from "../../stores/usageStore";
+import { getWorktreeInfo } from "../../lib/dev-mode";
 import { ProjectWizardDialog } from "../ProjectWizardDialog";
 import { ProjectCard } from "./ProjectCard";
 import { ProjectDetailView } from "./ProjectDetailView";
@@ -12,6 +14,7 @@ import { UsageLimitsCard } from "./UsageLimitsCard";
 import type { DashboardProject, DashboardSession, DashboardActivity, DashboardGitInfo } from "./types";
 import { SettingsPage } from "../../pages/SettingsPage";
 import { CreateSessionDialog, type SessionConfig } from "../CreateSessionDialog";
+import { PathLink } from "../PathLink";
 
 type DashboardView = "all" | "recent" | "active" | "settings";
 
@@ -39,6 +42,13 @@ export function Dashboard() {
   const [showCreateSessionDialog, setShowCreateSessionDialog] = useState(false);
   const [activityFilterProject, setActivityFilterProject] = useState<string | null>(null);
   const [activityFilterSession, setActivityFilterSession] = useState<string | null>(null);
+  const [createSessionForProjectId, setCreateSessionForProjectId] = useState<string | null>(null);
+  const [worktreeName, setWorktreeName] = useState<string | null>(null);
+
+  // Check if running from a worktree
+  useEffect(() => {
+    getWorktreeInfo().then(setWorktreeName);
+  }, []);
 
   // Fetch usage data on mount and refresh every 30 seconds
   useEffect(() => {
@@ -144,19 +154,37 @@ export function Dashboard() {
     }
   };
 
-  const handleOpenCreateSessionDialog = () => {
+  const handleOpenCreateSessionDialog = (projectId?: string) => {
+    if (projectId) {
+      setCreateSessionForProjectId(projectId);
+    }
     setShowCreateSessionDialog(true);
   };
 
   const handleCreateSession = async (config: SessionConfig) => {
-    if (!selectedProjectId) return;
-    const project = projects[selectedProjectId];
+    const targetProjectId = createSessionForProjectId || selectedProjectId;
+    if (!targetProjectId) return;
+    const project = projects[targetProjectId];
     if (!project) return;
 
-    const newSession = await createSession(selectedProjectId, config.name, project.path);
+    const newSession = await createSession(targetProjectId, config.name, project.path);
+
+    // Copy selected gitignored files to worktree
+    if (config.filesToCopy && config.filesToCopy.length > 0 && newSession.cwd !== project.path) {
+      try {
+        await invoke<string[]>("copy_files_to_worktree", {
+          projectPath: project.path,
+          worktreePath: newSession.cwd,
+          files: config.filesToCopy,
+        });
+      } catch (copyErr) {
+        console.error("Failed to copy files:", copyErr);
+        // Don't fail the whole operation, just log the error
+      }
+    }
 
     // Update session with additional config
-    const { setPermissionMode, setCommitMode, setSessionModel } = useSessionStore.getState();
+    const { setPermissionMode, setCommitMode, setSessionModel, updateSession } = useSessionStore.getState();
 
     if (config.permissionMode !== "default") {
       setPermissionMode(newSession.id, config.permissionMode);
@@ -167,32 +195,58 @@ export function Dashboard() {
     if (config.model) {
       setSessionModel(newSession.id, config.model);
     }
+    if (config.prompt) {
+      await updateSession(newSession.id, { initialPrompt: config.prompt });
+    }
 
+    // Navigate to the newly created session
+    setSelectedProjectId(targetProjectId);
     setSelectedSessionId(newSession.id);
+    setCreateSessionForProjectId(null);
   };
 
   const handleCreateProjectWithChats = async (
     projectName: string,
     projectPath: string,
     sessionName: string,
-    chatTypes: ChatType[]
+    chatTypes: ChatType[],
+    filesToCopy?: string[]
   ) => {
-    const project = await createProject(projectName, projectPath);
-    const session = await createSession(project.id, sessionName, projectPath);
+    try {
+      const project = await createProject(projectName, projectPath);
+      const session = await createSession(project.id, sessionName, projectPath);
 
-    if (chatTypes.length > 0) {
-      await openMultipleChatWindows(
-        {
-          sessionId: session.id,
-          sessionName: session.name,
-          projectName: project.name,
-          cwd: session.cwd,
-        },
-        chatTypes.length
-      );
+    // Copy selected gitignored files to worktree
+      if (filesToCopy && filesToCopy.length > 0 && session.cwd !== projectPath) {
+        try {
+          await invoke<string[]>("copy_files_to_worktree", {
+            projectPath,
+            worktreePath: session.cwd,
+            files: filesToCopy,
+          });
+        } catch (copyErr) {
+          console.error("Failed to copy files:", copyErr);
+          // Don't fail the whole operation, just log the error
+        }
+      }
+
+      if (chatTypes.length > 0) {
+        await openMultipleChatWindows(
+          {
+            sessionId: session.id,
+            sessionName: session.name,
+            projectName: project.name,
+            cwd: session.cwd,
+          },
+          chatTypes.length
+        );
+      }
+
+      setSelectedProjectId(project.id);
+    } catch (err) {
+      // Show error to user (the error will bubble up to ProjectWizardDialog)
+      throw err;
     }
-
-    setSelectedProjectId(project.id);
   };
 
   return (
@@ -206,6 +260,14 @@ export function Dashboard() {
           </div>
           <span className="text-lg font-semibold">MindGrid</span>
           <span className="text-xs text-neutral-500 px-2 py-0.5 bg-neutral-800 rounded">{isSettingsView ? "Settings" : "Dashboard"}</span>
+          {worktreeName && (
+            <span className="text-xs text-orange-400 px-2 py-0.5 bg-orange-500/20 border border-orange-500/30 rounded flex items-center gap-1.5">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+              TESTING: {worktreeName}
+            </span>
+          )}
         </div>
 
         {!isSettingsView && (
@@ -364,6 +426,8 @@ export function Dashboard() {
                             preset={presetMap[project.presetId]}
                             onOpen={(p) => setSelectedProjectId(p.id)}
                             onOpenSession={handleOpenSession}
+                            onOpenSessionChat={handleOpenSessionChat}
+                            onCreateSession={(p) => handleOpenCreateSessionDialog(p.id)}
                             onDeleteProject={handleDeleteProject}
                             onDeleteSession={handleDeleteSession}
                           />
@@ -503,7 +567,7 @@ export function Dashboard() {
                                   </div>
                                   <div className="flex-1">
                                     <div className="font-medium text-white">{project.name}</div>
-                                    <div className="text-xs text-neutral-500">{project.path}</div>
+                                    <PathLink path={project.path} className="text-xs text-neutral-500" />
                                   </div>
                                   <span className="text-xs text-blue-400">{activeSessions.length} active</span>
                                 </div>
@@ -550,15 +614,24 @@ export function Dashboard() {
         onCreate={handleCreateProjectWithChats}
       />
 
-      {selectedProject && (
-        <CreateSessionDialog
-          isOpen={showCreateSessionDialog}
-          projectName={selectedProject.name}
-          existingSessionCount={selectedProject.sessions.length}
-          onClose={() => setShowCreateSessionDialog(false)}
-          onCreate={handleCreateSession}
-        />
-      )}
+      {(() => {
+        const dialogProject = createSessionForProjectId
+          ? activeProjects.find(p => p.id === createSessionForProjectId)
+          : selectedProject;
+        return dialogProject && (
+          <CreateSessionDialog
+            isOpen={showCreateSessionDialog}
+            projectName={dialogProject.name}
+            projectPath={dialogProject.path}
+            existingSessionCount={dialogProject.sessions.length}
+            onClose={() => {
+              setShowCreateSessionDialog(false);
+              setCreateSessionForProjectId(null);
+            }}
+            onCreate={handleCreateSession}
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -680,6 +753,7 @@ function buildDashboardProjects(
         status,
         agents: deriveAgents(session),
         updatedAt: session.updatedAt || session.createdAt || Date.now(),
+        initialPrompt: session.initialPrompt,
       };
     });
 

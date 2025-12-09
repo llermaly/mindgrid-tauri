@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { PRESETS, CHAT_TYPES, type ProjectPreset, type ChatType } from "../lib/presets";
+import { GitignoreFilesSelector } from "./GitignoreFilesSelector";
 
 // Hardcoded projects directory - will be a setting later
 const PROJECTS_DIRECTORY = "/Users/gustavollermalylarrain/Documents/proyectos/personales";
@@ -18,7 +19,8 @@ interface ProjectWizardDialogProps {
     projectName: string,
     projectPath: string,
     sessionName: string,
-    chatTypes: ChatType[]
+    chatTypes: ChatType[],
+    filesToCopy?: string[]
   ) => Promise<void>;
 }
 
@@ -39,6 +41,7 @@ export function ProjectWizardDialog({
   const [projectName, setProjectName] = useState("");
   const [sessionName, setSessionName] = useState("Main");
   const [chatTypes, setChatTypes] = useState<ChatType[]>([]);
+  const [filesToCopy, setFilesToCopy] = useState<string[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -54,6 +57,7 @@ export function ProjectWizardDialog({
       setProjectName("");
       setSessionName("Main");
       setChatTypes([]);
+      setFilesToCopy([]);
       setIsCreating(false);
       setError(null);
       loadRepos();
@@ -146,7 +150,7 @@ export function ProjectWizardDialog({
     setIsCreating(true);
     setError(null);
     try {
-      await onCreate(projectName.trim(), projectPath, sessionName.trim(), chatTypes);
+      await onCreate(projectName.trim(), projectPath, sessionName.trim(), chatTypes, filesToCopy);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create project");
@@ -404,6 +408,14 @@ export function ProjectWizardDialog({
                   </p>
                 )}
               </div>
+
+              {/* Gitignored Files Selector */}
+              <GitignoreFilesSelector
+                projectPath={projectPath}
+                selectedFiles={filesToCopy}
+                onSelectionChange={setFilesToCopy}
+                disabled={isCreating}
+              />
 
               {/* Error message */}
               {error && (

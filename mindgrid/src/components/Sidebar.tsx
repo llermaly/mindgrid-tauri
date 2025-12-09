@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useSessionStore, type Project, type Session } from "../stores/sessionStore";
 import { debug } from "../stores/debugStore";
 import { GitStatusIndicator } from "./GitStatusIndicator";
-import { openChatWindow, openNewChatInSession, openMultipleChatWindows } from "../lib/window-manager";
+import { openChatWindow, openNewChatInSession, openMultipleChatWindows, openAllProjectSessionChats } from "../lib/window-manager";
 import { CreateSessionDialog, type SessionConfig } from "./CreateSessionDialog";
 import { ProjectWizardDialog } from "./ProjectWizardDialog";
 import { ModelSelector } from "./ModelSelector";
@@ -38,10 +39,11 @@ export function Sidebar({ activePage, onOpenSettings, onNavigateHome }: SidebarP
     projectName: string,
     projectPath: string,
     sessionName: string,
-    chatTypes: ChatType[]
+    chatTypes: ChatType[],
+    filesToCopy?: string[]
   ) => {
     try {
-      debug.info("Sidebar", "Creating project with wizard", { projectName, projectPath, sessionName, chatTypes });
+      debug.info("Sidebar", "Creating project with wizard", { projectName, projectPath, sessionName, chatTypes, filesToCopy });
 
       // Create the project
       const project = await createProject(projectName, projectPath);
@@ -52,6 +54,27 @@ export function Sidebar({ activePage, onOpenSettings, onNavigateHome }: SidebarP
       // Create ONE session for this project
       const session = await createSession(project.id, sessionName, projectPath);
       debug.info("Sidebar", "Session created", { id: session.id, name: sessionName });
+
+      // Copy selected gitignored files to worktree
+      if (filesToCopy && filesToCopy.length > 0 && session.cwd !== projectPath) {
+        try {
+          debug.info("Sidebar", "Copying files to worktree", { files: filesToCopy, dest: session.cwd });
+          const copied = await invoke<string[]>("copy_files_to_worktree", {
+            projectPath,
+            worktreePath: session.cwd,
+            files: filesToCopy,
+          });
+          debug.info("Sidebar", "Files copied successfully", { copied });
+        } catch (copyErr) {
+          debug.error("Sidebar", "Failed to copy files to worktree", copyErr);
+          console.error("Failed to copy files:", copyErr);
+          // Don't fail the whole operation, just log the error
+        }
+      }
+
+      // Navigate to the new session
+      onNavigateHome();
+      setActiveSession(session.id);
 
       // Open chat windows for each selected chat type
       if (chatTypes.length > 0) {
@@ -76,7 +99,25 @@ export function Sidebar({ activePage, onOpenSettings, onNavigateHome }: SidebarP
 
   const handleCreateSessionConfirm = async (config: SessionConfig) => {
     if (!createSessionForProject) return;
-    const newSession = await createSession(createSessionForProject.id, config.name, createSessionForProject.path);
+    const projectPath = createSessionForProject.path;
+    const newSession = await createSession(createSessionForProject.id, config.name, projectPath);
+
+    // Copy selected gitignored files to worktree
+    if (config.filesToCopy && config.filesToCopy.length > 0 && newSession.cwd !== projectPath) {
+      try {
+        debug.info("Sidebar", "Copying files to worktree", { files: config.filesToCopy, dest: newSession.cwd });
+        const copied = await invoke<string[]>("copy_files_to_worktree", {
+          projectPath,
+          worktreePath: newSession.cwd,
+          files: config.filesToCopy,
+        });
+        debug.info("Sidebar", "Files copied successfully", { copied });
+      } catch (copyErr) {
+        debug.error("Sidebar", "Failed to copy files to worktree", copyErr);
+        console.error("Failed to copy files:", copyErr);
+        // Don't fail the whole operation, just log the error
+      }
+    }
 
     // Apply additional config
     const { setPermissionMode, setCommitMode, setSessionModel } = useSessionStore.getState();
@@ -91,6 +132,10 @@ export function Sidebar({ activePage, onOpenSettings, onNavigateHome }: SidebarP
     }
 
     setCreateSessionForProject(null);
+
+    // Navigate to the new session
+    onNavigateHome();
+    setActiveSession(newSession.id);
   };
 
   const toggleProject = (projectId: string) => {
@@ -180,6 +225,7 @@ export function Sidebar({ activePage, onOpenSettings, onNavigateHome }: SidebarP
       <CreateSessionDialog
         isOpen={createSessionForProject !== null}
         projectName={createSessionForProject?.name ?? ""}
+        projectPath={createSessionForProject?.path ?? ""}
         existingSessionCount={createSessionForProject?.sessions.length ?? 0}
         onClose={() => setCreateSessionForProject(null)}
         onCreate={handleCreateSessionConfirm}
@@ -323,6 +369,31 @@ function ProjectItem({
                   </svg>
                   New Session
                 </button>
+                {sessions.length > 0 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openAllProjectSessionChats(
+                        sessions.map(s => ({
+                          sessionId: s.id,
+                          sessionName: s.name,
+                          cwd: s.cwd,
+                        })),
+                        project.name
+                      );
+                      setShowMenu(false);
+                    }}
+                    className="w-full px-3 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2"
+                  >
+                    <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                      <rect x="3" y="3" width="7" height="7" rx="1" />
+                      <rect x="14" y="3" width="7" height="7" rx="1" />
+                      <rect x="3" y="14" width="7" height="7" rx="1" />
+                      <rect x="14" y="14" width="7" height="7" rx="1" />
+                    </svg>
+                    Open All Chats ({sessions.length})
+                  </button>
+                )}
                 <div className="px-3 py-2 border-t border-zinc-700">
                   <div className="text-xs text-zinc-500 mb-1.5">Default Model</div>
                   <div onClick={(e) => e.stopPropagation()}>
