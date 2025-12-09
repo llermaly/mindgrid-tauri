@@ -24,6 +24,7 @@ import { AIAgentStatusBar } from "@/components/AIAgentStatusBar"
 import { ChatInterface } from "@/components/ChatInterface"
 import { CodeView } from "@/components/CodeView"
 import { HistoryView } from "@/components/HistoryView"
+import { WorkspaceGallery } from "@/components/WorkspaceGallery"
 import { Button } from "@/components/ui/button"
 import { useRecentProjects, RecentProject } from "@/hooks/use-recent-projects"
 import { useSettings } from "@/contexts/settings-context"
@@ -109,6 +110,7 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState<string>('chat')
   const [selectedAgent, setSelectedAgent] = useState<string | undefined>(undefined)
   const [welcomePhrase, setWelcomePhrase] = useState<string>("")
+  const [showGallery, setShowGallery] = useState(false)
   const { showSuccess, showError } = useToast()
   const projectsRefreshRef = useRef<{ refresh: () => void } | null>(null)
   const { projects: allRecentProjects } = useRecentProjects()
@@ -214,6 +216,7 @@ function AppContent() {
 
   const handleProjectSelect = (project: RecentProject) => {
     setActiveTab('chat') // Default to chat tab when project is selected
+    setShowGallery(false) // Hide gallery when switching to project
     // Ensure backend marks it active and updates recents and use returned project info
     invoke<RecentProject>('open_existing_project', { project_path: project.path, projectPath: project.path })
       .then(setCurrentProject)
@@ -227,6 +230,12 @@ function AppContent() {
   const handleBackToWelcome = () => {
     setCurrentProject(null)
     setActiveTab('chat') // Reset to chat tab when going back to welcome
+    setShowGallery(false)
+  }
+
+  const handleGalleryClick = () => {
+    setShowGallery(true)
+    setCurrentProject(null)
   }
 
   const toggleChat = () => {
@@ -439,13 +448,14 @@ function AppContent() {
           enabled={Boolean(settings.code_settings?.auto_collapse_sidebar)}
           projectActive={Boolean(currentProject)}
         />
-        <AppSidebar 
-          isSettingsOpen={isSettingsOpen} 
+        <AppSidebar
+          isSettingsOpen={isSettingsOpen}
           setIsSettingsOpen={setIsSettingsOpen}
           onRefreshProjects={projectsRefreshRef}
           onProjectSelect={handleProjectSelect}
           currentProject={currentProject}
           onHomeClick={handleBackToWelcome}
+          onGalleryClick={handleGalleryClick}
         />
         <SidebarInset className="flex flex-col h-screen">
         {/* Title bar drag area */}
@@ -489,6 +499,10 @@ function AppContent() {
                       <Copy className="h-3 w-3" />
                     </Button>
                   </>
+                ) : showGallery ? (
+                  <BreadcrumbItem>
+                    <BreadcrumbPage>Claude Workspace Gallery</BreadcrumbPage>
+                  </BreadcrumbItem>
                 ) : (
                   <BreadcrumbItem>
                     <BreadcrumbPage>Welcome</BreadcrumbPage>
@@ -500,9 +514,11 @@ function AppContent() {
           </div>
         </header>
         <div className="flex-1 flex flex-col min-h-0">
-          {currentProject ? (
-            <ProjectView 
-              project={currentProject} 
+          {showGallery ? (
+            <WorkspaceGallery />
+          ) : currentProject ? (
+            <ProjectView
+              project={currentProject}
               selectedAgent={selectedAgent}
               onAgentChange={setSelectedAgent}
               activeTab={activeTab}

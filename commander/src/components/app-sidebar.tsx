@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Clock, GitBranch, Folder, FolderGit, Home } from "lucide-react"
+import { Clock, GitBranch, Folder, FolderGit, Home, Sparkles } from "lucide-react"
 
 import { SearchForm } from "@/components/search-form"
 import { NavUser } from "@/components/NavUser"
@@ -34,9 +34,10 @@ interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   onProjectSelect?: (project: RecentProject) => void
   currentProject?: RecentProject | null
   onHomeClick?: () => void
+  onGalleryClick?: () => void
 }
 
-export function AppSidebar({ isSettingsOpen, setIsSettingsOpen, onRefreshProjects, onProjectSelect, currentProject, onHomeClick, ...props }: AppSidebarProps) {
+export function AppSidebar({ isSettingsOpen, setIsSettingsOpen, onRefreshProjects, onProjectSelect, currentProject, onHomeClick, onGalleryClick, ...props }: AppSidebarProps) {
   const { projects, loading, error, refreshProjects } = useRecentProjects()
 
   // Expose refresh function to parent component via ref
@@ -97,6 +98,23 @@ export function AppSidebar({ isSettingsOpen, setIsSettingsOpen, onRefreshProject
                   >
                     <Home className="size-4" />
                     <span>Home</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild>
+                  <a
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      if (onGalleryClick) {
+                        onGalleryClick()
+                      }
+                    }}
+                    className="flex items-center gap-2"
+                  >
+                    <Sparkles className="size-4" />
+                    <span>Claude Workspace Gallery</span>
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>
