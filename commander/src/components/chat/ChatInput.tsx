@@ -4,7 +4,8 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Lightbulb, FolderOpen, Send, PenLine } from 'lucide-react'
+import { Lightbulb, FolderOpen, Send, PenLine, Mic, Square } from 'lucide-react'
+import { useSystemAudio } from '@/hooks/use-system-audio'
 
 export interface AutocompleteOption {
   id: string
@@ -99,6 +100,40 @@ export function ChatInput(props: ChatInputProps) {
 
   const resolvedDefaultAgentLabel = defaultAgentLabel ?? 'Claude Code CLI'
   const defaultPlaceholder = `Send a message (defaults to ${resolvedDefaultAgentLabel}). Use /agent to target a specific CLI.`
+
+  // System audio recording hook
+  const {
+    isRecording,
+    isProcessing,
+    startRecording,
+    stopRecording,
+    interimTranscript,
+    error: audioError,
+  } = useSystemAudio({
+    onTranscript: (text) => {
+      // Append transcribed text to the input
+      if (inputRef.current) {
+        const currentValue = inputRef.current.value
+        const newValue = currentValue ? `${currentValue} ${text}` : text
+        // Create a synthetic event to update the input
+        const event = {
+          target: { value: newValue },
+        } as React.ChangeEvent<HTMLInputElement>
+        onInputChange(event)
+      }
+    },
+    onError: (error) => {
+      console.error('Audio recording error:', error)
+    },
+  })
+
+  const handleMicClick = React.useCallback(() => {
+    if (isRecording) {
+      stopRecording()
+    } else {
+      startRecording()
+    }
+  }, [isRecording, startRecording, stopRecording])
 
   // Global shortcut for starting a new chat session
   React.useEffect(() => {
@@ -280,10 +315,52 @@ export function ChatInput(props: ChatInputProps) {
             </button>
           )}
         </div>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant={isRecording ? "destructive" : "outline"}
+                size="icon"
+                className={`h-10 w-10 ${isRecording ? 'animate-pulse' : ''}`}
+                onClick={handleMicClick}
+                aria-label={isRecording ? "Stop recording" : "Start voice input"}
+              >
+                {isRecording ? (
+                  <Square className="h-4 w-4" />
+                ) : (
+                  <Mic className="h-4 w-4" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <div>
+                {isRecording ? (
+                  <>
+                    <span>Recording system audio...</span>
+                    {interimTranscript && (
+                      <div className="mt-1 text-[10px] text-muted-foreground italic">
+                        "{interimTranscript}"
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <span>Start voice input from system audio</span>
+                )}
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
         <Button onClick={onSend} disabled={!inputValue.trim()} size="icon" className="h-10 w-10">
           <Send className="h-4 w-4" />
         </Button>
       </div>
+
+      {audioError && (
+        <div className="mt-2 px-3 py-2 bg-destructive/10 border border-destructive/20 rounded-md text-xs text-destructive">
+          {audioError}
+        </div>
+      )}
 
       <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
         <div className="flex items-center gap-3">
@@ -303,7 +380,7 @@ export function ChatInput(props: ChatInputProps) {
               ) : (
                 <span>Cmd+Enter to send</span>
               )}
-             
+
               <span>↑↓ to navigate • Tab/Enter to select • Esc to close</span>
             </>
           )}
