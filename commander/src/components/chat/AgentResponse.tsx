@@ -24,23 +24,49 @@ export function AgentResponse({ raw, isStreaming = false }: Props) {
 
   return (
     <div className="space-y-3">
-      <>
+      {/* Show answer first - most important content */}
+      {parsed.answer && (
+        <div className="whitespace-pre-wrap text-sm">{parsed.answer}</div>
+      )}
+
+      {/* Thinking - collapsible, hidden by default */}
+      {parsed.thinking && (
+        <Collapsible
+          open={showThinking}
+          onOpenChange={setShowThinking}
+          className="rounded-md border border-border/60 bg-muted/10"
+        >
+          <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground">
+            <span className="flex items-center gap-2">
+              <span>Thinking</span>
+              {isStreaming && <span className="text-xs text-primary">Processing…</span>}
+            </span>
+            <ChevronDownIcon
+              className={cn('h-4 w-4 transition-transform', showThinking ? 'rotate-180' : 'rotate-0')}
+            />
+          </CollapsibleTrigger>
+          <CollapsibleContent className="px-3 pb-3">
+            <pre className="whitespace-pre-wrap text-xs text-muted-foreground mt-2">{parsed.thinking}</pre>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
+
+      {/* Working steps - collapsible */}
       {workingCount > 0 && (
         <Collapsible
           open={workingOpen}
           onOpenChange={setWorkingOpen}
-          className="rounded-md border border-border/60 bg-muted/10 px-3 py-2"
+          className="rounded-md border border-border/60 bg-muted/10"
         >
-          <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 text-sm font-medium text-muted-foreground hover:text-foreground">
+          <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground">
             <span className="flex items-center gap-2">
               <span>Working steps ({workingCount})</span>
-              {isStreaming && <span className="text-xs text-primary">Thinking…</span>}
             </span>
             <ChevronDownIcon
               className={cn('h-4 w-4 transition-transform', workingOpen ? 'rotate-180' : 'rotate-0')}
             />
           </CollapsibleTrigger>
-          <CollapsibleContent className="mt-3 space-y-2">
+          <CollapsibleContent className="px-3 pb-3 mt-2 space-y-2">
             {workingItems.map((original, i) => {
               const normalized = original.replace(/^(created|added|modified|updated|changed|read|scanned)\b[:\s-]*/i, '')
               const { icon: IconComp, className } = getStepIconMeta({ label: original })
@@ -63,48 +89,23 @@ export function AgentResponse({ raw, isStreaming = false }: Props) {
         </Collapsible>
       )}
 
-      {parsed.userInstructions && (
-        <div className="text-xs bg-muted/10 p-2 rounded">
-          <div className="font-medium mb-1">User instructions</div>
-          <pre className="whitespace-pre-wrap text-[11px]">{parsed.userInstructions}</pre>
-        </div>
-      )}
-
-      {parsed.thinking && (
-        <div className="text-xs bg-muted/10 p-2 rounded">
-          <button
-            className="text-blue-600 dark:text-blue-400 hover:underline mb-1"
-            onClick={() => setShowThinking((s) => !s)}
-          >
-            {showThinking ? 'Hide thinking' : 'Show thinking'}
-          </button>
-          {showThinking && (
-            <pre className="whitespace-pre-wrap text-[11px] text-muted-foreground">{parsed.thinking}</pre>
-          )}
-        </div>
-      )}
-
-      {parsed.answer && (
-        <div className="whitespace-pre-wrap text-sm">{parsed.answer}</div>
-      )}
-
+      {/* Metadata footer - less prominent */}
       <div className="text-xs text-muted-foreground bg-muted/20 rounded p-2 border">
         {parsed.header?.command && (
           <div className="mb-2">
             <span className="font-medium">Command:</span> {parsed.header.command}
           </div>
         )}
-        <div className="mt-1">
-          {parsed.meta?.model && <span className="mr-3">model: {parsed.meta.model}</span>}
-          {typeof parsed.tokensUsed === 'number' && <span className="mr-3">tokens: {parsed.tokensUsed}</span>}
+        <div className="mt-1 flex items-center gap-3">
+          {parsed.meta?.model && <span>model: {parsed.meta.model}</span>}
+          {typeof parsed.tokensUsed === 'number' && <span>tokens: {parsed.tokensUsed}</span>}
           {parsed.success && (
-            <Badge variant="outline" className="border-green-600 text-green-600 uppercase tracking-wide">
+            <Badge variant="outline" className="border-green-600 text-green-600 uppercase tracking-wide text-[10px]">
               success
             </Badge>
           )}
         </div>
       </div>
-      </>
     </div>
   )
 }

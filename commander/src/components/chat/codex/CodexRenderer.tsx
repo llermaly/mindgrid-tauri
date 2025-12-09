@@ -39,6 +39,7 @@ export function CodexRenderer({ content, isStreaming = false }: CodexRendererPro
 
   return (
     <div className="space-y-3">
+      {parsed.response && <Response>{parsed.response}</Response>}
       {parsed.reasoning.length > 0 && (
         <Reasoning className="w-full" isStreaming={isStreaming} defaultOpen={false}>
           <ReasoningTrigger />
@@ -49,7 +50,6 @@ export function CodexRenderer({ content, isStreaming = false }: CodexRendererPro
           </ReasoningContent>
         </Reasoning>
       )}
-      {parsed.response && <Response>{parsed.response}</Response>}
     </div>
   )
 }
