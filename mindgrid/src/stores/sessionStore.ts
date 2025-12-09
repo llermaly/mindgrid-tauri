@@ -1160,6 +1160,41 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
   },
 
+  checkMergeConflicts: async (sessionId) => {
+    const session = get().sessions[sessionId];
+    if (!session) return null;
+
+    const project = get().getProjectBySession(sessionId);
+    if (!project) return null;
+
+    debug.info("SessionStore", "Checking for merge conflicts", { sessionId });
+
+    try {
+      const result = await invoke<{
+        has_conflicts: boolean;
+        conflicting_files: string[];
+        conflicting_commits?: {
+          ours: string[];
+          theirs: string[];
+        };
+      }>("git_check_merge_conflicts", {
+        workingDirectory: session.cwd,
+        projectPath: project.path,
+      });
+
+      debug.info("SessionStore", "Conflict check complete", {
+        sessionId,
+        hasConflicts: result.has_conflicts,
+        fileCount: result.conflicting_files.length,
+      });
+
+      return result;
+    } catch (err) {
+      debug.error("SessionStore", "Failed to check merge conflicts", err);
+      return null;
+    }
+  },
+
   mergePr: async (sessionId, squash) => {
     const session = get().sessions[sessionId];
     if (!session) return { success: false, error: "Session not found" };

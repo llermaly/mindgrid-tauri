@@ -862,6 +862,17 @@ pub async fn git_commit(
     message: String,
     no_verify: bool,
 ) -> Result<CommitResult, String> {
+    git_commit_with_signature(working_directory, message, no_verify, None).await
+}
+
+/// Create a commit with an optional signature/footer
+#[tauri::command]
+pub async fn git_commit_with_signature(
+    working_directory: String,
+    message: String,
+    no_verify: bool,
+    signature: Option<String>,
+) -> Result<CommitResult, String> {
     // First check if there are staged changes
     let status_output = tokio::process::Command::new("git")
         .arg("-C")
@@ -880,8 +891,15 @@ pub async fn git_commit(
         });
     }
 
+    // Build full commit message with optional signature
+    let full_message = if let Some(sig) = signature {
+        format!("{}\n\n{}", message, sig)
+    } else {
+        message
+    };
+
     // Build commit command
-    let mut args = vec!["commit", "-m", &message];
+    let mut args = vec!["commit", "-m", &full_message];
     if no_verify {
         args.push("--no-verify");
     }
@@ -1319,13 +1337,159 @@ pub async fn git_create_pr(
     })
 }
 
+#[derive(Debug, Serialize)]
+pub struct ConflictInfo {
+    pub has_conflicts: bool,
+    pub conflicting_files: Vec<String>,
+    pub conflicting_commits: Option<ConflictCommits>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ConflictCommits {
+    pub ours: Vec<String>,
+    pub theirs: Vec<String>,
+}
+
+/// Check for merge conflicts before attempting merge
+#[tauri::command]
+pub async fn git_check_merge_conflicts(
+    working_directory: String,
+    project_path: String,
+) -> Result<ConflictInfo, String> {
+    // Get current branch
+    let branch_output = tokio::process::Command::new("git")
+        .arg("-C")
+        .arg(&working_directory)
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to get branch: {}", e))?;
+
+    if !branch_output.status.success() {
+        return Err("Failed to get current branch".to_string());
+    }
+
+    let branch = String::from_utf8_lossy(&branch_output.stdout).trim().to_string();
+    let main_branch = detect_main_branch(&project_path).await.unwrap_or("main".to_string());
+
+    // Try a dry-run merge to detect conflicts
+    // We'll use git merge-tree to simulate the merge without modifying the working directory
+    let merge_check = tokio::process::Command::new("git")
+        .arg("-C")
+        .arg(&working_directory)
+        .args(["merge-tree", &main_branch, &branch])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to check merge conflicts: {}", e))?;
+
+    let output_text = String::from_utf8_lossy(&merge_check.stdout);
+
+    // Check for conflict markers in the merge-tree output
+    let has_conflicts = output_text.contains("<<<<<<<") ||
+                        output_text.contains("=======") ||
+                        output_text.contains(">>>>>>>");
+
+    let mut conflicting_files = Vec::new();
+
+    if has_conflicts {
+        // Parse conflicting files from merge-tree output
+        // The format includes file paths with conflict markers
+        for line in output_text.lines() {
+            if line.starts_with("+<<<<<<<") || line.starts_with("-<<<<<<<") {
+                // Try to extract filename from context
+                // This is a simplified approach - in real scenarios, we might need more robust parsing
+                if let Some(prev_line) = output_text.lines()
+                    .take_while(|l| !l.starts_with("+<<<<<<<") && !l.starts_with("-<<<<<<<"))
+                    .last()
+                {
+                    if prev_line.starts_with("+++") || prev_line.starts_with("---") {
+                        if let Some(path) = prev_line.split_whitespace().nth(1) {
+                            let clean_path = path.trim_start_matches("b/").to_string();
+                            if !conflicting_files.contains(&clean_path) {
+                                conflicting_files.push(clean_path);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Alternative: Get list of files that differ between branches
+        if conflicting_files.is_empty() {
+            let diff_output = tokio::process::Command::new("git")
+                .arg("-C")
+                .arg(&working_directory)
+                .args(["diff", "--name-only", &format!("{}...{}", main_branch, branch)])
+                .output()
+                .await
+                .ok();
+
+            if let Some(diff) = diff_output {
+                let diff_text = String::from_utf8_lossy(&diff.stdout);
+                conflicting_files.extend(
+                    diff_text.lines()
+                        .filter(|l| !l.is_empty())
+                        .map(|l| l.to_string())
+                );
+            }
+        }
+    }
+
+    // Get commits that would be merged
+    let conflicting_commits = if has_conflicts {
+        // Get commits in current branch not in main
+        let ours_output = tokio::process::Command::new("git")
+            .arg("-C")
+            .arg(&working_directory)
+            .args(["log", "--oneline", &format!("{}..{}", main_branch, branch), "--max-count=10"])
+            .output()
+            .await
+            .ok();
+
+        // Get commits in main not in current branch
+        let theirs_output = tokio::process::Command::new("git")
+            .arg("-C")
+            .arg(&working_directory)
+            .args(["log", "--oneline", &format!("{}..{}", branch, main_branch), "--max-count=10"])
+            .output()
+            .await
+            .ok();
+
+        let ours = ours_output
+            .map(|o| String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>())
+            .unwrap_or_default();
+
+        let theirs = theirs_output
+            .map(|o| String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>())
+            .unwrap_or_default();
+
+        Some(ConflictCommits { ours, theirs })
+    } else {
+        None
+    };
+
+    Ok(ConflictInfo {
+        has_conflicts,
+        conflicting_files,
+        conflicting_commits,
+    })
+}
+
 /// Merge the current branch to main (squash and merge locally)
 #[tauri::command]
 pub async fn git_merge_to_main(
     working_directory: String,
     project_path: String,
     commit_message: String,
+    squash: Option<bool>,
 ) -> Result<MergeResult, String> {
+    let should_squash = squash.unwrap_or(true); // Default to squash for cleaner history
     // Get current branch name in worktree
     let branch_output = tokio::process::Command::new("git")
         .arg("-C")
@@ -1369,11 +1533,17 @@ pub async fn git_merge_to_main(
         });
     }
 
-    // Merge with squash
+    // Merge with or without squash based on parameter
+    let mut merge_args = vec!["merge"];
+    if should_squash {
+        merge_args.push("--squash");
+    }
+    merge_args.push(&branch);
+
     let merge_output = tokio::process::Command::new("git")
         .arg("-C")
         .arg(&project_path)
-        .args(["merge", "--squash", &branch])
+        .args(&merge_args)
         .output()
         .await
         .map_err(|e| format!("git merge failed: {}", e))?;
