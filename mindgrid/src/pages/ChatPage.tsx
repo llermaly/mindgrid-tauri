@@ -62,14 +62,9 @@ export function ChatPage({ sessionId, isNewChat }: ChatPageProps) {
           checkpointCommit(sessionId);
         }
 
-        // Auto-switch from Opus to Haiku after response completes
-        if (event.type === "result" && session?.model === "opus") {
-          debug.info("ChatPage", "Auto-switching from Opus to Haiku");
-          setSessionModel(sessionId, "haiku");
-        }
       }
     },
-    [sessionId, storeHandleClaudeEvent, session?.commitMode, session?.model, checkpointCommit, setSessionModel]
+    [sessionId, storeHandleClaudeEvent, session?.commitMode, checkpointCommit]
   );
 
   const handleClaudeMessage = useCallback(
