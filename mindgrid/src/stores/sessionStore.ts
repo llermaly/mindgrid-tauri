@@ -1202,11 +1202,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
   },
 
-  checkMergeConflicts: async (sessionId) => {
+  checkMergeConflicts: async (sessionId: string) => {
     const session = get().sessions[sessionId];
     if (!session) return null;
 
-    const project = get().getProjectBySession(sessionId);
+    const project = get().projects[session.projectId];
     if (!project) return null;
 
     debug.info("SessionStore", "Checking for merge conflicts", { sessionId });

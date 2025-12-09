@@ -17,6 +17,44 @@ fn is_dev_mode() -> bool {
     DEV_MODE.load(Ordering::Relaxed)
 }
 
+/// Get daily usage analytics from ccusage CLI
+#[tauri::command]
+fn get_ccusage_daily() -> Result<String, String> {
+    use std::process::Command;
+
+    let output = Command::new("npx")
+        .args(["ccusage", "daily", "--json"])
+        .output()
+        .map_err(|e| format!("Failed to run ccusage: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("ccusage failed: {}", stderr));
+    }
+
+    String::from_utf8(output.stdout)
+        .map_err(|e| format!("Invalid UTF-8 output: {}", e))
+}
+
+/// Get session usage analytics from ccusage CLI
+#[tauri::command]
+fn get_ccusage_session() -> Result<String, String> {
+    use std::process::Command;
+
+    let output = Command::new("npx")
+        .args(["ccusage", "session", "--json"])
+        .output()
+        .map_err(|e| format!("Failed to run ccusage: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("ccusage failed: {}", stderr));
+    }
+
+    String::from_utf8(output.stdout)
+        .map_err(|e| format!("Invalid UTF-8 output: {}", e))
+}
+
 /// Get worktree info if running from a git worktree
 /// Returns None if running from main repo, Some(worktree_name) if running from a worktree
 #[tauri::command]
@@ -38,68 +76,6 @@ fn get_worktree_info() -> Option<String> {
     None
 }
 
-/// Get the Claude Code usage directory path
-/// Returns the path to ~/.config/claude-code/usage directory
-#[tauri::command]
-fn get_claude_usage_dir() -> Result<String, String> {
-    let home_dir = std::env::var("HOME")
-        .map_err(|_| "Failed to get HOME directory".to_string())?;
-
-    let mut usage_path = PathBuf::from(home_dir);
-    usage_path.push(".config");
-    usage_path.push("claude-code");
-    usage_path.push("usage");
-
-    if !usage_path.exists() {
-        return Err("Claude Code usage directory not found".to_string());
-    }
-
-    usage_path.to_str()
-        .ok_or_else(|| "Invalid path encoding".to_string())
-        .map(|s| s.to_string())
-}
-
-/// Load Claude Code usage data from JSONL files
-/// Returns raw JSONL content for parsing in the frontend
-#[tauri::command]
-fn load_claude_usage_data() -> Result<String, String> {
-    let home_dir = std::env::var("HOME")
-        .map_err(|_| "Failed to get HOME directory".to_string())?;
-
-    let mut usage_path = PathBuf::from(home_dir);
-    usage_path.push(".config");
-    usage_path.push("claude-code");
-    usage_path.push("usage");
-
-    if !usage_path.exists() {
-        return Err("Claude Code usage directory not found. Make sure Claude Code is installed and has been used.".to_string());
-    }
-
-    // Read all .jsonl files in the usage directory
-    let mut all_lines = Vec::new();
-
-    match fs::read_dir(&usage_path) {
-        Ok(entries) => {
-            for entry in entries {
-                if let Ok(entry) = entry {
-                    let path = entry.path();
-                    if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
-                        if let Ok(content) = fs::read_to_string(&path) {
-                            all_lines.push(content);
-                        }
-                    }
-                }
-            }
-        }
-        Err(e) => return Err(format!("Failed to read usage directory: {}", e)),
-    }
-
-    if all_lines.is_empty() {
-        return Err("No usage data found. Use Claude Code first to generate usage logs.".to_string());
-    }
-
-    Ok(all_lines.join("\n"))
-}
 
 /// Get the database name based on dev mode
 fn get_db_name() -> &'static str {
@@ -302,8 +278,8 @@ pub fn run() {
             codex::run_codex,
             is_dev_mode,
             get_worktree_info,
-            get_claude_usage_dir,
-            load_claude_usage_data,
+            get_ccusage_daily,
+            get_ccusage_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

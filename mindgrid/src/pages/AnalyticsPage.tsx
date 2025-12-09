@@ -18,20 +18,28 @@ export function AnalyticsPage({ onBack }: AnalyticsPageProps) {
     fetchAnalytics();
   }, [fetchAnalytics]);
 
+  // Helper to calculate total tokens from session
+  const getSessionTotalTokens = (s: typeof sessionAnalytics extends (infer T)[] | null ? T : never) =>
+    s.inputTokens + s.outputTokens + s.cacheCreationTokens + s.cacheReadTokens;
+
+  // Helper to calculate total tokens from daily
+  const getDailyTotalTokens = (d: typeof dailyAnalytics extends (infer T)[] | null ? T : never) =>
+    d.inputTokens + d.outputTokens + d.cacheCreationTokens + d.cacheReadTokens;
+
   // Calculate summary statistics
   const summary = useMemo(() => {
     if (!sessionAnalytics || !dailyAnalytics) return null;
 
     const totalSessions = sessionAnalytics.length;
-    const totalCost = sessionAnalytics.reduce((sum, s) => sum + s.costUSD, 0);
-    const totalTokens = sessionAnalytics.reduce((sum, s) => sum + s.totalTokens, 0);
+    const totalCost = sessionAnalytics.reduce((sum, s) => sum + s.totalCost, 0);
+    const totalTokens = sessionAnalytics.reduce((sum, s) => sum + getSessionTotalTokens(s), 0);
 
     // Last 7 days cost
     const last7Days = dailyAnalytics.slice(0, 7);
-    const last7DaysCost = last7Days.reduce((sum, d) => sum + d.totalCostUSD, 0);
+    const last7DaysCost = last7Days.reduce((sum, d) => sum + d.totalCost, 0);
 
     // Most expensive session
-    const mostExpensive = [...sessionAnalytics].sort((a, b) => b.costUSD - a.costUSD)[0];
+    const mostExpensive = [...sessionAnalytics].sort((a, b) => b.totalCost - a.totalCost)[0];
 
     return {
       totalSessions,
@@ -46,7 +54,7 @@ export function AnalyticsPage({ onBack }: AnalyticsPageProps) {
   const topExpensiveSessions = useMemo(() => {
     if (!sessionAnalytics) return [];
     return [...sessionAnalytics]
-      .sort((a, b) => b.costUSD - a.costUSD)
+      .sort((a, b) => b.totalCost - a.totalCost)
       .slice(0, 10);
   }, [sessionAnalytics]);
 
@@ -111,7 +119,7 @@ export function AnalyticsPage({ onBack }: AnalyticsPageProps) {
                   <h3 className="text-sm font-medium text-red-400">Failed to load analytics</h3>
                   <p className="text-xs text-neutral-400 mt-1">{analyticsError}</p>
                   <p className="text-xs text-neutral-500 mt-2">
-                    Make sure Claude Code is installed and has created usage logs at ~/.config/claude-code/usage/
+                    Make sure Claude Code is installed and has created usage logs at ~/.claude/projects/
                   </p>
                 </div>
               </div>
@@ -170,15 +178,15 @@ export function AnalyticsPage({ onBack }: AnalyticsPageProps) {
                           <div
                             className="h-full bg-gradient-to-r from-blue-600 to-blue-500 flex items-center px-2"
                             style={{
-                              width: `${Math.min((day.totalCostUSD / Math.max(...recentDaily.map(d => d.totalCostUSD))) * 100, 100)}%`,
+                              width: `${Math.min((day.totalCost / Math.max(...recentDaily.map(d => d.totalCost))) * 100, 100)}%`,
                             }}
                           >
-                            <span className="text-xs text-white font-medium">${day.totalCostUSD.toFixed(2)}</span>
+                            <span className="text-xs text-white font-medium">${day.totalCost.toFixed(2)}</span>
                           </div>
                         </div>
                       </div>
                       <div className="w-24 text-xs text-neutral-500 text-right font-mono">
-                        {formatNumber(day.totalTokens)} tokens
+                        {formatNumber(getDailyTotalTokens(day))} tokens
                       </div>
                     </div>
                   ))}
@@ -191,18 +199,18 @@ export function AnalyticsPage({ onBack }: AnalyticsPageProps) {
                 <div className="space-y-2">
                   {topExpensiveSessions.map((session, index) => (
                     <div
-                      key={session.session}
+                      key={session.sessionId}
                       className="flex items-center gap-3 p-3 bg-neutral-800/50 rounded-lg hover:bg-neutral-800 transition-colors"
                     >
                       <div className="w-6 h-6 rounded-full bg-neutral-700 flex items-center justify-center text-xs font-medium text-neutral-300">
                         {index + 1}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-white truncate">{session.project || "Unknown"}</div>
-                        <div className="text-xs text-neutral-500 truncate">{session.session}</div>
+                        <div className="text-sm font-medium text-white truncate">{session.projectPath}</div>
+                        <div className="text-xs text-neutral-500 truncate">{session.sessionId}</div>
                         <div className="flex items-center gap-3 mt-1">
                           <span className="text-xs text-neutral-400">
-                            {formatNumber(session.totalTokens)} tokens
+                            {formatNumber(getSessionTotalTokens(session))} tokens
                           </span>
                           {session.modelsUsed.length > 0 && (
                             <span className="text-xs text-neutral-500">
@@ -212,8 +220,8 @@ export function AnalyticsPage({ onBack }: AnalyticsPageProps) {
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="text-sm font-semibold text-blue-400">${session.costUSD.toFixed(3)}</div>
-                        <div className="text-xs text-neutral-500">{formatDate(session.lastActivityDate)}</div>
+                        <div className="text-sm font-semibold text-blue-400">${session.totalCost.toFixed(3)}</div>
+                        <div className="text-xs text-neutral-500">{formatDate(session.lastActivity)}</div>
                       </div>
                     </div>
                   ))}
