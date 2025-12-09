@@ -53,8 +53,8 @@ export function ContextUsagePopup({
       { count: Math.round(finalBreakdown.systemPrompt?.percent || 0), color: 'text-blue-400' },
       { count: Math.round(finalBreakdown.systemTools?.percent || 0), color: 'text-cyan-400' },
       { count: Math.round(finalBreakdown.memoryFiles?.percent || 0), color: 'text-orange-400' },
-      { count: Math.round((finalBreakdown.messages?.percent || 0) / 3), color: 'text-purple-400' },
-      { count: Math.round((finalBreakdown.freeSpace?.percent || 0) / 2), color: 'text-zinc-500' },
+      { count: Math.round(finalBreakdown.messages?.percent || 0), color: 'text-purple-400' },
+      { count: Math.round(finalBreakdown.freeSpace?.percent || 0), color: 'text-zinc-500' },
       { count: Math.round(finalBreakdown.autocompact?.percent || 0), color: 'text-zinc-700' }
     ];
 
