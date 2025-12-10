@@ -2,3 +2,5 @@ crystal
 commander
 worktrees/
 .mindgrid/
+tmp-docs
+.gemini-clipboard/
