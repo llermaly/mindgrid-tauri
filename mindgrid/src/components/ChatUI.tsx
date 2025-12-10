@@ -34,6 +34,8 @@ interface ChatUIProps {
   sessionName?: string;
   systemPrompt?: string | null;
   initialPrompt?: string;
+  openTerminal?: boolean;
+  terminalCommand?: string;
   ghAvailable?: boolean;
   onClaudeEvent?: (event: ClaudeEvent) => void;
   onClaudeMessage?: (message: ParsedMessage) => void;
@@ -417,6 +419,8 @@ export function ChatUI({
   sessionName = '',
   systemPrompt,
   initialPrompt,
+  openTerminal = false,
+  terminalCommand,
   ghAvailable = false,
   onClaudeEvent,
   onClaudeMessage,
@@ -454,12 +458,22 @@ export function ChatUI({
   const [activeFilters, setActiveFilters] = useState<string[]>(['thinking', 'text', 'user']);
   const [attachments, setAttachments] = useState<File[]>([]);
   const [isListening, setIsListening] = useState(false);
-  const [showTerminal, setShowTerminal] = useState(false);
+  const [showTerminal, setShowTerminal] = useState(openTerminal);
   const [modeDropdownPos, setModeDropdownPos] = useState({ top: 0, left: 0 });
   const [commitDropdownPos, setCommitDropdownPos] = useState({ top: 0, left: 0 });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const terminalOpenedRef = useRef(false);
+
+  // Auto-open terminal when requested
+  useEffect(() => {
+    if (openTerminal && !terminalOpenedRef.current) {
+      console.log("[ChatUI] Auto-opening terminal with command:", terminalCommand);
+      setShowTerminal(true);
+      terminalOpenedRef.current = true;
+    }
+  }, [openTerminal, terminalCommand]);
   const modeButtonRef = useRef<HTMLButtonElement>(null);
   const commitButtonRef = useRef<HTMLButtonElement>(null);
   const isContextQueryRef = useRef(false); // Track if current run is auto /context
@@ -594,7 +608,7 @@ export function ChatUI({
       const assistantMessage: ParsedMessage = {
         id: `codex-${Date.now()}-error`,
         role: "assistant",
-        content: `Codex error: ${err}`,
+        content: `${err}`,
         timestamp: Date.now(),
         isError: true,
       };
@@ -1541,7 +1555,7 @@ export function ChatUI({
       {/* Terminal Panel */}
       {showTerminal && cwd && (
         <div className="h-64 border-t border-zinc-700 flex-shrink-0">
-          <Terminal mode="raw" cwd={cwd} />
+          <Terminal mode="raw" cwd={cwd} initialCommand={terminalCommand} />
         </div>
       )}
 
