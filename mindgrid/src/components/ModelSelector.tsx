@@ -19,15 +19,23 @@ export function ModelSelector({
   const [isOpen, setIsOpen] = useState(false);
   const [remoteModels, setRemoteModels] = useState<ModelConfig[]>([]);
   const [remoteLoaded, setRemoteLoaded] = useState(false);
-  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, maxHeight: 320 });
   const buttonRef = useRef<HTMLButtonElement>(null);
 
   const updateDropdownPosition = useCallback(() => {
     if (buttonRef.current) {
       const rect = buttonRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      const dropdownMaxHeight = 320; // max-h-80 = 20rem = 320px
+
+      // Position above if not enough space below
+      const shouldPositionAbove = spaceBelow < dropdownMaxHeight && spaceAbove > spaceBelow;
+
       setDropdownPosition({
-        top: rect.bottom + 4,
+        top: shouldPositionAbove ? rect.top - Math.min(dropdownMaxHeight, spaceAbove) - 4 : rect.bottom + 4,
         left: rect.left,
+        maxHeight: shouldPositionAbove ? Math.min(dropdownMaxHeight, spaceAbove - 8) : Math.min(dropdownMaxHeight, spaceBelow - 8),
       });
     }
   }, []);
@@ -35,6 +43,14 @@ export function ModelSelector({
   useEffect(() => {
     if (isOpen) {
       updateDropdownPosition();
+
+      // Update position on scroll
+      const handleScroll = () => updateDropdownPosition();
+      window.addEventListener('scroll', handleScroll, true);
+
+      return () => {
+        window.removeEventListener('scroll', handleScroll, true);
+      };
     }
   }, [isOpen, updateDropdownPosition]);
 
@@ -130,8 +146,12 @@ export function ModelSelector({
         <>
           <div className="fixed inset-0 z-[9998]" onClick={() => setIsOpen(false)} />
           <div
-            className="fixed bg-neutral-800 border border-neutral-700 rounded-lg shadow-xl z-[9999] py-1 min-w-48 max-h-80 overflow-y-auto"
-            style={{ top: dropdownPosition.top, left: dropdownPosition.left }}
+            className="fixed bg-neutral-800 border border-neutral-700 rounded-lg shadow-xl z-[9999] py-1 min-w-48 overflow-y-auto"
+            style={{
+              top: dropdownPosition.top,
+              left: dropdownPosition.left,
+              maxHeight: dropdownPosition.maxHeight
+            }}
           >
             {availableModels.map((model, index) => {
               const prevModel = index > 0 ? availableModels[index - 1] : null;

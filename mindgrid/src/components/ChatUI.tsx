@@ -32,6 +32,7 @@ interface ChatUIProps {
   commitMode?: CommitMode;
   gitAhead?: number;
   sessionName?: string;
+  systemPrompt?: string | null;
   initialPrompt?: string;
   ghAvailable?: boolean;
   onClaudeEvent?: (event: ClaudeEvent) => void;
@@ -414,6 +415,7 @@ export function ChatUI({
   commitMode = 'checkpoint',
   gitAhead = 0,
   sessionName = '',
+  systemPrompt,
   initialPrompt,
   ghAvailable = false,
   onClaudeEvent,
@@ -583,6 +585,7 @@ export function ChatUI({
 
   const { runCodex, isRunning: isCodexRunning } = useCodexRunner({
     cwd,
+    systemPrompt,
     onMessage: (message) => {
       if (!thinkingMode && message.isThinking) return;
       onClaudeMessage?.(message);
@@ -685,14 +688,14 @@ export function ChatUI({
   useEffect(() => {
     if (!hasStarted) {
       if (activeAgent === "claude") {
-        spawnClaude(cwd, claudeSessionId, permissionMode, model, commitMode).then(() => setHasStarted(true));
+        spawnClaude(cwd, claudeSessionId, permissionMode, model, commitMode, systemPrompt).then(() => setHasStarted(true));
       } else if (activeAgent === "gemini") {
         spawnGemini(cwd, model).then(() => setHasStarted(true));
       } else if (activeAgent === "codex") {
         setHasStarted(true); // Codex is always "ready" via backend
       }
     }
-  }, [cwd, claudeSessionId, permissionMode, model, commitMode, hasStarted, spawnClaude, spawnGemini, activeAgent]);
+  }, [cwd, claudeSessionId, permissionMode, model, commitMode, systemPrompt, hasStarted, spawnClaude, spawnGemini, activeAgent]);
 
   // Auto-send initial prompt after Claude starts (only if there are no existing messages)
   useEffect(() => {
@@ -732,17 +735,17 @@ export function ChatUI({
     }
   }, [hasStarted, initialPrompt, messages.length, thinkingMode, activeAgent, onClaudeMessage, sendMessage, runCodex, sendGeminiMessage, model]);
 
-  // Update config when permission mode, model, or commit mode changes
+  // Update config when permission mode, model, commit mode, or system prompt changes
   useEffect(() => {
     if (hasStarted) {
       if (activeAgent === "claude") {
-        spawnClaude(cwd, claudeSessionId, permissionMode, model, commitMode);
+        spawnClaude(cwd, claudeSessionId, permissionMode, model, commitMode, systemPrompt);
       } else if (activeAgent === "gemini") {
         spawnGemini(cwd, model);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [permissionMode, model, commitMode, activeAgent]);
+  }, [permissionMode, model, commitMode, systemPrompt, activeAgent]);
 
   const handleSend = useCallback(async () => {
     if (!input.trim()) return;
@@ -1490,23 +1493,42 @@ export function ChatUI({
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {filteredMessages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-zinc-500">
-            <svg
-              className="w-12 h-12 mb-4 text-zinc-700"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.5}
-                d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-              />
-            </svg>
-            <p className="text-sm">Start a conversation</p>
-            <p className="text-xs text-zinc-600 mt-1">
-              Type a message below to begin
-            </p>
+            {isAnswering ? (
+              <>
+                <svg
+                  className="w-12 h-12 mb-4 text-blue-500 animate-spin"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                <p className="text-sm text-blue-400">Claude is thinking...</p>
+                <p className="text-xs text-zinc-600 mt-1">
+                  Processing your request
+                </p>
+              </>
+            ) : (
+              <>
+                <svg
+                  className="w-12 h-12 mb-4 text-zinc-700"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={1.5}
+                    d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                  />
+                </svg>
+                <p className="text-sm">Start a conversation</p>
+                <p className="text-xs text-zinc-600 mt-1">
+                  Type a message below to begin
+                </p>
+              </>
+            )}
           </div>
         ) : (
           filteredMessages.map((message) => (

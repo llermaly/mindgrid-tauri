@@ -300,10 +300,12 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
     sessionName: string,
     _chatTypes: ChatType[],
     filesToCopy?: string[],
-    projectCommands?: { buildCommand?: string; runCommand?: string },
+    projectCommands?: { buildCommand?: string; runCommand?: string; systemPrompt?: string; initialPrompt?: string },
     options?: { prompt?: string; model?: string | null; variants?: SessionVariantConfig[] }
   ) => {
     try {
+      // Don't set project defaultModel based on primary session model
+      // Each session will have its model set individually
       const project = await createProject(projectName, projectPath, projectCommands);
       // Always include the primary session, then add any variants
       const primarySession = { id: "base", name: sessionName, prompt: options?.prompt, model: options?.model };
@@ -332,10 +334,15 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
           }
         }
 
-        const variantModel = variant.model ?? options?.model;
-        if (variantModel) {
-          setSessionModel(newSession.id, variantModel);
+        // Set the model for each session individually
+        // Use variant's specific model if set, otherwise don't set any model (keep as null)
+        if (variant.model) {
+          setSessionModel(newSession.id, variant.model);
+        } else if (index === 0 && options?.model) {
+          // For the primary session (index 0), use the model from options if variant doesn't have one
+          setSessionModel(newSession.id, options.model);
         }
+        // For other variants without a specific model, leave as null (inherit nothing)
 
         const variantPrompt = variant.prompt || options?.prompt;
         if (variantPrompt) {

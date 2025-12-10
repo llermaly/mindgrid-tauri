@@ -33,7 +33,7 @@ export function CustomTitlebar({
       data-tauri-drag-region
     >
       {/* Left: Window controls (macOS style) */}
-      <div className="flex items-center gap-2" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+      <div className="flex items-center gap-2">
         {showControls && (
           <div className="flex items-center gap-2 mr-4">
             <button
@@ -94,7 +94,7 @@ export function CustomTitlebar({
 
       {/* Center/Right: Custom content */}
       {children && (
-        <div className="flex items-center gap-2" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+        <div className="flex items-center gap-2">
           {children}
         </div>
       )}

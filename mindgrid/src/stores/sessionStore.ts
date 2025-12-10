@@ -127,6 +127,8 @@ export interface Project {
   defaultCommitMode: CommitMode; // Default commit mode for new sessions
   buildCommand: string | null; // Command to build the project
   runCommand: string | null; // Command to run the project (for previews/worktrees)
+  systemPrompt: string | null; // System prompt that persists across conversation resets
+  initialPrompt: string | null; // Initial prompt sent only on first message (cleared on reset)
   createdAt: number;
   updatedAt: number;
 }
@@ -155,7 +157,7 @@ interface SessionState {
   initialize: () => Promise<void>;
 
   // Project actions
-  createProject: (name: string, path: string, options?: { buildCommand?: string; runCommand?: string }) => Promise<Project>;
+  createProject: (name: string, path: string, options?: { buildCommand?: string; runCommand?: string; systemPrompt?: string; initialPrompt?: string; model?: string | null }) => Promise<Project>;
   updateProject: (id: string, updates: Partial<Project>) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
 
@@ -349,11 +351,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       name,
       path,
       sessions: [],
-      defaultModel: null, // Will use system default
+      defaultModel: options?.model || null,
       defaultPermissionMode: 'bypassPermissions', // Default for new sessions
       defaultCommitMode: 'checkpoint', // Default for new sessions
       buildCommand: options?.buildCommand || null,
       runCommand: options?.runCommand || null,
+      systemPrompt: options?.systemPrompt || null,
+      initialPrompt: options?.initialPrompt || null,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };

@@ -5,12 +5,13 @@ import type { ParsedMessage } from "../lib/claude-types";
 
 interface UseCodexRunnerOptions {
   cwd?: string;
+  systemPrompt?: string | null;
   onMessage?: (message: ParsedMessage) => void;
   onError?: (error: string) => void;
 }
 
 export function useCodexRunner(options: UseCodexRunnerOptions = {}) {
-  const { cwd, onMessage, onError } = options;
+  const { cwd, systemPrompt, onMessage, onError } = options;
   const [isRunning, setIsRunning] = useState(false);
 
   const runCodex = useCallback(
@@ -23,6 +24,7 @@ export function useCodexRunner(options: UseCodexRunnerOptions = {}) {
           prompt,
           model,
           cwd,
+          system_prompt: systemPrompt,
         });
         const parsed = parseCodexOutput(parser, output || "");
         if (parsed.length === 0) {
@@ -44,7 +46,7 @@ export function useCodexRunner(options: UseCodexRunnerOptions = {}) {
         setIsRunning(false);
       }
     },
-    [cwd, onMessage, onError]
+    [cwd, systemPrompt, onMessage, onError]
   );
 
   return { runCodex, isRunning };

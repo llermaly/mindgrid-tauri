@@ -145,6 +145,7 @@ export function useClaudePty(options: UseClaudePtyOptions = {}) {
     permissionMode?: PermissionMode;
     commitMode?: CommitMode;
     model?: string | null;
+    systemPrompt?: string | null;
   }>({});
 
   const spawnClaude = useCallback(async (
@@ -152,11 +153,12 @@ export function useClaudePty(options: UseClaudePtyOptions = {}) {
     claudeSessionId?: string | null,
     permissionMode?: PermissionMode,
     model?: string | null,
-    commitMode?: CommitMode
+    commitMode?: CommitMode,
+    systemPrompt?: string | null
   ) => {
     // Just store the config and "start" the session conceptually
-    configRef.current = { cwd, claudeSessionId, permissionMode, model, commitMode };
-    debug.info("PTY", "Session initialized", { cwd, claudeSessionId, permissionMode, model, commitMode });
+    configRef.current = { cwd, claudeSessionId, permissionMode, model, commitMode, systemPrompt };
+    debug.info("PTY", "Session initialized", { cwd, claudeSessionId, permissionMode, model, commitMode, systemPrompt });
 
     // Return a dummy ID to satisfy the UI that we "started"
     return "session-active";
@@ -183,7 +185,7 @@ export function useClaudePty(options: UseClaudePtyOptions = {}) {
       // Reset parser state for new message to avoid stale data
       parserRef.current?.flush();
 
-      const { cwd, claudeSessionId, permissionMode: configPermissionMode, model, commitMode } = configRef.current;
+      const { cwd, claudeSessionId, permissionMode: configPermissionMode, model, commitMode, systemPrompt } = configRef.current;
       const permissionMode = overridePermissionMode || configPermissionMode || 'default';
 
       // Enhance message with structured commit instructions if in structured mode
@@ -200,6 +202,12 @@ export function useClaudePty(options: UseClaudePtyOptions = {}) {
         "--verbose",
         "--include-partial-messages"
       ];
+
+      // Add system prompt flag if specified
+      if (systemPrompt && systemPrompt.trim()) {
+        claudeArgs.push("--append-system-prompt", systemPrompt.trim());
+        console.log("[useClaudePty] Using system prompt:", systemPrompt.trim());
+      }
 
       // Add model flag if specified
       if (model) {

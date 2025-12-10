@@ -193,7 +193,8 @@ export function ChatPage({ sessionId, chatWindowId, isNewChat }: ChatPageProps) 
           commitMode={session.commitMode}
           gitAhead={session.gitStatus?.ahead ?? 0}
           sessionName={displayName}
-          initialPrompt={isNewChat ? undefined : session.initialPrompt}
+          systemPrompt={project?.systemPrompt}
+          initialPrompt={isNewChat ? undefined : project?.initialPrompt}
           onClaudeEvent={handleClaudeEvent}
           onClaudeMessage={handleClaudeMessage}
           onPermissionModeChange={handlePermissionModeChange}

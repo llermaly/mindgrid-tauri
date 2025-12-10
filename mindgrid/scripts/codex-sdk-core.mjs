@@ -8,6 +8,7 @@ export async function runCodex(options = {}, io = defaultIO) {
     workingDirectory,
     sandboxMode,
     model,
+    systemPrompt,
     skipGitRepoCheck,
   } = options
 
@@ -27,13 +28,20 @@ export async function runCodex(options = {}, io = defaultIO) {
     ...(model ? { model } : {}),
     ...(sandboxMode ? { sandboxMode } : {}),
     ...(workingDirectory ? { workingDirectory } : {}),
+    ...(systemPrompt ? { system: systemPrompt } : {}),
     skipGitRepoCheck: skipGitRepoCheck !== false,
   }
 
   const thread = codex.startThread(threadOptions)
 
+  // If system prompt is provided but not supported by SDK (fallback), prepend to prompt
+  let finalPrompt = prompt
+  if (systemPrompt && !threadOptions.system) {
+    finalPrompt = `System: ${systemPrompt}\n\n${prompt}`
+  }
+
   try {
-    const { events } = await thread.runStreamed(prompt)
+    const { events } = await thread.runStreamed(finalPrompt)
     for await (const event of events) {
       await io.write(
         JSON.stringify({
