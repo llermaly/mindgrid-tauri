@@ -616,13 +616,27 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       };
     });
 
+    // Create the default "Main Session" chat window
+    // This ensures every session starts with one pinned chat window
+    try {
+      await get().createChatWindow(session.id, {
+        title: "Main Session",
+        isPinned: true,
+      });
+      debug.info("SessionStore", "Created default Main Session chat window", { sessionId: session.id });
+    } catch (err) {
+      console.error("Failed to create default chat window:", err);
+      // We continue even if this fails, though it's not ideal
+    }
+
     // Update project in DB
     const project = get().projects[projectId];
     if (project) {
       await db.saveProject(project);
     }
 
-    return session;
+    // Return the latest session state (which includes the new chat window)
+    return get().sessions[session.id];
   },
 
   updateSession: async (id, updates) => {

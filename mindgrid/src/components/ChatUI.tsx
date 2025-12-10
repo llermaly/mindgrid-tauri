@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect, useMemo, type ReactNode } fro
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { useClaudePty } from "../hooks/useClaudePty";
+import { useGeminiPty } from "../hooks/useGeminiPty";
 import type { ClaudeEvent, ParsedMessage, PermissionMode, CommitMode } from "../lib/claude-types";
 import { COMMIT_MODE_INFO } from "../lib/claude-types";
 import { debug } from "../stores/debugStore";
@@ -598,13 +599,23 @@ export function ChatUI({
     },
   });
 
-  const activeAgent: "claude" | "codex" = useMemo(() => {
+  const { spawnGemini, sendMessage: sendGeminiMessage, isRunning: isGeminiRunning, kill: killGemini } = useGeminiPty({
+    onMessage: (message) => {
+      onClaudeMessage?.(message);
+    },
+    onExit: (code) => {
+      debug.info("ChatUI", "Gemini exited", { code });
+    },
+  });
+
+  const activeAgent: "claude" | "codex" | "gemini" = useMemo(() => {
     const provider = getModelById(model || undefined)?.provider;
     if (provider === "openai") return "codex";
+    if (provider === "google") return "gemini";
     return "claude";
   }, [model]);
 
-  const isAnswering = activeAgent === "codex" ? isCodexRunning : isRunning;
+  const isAnswering = activeAgent === "codex" ? isCodexRunning : activeAgent === "gemini" ? isGeminiRunning : isRunning;
 
   // Get usage data from global store
   const {
@@ -623,10 +634,10 @@ export function ChatUI({
   const codexCriticalUsage = getCodexCriticalUsage();
 
   // Use appropriate usage data based on active agent
-  const criticalUsage = activeAgent === "codex" ? codexCriticalUsage : claudeCriticalUsage;
+  const criticalUsage = activeAgent === "codex" ? codexCriticalUsage : claudeCriticalUsage; // TODO: Add Gemini usage
   const usageLoading = activeAgent === "codex" ? codexLoading : claudeLoading;
   const usageError = activeAgent === "codex" ? codexError : claudeError;
-  const agentLabel = activeAgent === "codex" ? "Codex" : "Claude";
+  const agentLabel = activeAgent === "codex" ? "Codex" : activeAgent === "gemini" ? "Gemini" : "Claude";
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -672,10 +683,16 @@ export function ChatUI({
 
   // Initialize config on mount (no "Start Claude" button needed)
   useEffect(() => {
-    if (!hasStarted && activeAgent === "claude") {
-      spawnClaude(cwd, claudeSessionId, permissionMode, model, commitMode).then(() => setHasStarted(true));
+    if (!hasStarted) {
+      if (activeAgent === "claude") {
+        spawnClaude(cwd, claudeSessionId, permissionMode, model, commitMode).then(() => setHasStarted(true));
+      } else if (activeAgent === "gemini") {
+        spawnGemini(cwd, model).then(() => setHasStarted(true));
+      } else if (activeAgent === "codex") {
+        setHasStarted(true); // Codex is always "ready" via backend
+      }
     }
-  }, [cwd, claudeSessionId, permissionMode, model, commitMode, hasStarted, spawnClaude, activeAgent]);
+  }, [cwd, claudeSessionId, permissionMode, model, commitMode, hasStarted, spawnClaude, spawnGemini, activeAgent]);
 
   // Auto-send initial prompt after Claude starts (only if there are no existing messages)
   useEffect(() => {
@@ -706,17 +723,23 @@ export function ChatUI({
         // Send through appropriate agent
         if (activeAgent === "codex") {
           await runCodex(message, model || undefined);
+        } else if (activeAgent === "gemini") {
+          await sendGeminiMessage(message);
         } else {
           await sendMessage(message);
         }
       }, 1000); // Increased delay to ensure Claude PTY is fully ready
     }
-  }, [hasStarted, initialPrompt, messages.length, thinkingMode, activeAgent, onClaudeMessage, sendMessage, runCodex, model]);
+  }, [hasStarted, initialPrompt, messages.length, thinkingMode, activeAgent, onClaudeMessage, sendMessage, runCodex, sendGeminiMessage, model]);
 
   // Update config when permission mode, model, or commit mode changes
   useEffect(() => {
-    if (hasStarted && activeAgent === "claude") {
-      spawnClaude(cwd, claudeSessionId, permissionMode, model, commitMode);
+    if (hasStarted) {
+      if (activeAgent === "claude") {
+        spawnClaude(cwd, claudeSessionId, permissionMode, model, commitMode);
+      } else if (activeAgent === "gemini") {
+        spawnGemini(cwd, model);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [permissionMode, model, commitMode, activeAgent]);
@@ -744,10 +767,12 @@ export function ChatUI({
     // Send message through selected agent
     if (activeAgent === "codex") {
       await runCodex(message, model || undefined);
+    } else if (activeAgent === "gemini") {
+      await sendGeminiMessage(message);
     } else {
       await sendMessage(message);
     }
-  }, [input, sendMessage, onClaudeMessage, activeAgent, runCodex, model, thinkingMode]);
+  }, [input, sendMessage, onClaudeMessage, activeAgent, runCodex, sendGeminiMessage, model, thinkingMode]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -757,9 +782,13 @@ export function ChatUI({
   };
 
   const handleKill = useCallback(async () => {
-    await kill();
+    if (activeAgent === "gemini") {
+      await killGemini();
+    } else {
+      await kill();
+    }
     setHasStarted(false);
-  }, [kill]);
+  }, [kill, killGemini, activeAgent]);
 
   const filteredMessages = useMemo(() => {
     if (activeFilters.includes('all')) return messages;
@@ -857,6 +886,7 @@ export function ChatUI({
     }
   }, [onMergePr, isMergingPr]);
 
+  
   const headerClasses = isAnswering
     ? "relative overflow-hidden flex items-center justify-between px-4 py-3 border-b border-emerald-800/60 bg-gradient-to-r from-emerald-950/70 via-emerald-900/55 to-zinc-900/60 shadow-[0_10px_40px_-24px_rgba(16,185,129,0.6)]"
     : "relative overflow-hidden flex items-center justify-between px-4 py-3 border-b border-zinc-700 bg-zinc-800/50";
@@ -1517,6 +1547,7 @@ export function ChatUI({
                   <path d="M12.6 6.6 7.2 12a3 3 0 0 0 0 4.2 3 3 0 0 0 4.2 0l5.4-5.4a4 4 0 0 0-5.7-5.7l-6 6" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </button>
+              {/* Microphone Button */}
               <button
                 onClick={() => setIsListening((v) => !v)}
                 className={`p-2.5 rounded-full border transition-colors ${
@@ -1524,13 +1555,25 @@ export function ChatUI({
                     ? "border-emerald-600 bg-emerald-900/40 text-emerald-200 shadow-[0_0_0_1px_rgba(16,185,129,0.35)]"
                     : "border-transparent bg-zinc-800/80 text-neutral-300 hover:text-white hover:border-emerald-600"
                 }`}
-                title={isListening ? "Stop listening" : "Start voice input"}
+                title={isListening ? "Stop listening" : "Start voice input (Microphone)"}
               >
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <rect x="9" y="3" width="6" height="11" rx="3" />
-                  <path d="M5 10a7 7 0 0 0 14 0" />
-                  <line x1="12" y1="19" x2="12" y2="22" />
-                  <line x1="8" y1="22" x2="16" y2="22" />
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" y1="19" x2="12" y2="23" />
+                  <line x1="8" y1="23" x2="16" y2="23" />
+                </svg>
+              </button>
+
+              {/* System Audio Button (Placeholder) */}
+              <button
+                onClick={() => alert("System audio capture is coming soon!")}
+                className="p-2.5 rounded-full border border-transparent bg-zinc-800/80 hover:bg-zinc-700 hover:border-blue-600 text-neutral-300 hover:text-blue-200 transition-colors"
+                title="Capture System Audio"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                   <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+                   <circle cx="12" cy="12" r="3" />
                 </svg>
               </button>
               <button

@@ -33,3 +33,4 @@ tauri-plugin-sql = { version = "2.3.1", features = ["sqlite"] }
 tauri-plugin-store = "2"
 tauri-plugin-global-shortcut = "2"
 
+

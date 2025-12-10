@@ -12,11 +12,13 @@ interface ProjectCardProps {
   onOpenSessionChat: (sessionId: string) => void;
   onOpenNewChat: (session: DashboardSession) => void;
   onCreateSession: (project: DashboardProject) => void;
+  onCloseAllChats: () => void;
+  onCloseSessionChats: (sessionId: string) => void;
   onDeleteProject: (projectId: string) => Promise<void>;
   onDeleteSession: (sessionId: string) => Promise<void>;
 }
 
-export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSessionChat, onOpenNewChat, onCreateSession, onDeleteProject, onDeleteSession }: ProjectCardProps) {
+export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSessionChat, onOpenNewChat, onCreateSession, onCloseAllChats, onCloseSessionChats, onDeleteProject, onDeleteSession }: ProjectCardProps) {
   const [showDeleteProjectModal, setShowDeleteProjectModal] = useState(false);
   const [showDeleteSessionModal, setShowDeleteSessionModal] = useState<string | null>(null);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
@@ -118,10 +120,22 @@ export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSess
               onOpen(project);
             }}
             className="p-2 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-            title="Open project details"
+            title="Select project"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onCloseAllChats();
+            }}
+            className="p-2 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+            title="Close all chat windows"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
           <button
@@ -194,6 +208,18 @@ export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSess
                   >
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCloseSessionChats(session.id);
+                    }}
+                    className="p-1.5 rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+                    title="Close chat windows"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                     </svg>
                   </button>
                   <button

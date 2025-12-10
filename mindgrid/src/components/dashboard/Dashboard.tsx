@@ -2,13 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { PRESETS, type ChatType } from "../../lib/presets";
-import { openAllProjectSessionChats, openMultipleChatWindows, openRunCommandWindow, runAllProjectSessions, openNewChatInSession } from "../../lib/window-manager";
+import { openAllProjectSessionChats, closeAllProjectSessionChats, closeAllSessionChatWindows, openMultipleChatWindows, runAllProjectSessions, openNewChatInSession } from "../../lib/window-manager";
 import { useSessionStore, type Project, type Session } from "../../stores/sessionStore";
 import { useUsageStore } from "../../stores/usageStore";
 import { getWorktreeInfo } from "../../lib/dev-mode";
 import { ProjectWizardDialog } from "../ProjectWizardDialog";
 import { ProjectCard } from "./ProjectCard";
-import { ProjectDetailView } from "./ProjectDetailView";
 import { SessionDetailView } from "./SessionDetailView";
 import { UsageLimitsCard } from "./UsageLimitsCard";
 import type { DashboardProject, DashboardSession, DashboardGitInfo, DashboardSessionStatus } from "./types";
@@ -38,7 +37,6 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
     refreshGitStatus,
     deleteProject,
     deleteSession,
-    updateProject,
     refreshActiveChatSessions,
     isSessionActive,
     isSessionRunning,
@@ -172,19 +170,6 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
     }
   };
 
-  const handleRunProject = (dashboardProject: DashboardProject, session: DashboardSession) => {
-    const liveSession = sessions[session.id];
-    if (liveSession && dashboardProject.runCommand) {
-      void openRunCommandWindow({
-        sessionId: liveSession.id,
-        sessionName: liveSession.name,
-        projectName: dashboardProject.name,
-        cwd: liveSession.cwd,
-        command: dashboardProject.runCommand,
-      });
-    }
-  };
-
   const handleDeleteProject = async (projectId: string) => {
     await deleteProject(projectId);
     if (selectedProjectId === projectId) {
@@ -213,8 +198,13 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
     });
   };
 
-  const handleUpdateProject = async (projectId: string, updates: { name?: string; buildCommand?: string | null; runCommand?: string | null }) => {
-    await updateProject(projectId, updates);
+  const handleCloseAllChats = async (project: DashboardProject) => {
+    const sessionIds = project.sessions.map(s => s.id);
+    await closeAllProjectSessionChats(sessionIds);
+  };
+
+  const handleCloseSessionChats = async (sessionId: string) => {
+    await closeAllSessionChatWindows(sessionId);
   };
 
   const handleOpenCreateSessionDialog = (projectId?: string) => {
@@ -254,7 +244,6 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
           });
         } catch (copyErr) {
           console.error("Failed to copy files:", copyErr);
-          // Don't fail the whole operation, just log the error
         }
       }
 
@@ -291,6 +280,17 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
         })),
         project.name
       );
+    } else if (createdSessions[0]) {
+        // Open the single session chat (which is now the Main Session chat window)
+        await openMultipleChatWindows(
+          {
+            sessionId: createdSessions[0].id,
+            sessionName: createdSessions[0].name,
+            projectName: project.name,
+            cwd: createdSessions[0].cwd,
+          },
+          1
+        );
     }
   };
 
@@ -338,10 +338,8 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
         }
 
         const variantPrompt = variant.prompt || options?.prompt;
-        console.log("[Dashboard] Setting initial prompt for session:", { sessionId: newSession.id, variantPrompt, variantRaw: variant.prompt, optionsPrompt: options?.prompt });
         if (variantPrompt) {
           await updateSession(newSession.id, { initialPrompt: variantPrompt });
-          console.log("[Dashboard] Initial prompt saved successfully");
         }
 
         createdSessions.push(newSession);
@@ -375,6 +373,7 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
       throw err;
     }
   };
+
 
   return (
     <div className="h-screen flex flex-col bg-[var(--bg-primary)] text-[var(--text-primary)]">
@@ -487,24 +486,9 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
               projectName={selectedProject?.name || "Unknown Project"}
               onClose={() => setSelectedSessionId(null)}
               onOpenChat={() => handleOpenSessionChat(selectedSessionId)}
+              onCloseAllChats={() => handleCloseSessionChats(selectedSessionId)}
               onDeleteSession={handleDeleteSession}
               onRefreshGitStatus={() => refreshGitStatus(selectedSessionId)}
-            />
-          ) : selectedProject ? (
-            <ProjectDetailView
-              project={selectedProject}
-              preset={presetMap[selectedProject.presetId]}
-              defaultModel={projects[selectedProject.id]?.defaultModel}
-              defaultPermissionMode={projects[selectedProject.id]?.defaultPermissionMode}
-              defaultCommitMode={projects[selectedProject.id]?.defaultCommitMode}
-              onClose={() => setSelectedProjectId(null)}
-              onOpenSession={handleOpenSession}
-              onOpenNewChat={handleOpenNewChat}
-              onCreateSession={() => handleOpenCreateSessionDialog(selectedProject.id)}
-              onDeleteProject={handleDeleteProject}
-              onDeleteSession={handleDeleteSession}
-              onUpdateProject={handleUpdateProject}
-              onRunProject={handleRunProject}
             />
           ) : (
             <div className="h-full overflow-y-auto scrollbar-thin p-6 bg-[var(--bg-primary)]">
@@ -530,6 +514,8 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
                             onOpenSessionChat={handleOpenSessionChat}
                             onOpenNewChat={handleOpenNewChat}
                             onCreateSession={(p) => handleOpenCreateSessionDialog(p.id)}
+                            onCloseAllChats={() => handleCloseAllChats(project)}
+                            onCloseSessionChats={handleCloseSessionChats}
                             onDeleteProject={handleDeleteProject}
                             onDeleteSession={handleDeleteSession}
                           />
@@ -544,6 +530,7 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
           )}
         </div>
       </div>
+
 
       <ProjectWizardDialog
         isOpen={showProjectWizard}
