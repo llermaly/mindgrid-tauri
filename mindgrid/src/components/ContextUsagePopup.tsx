@@ -33,12 +33,12 @@ export function ContextUsagePopup({
 
   // Default breakdown if not provided
   const defaultBreakdown = {
-    systemPrompt: { tokens: 3000, percent: 1.5 },
-    systemTools: { tokens: 16400, percent: 8.2 },
-    memoryFiles: { tokens: 54, percent: 0.0 },
-    messages: { tokens: Math.round(usedTokens * 0.6), percent: contextUsed * 0.6 },
+    systemPrompt: undefined,
+    systemTools: undefined,
+    memoryFiles: undefined,
+    messages: { tokens: usedTokens, percent: contextUsed },
     freeSpace: { tokens: maxTokens - usedTokens, percent: 100 - contextUsed },
-    autocompact: { tokens: 45000, percent: 22.5 },
+    autocompact: undefined,
   };
 
   const finalBreakdown = breakdown || defaultBreakdown;

@@ -59,6 +59,8 @@ struct CodexSdkInvocation {
     sandbox_mode: Option<String>,
     #[serde(default)]
     model: Option<String>,
+    #[serde(rename = "systemPrompt", default)]
+    system_prompt: Option<String>,
     #[serde(rename = "skipGitRepoCheck", default = "default_skip_git_repo_check")]
     skip_git_repo_check: bool,
 }
@@ -69,7 +71,7 @@ fn default_skip_git_repo_check() -> bool {
 
 /// Run a Codex prompt through the SDK runner (single-turn) and return concatenated output.
 #[tauri::command]
-pub async fn run_codex(prompt: String, model: Option<String>, cwd: Option<String>) -> Result<String, String> {
+pub async fn run_codex(prompt: String, model: Option<String>, cwd: Option<String>, system_prompt: Option<String>) -> Result<String, String> {
     let script_path = resolve_codex_runner_path()?;
 
     let mut cmd = TokioCommand::new("node");
@@ -102,6 +104,7 @@ pub async fn run_codex(prompt: String, model: Option<String>, cwd: Option<String
             working_directory: cwd.clone(),
             sandbox_mode: Some("workspace-write".to_string()),
             model,
+            system_prompt,
             skip_git_repo_check: true,
         };
         let serialized = serde_json::to_string(&payload).map_err(|e| format!("Failed to serialize Codex payload: {}", e))?;

@@ -22,16 +22,6 @@ export interface DashboardGitInfo {
   diff?: { filesChanged?: number; additions?: number; deletions?: number };
 }
 
-export interface DashboardActivity {
-  id: string;
-  sessionName: string;
-  message: string;
-  time: string;
-  agent: "coding" | "research";
-  projectId: string;
-  timestamp: number;
-}
-
 export interface DashboardProject {
   id: string;
   name: string;
@@ -42,7 +32,6 @@ export interface DashboardProject {
   isDetached?: boolean;
   isArchived?: boolean;
   github?: DashboardGitInfo;
-  chatHistory: DashboardActivity[];
   stats: { totalSessions: number; totalMessages: number; filesModified: number };
   buildCommand?: string | null;
   runCommand?: string | null;

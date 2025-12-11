@@ -10,12 +10,16 @@ interface ProjectCardProps {
   onOpen: (project: DashboardProject) => void;
   onOpenSession: (project: DashboardProject, session: DashboardSession) => void;
   onOpenSessionChat: (sessionId: string) => void;
+  onOpenNewChat: (session: DashboardSession) => void;
   onCreateSession: (project: DashboardProject) => void;
+  onCloseAllChats: () => void;
+  onCloseSessionChats: (sessionId: string) => void;
   onDeleteProject: (projectId: string) => Promise<void>;
   onDeleteSession: (sessionId: string) => Promise<void>;
+  onRunSession?: (project: DashboardProject, session: DashboardSession) => void;
 }
 
-export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSessionChat, onCreateSession, onDeleteProject, onDeleteSession }: ProjectCardProps) {
+export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSessionChat, onOpenNewChat, onCreateSession, onCloseAllChats, onCloseSessionChats, onDeleteProject, onDeleteSession, onRunSession }: ProjectCardProps) {
   const [showDeleteProjectModal, setShowDeleteProjectModal] = useState(false);
   const [showDeleteSessionModal, setShowDeleteSessionModal] = useState<string | null>(null);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
@@ -117,10 +121,22 @@ export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSess
               onOpen(project);
             }}
             className="p-2 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-            title="Open project details"
+            title="Select project"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onCloseAllChats();
+            }}
+            className="p-2 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+            title="Close all chat windows"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
           <button
@@ -174,6 +190,18 @@ export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSess
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
+                      onOpenNewChat(session);
+                    }}
+                    className="p-1.5 rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] transition-colors"
+                    title="Open new chat window"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
                       onOpenSessionChat(session.id);
                     }}
                     className="p-1.5 rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
@@ -181,6 +209,41 @@ export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSess
                   >
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                    </svg>
+                  </button>
+                  {project.runCommand && onRunSession && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRunSession(project, session);
+                      }}
+                      className="p-1.5 rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-tertiary)] hover:text-[var(--accent-success)] transition-colors"
+                      title="Run command"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
+                        />
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
+                      </svg>
+                    </button>
+                  )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCloseSessionChats(session.id);
+                    }}
+                    className="p-1.5 rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+                    title="Close chat windows"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                     </svg>
                   </button>
                   <button

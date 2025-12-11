@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useSessionStore, type Project, type Session } from "../stores/sessionStore";
 import { debug } from "../stores/debugStore";
 import { GitStatusIndicator } from "./GitStatusIndicator";
-import { openChatWindow, openNewChatInSession, openAllProjectSessionChats, openWorkspaceWindow } from "../lib/window-manager";
+import { openChatWindow, openNewChatInSession, openAllProjectSessionChats } from "../lib/window-manager";
 import { CreateSessionDialog, type SessionConfig, type SessionVariantConfig } from "./CreateSessionDialog";
 import { ProjectWizardDialog } from "./ProjectWizardDialog";
 import { ModelSelector } from "./ModelSelector";
@@ -53,10 +53,16 @@ export function Sidebar({ activePage, onOpenSettings, onNavigateHome }: SidebarP
 
       setExpandedProjects((prev) => new Set([...prev, project.id]));
 
-      const variantConfigs =
-        options?.variants && options.variants.length > 0
-          ? options.variants
-          : [{ id: "base", name: sessionName, prompt: options?.prompt, model: options?.model }];
+      // Always include the primary session, then add any variants
+      const primarySession = { id: "base", name: sessionName, prompt: options?.prompt, model: options?.model };
+      const variantConfigs = [primarySession, ...(options?.variants || [])];
+
+      debug.info("Sidebar", "Variant configs to create", {
+        primarySessionName: sessionName,
+        variantCount: options?.variants?.length || 0,
+        totalConfigs: variantConfigs.length,
+        configs: variantConfigs.map(v => ({ id: v.id, name: v.name }))
+      });
 
       const { setSessionModel, updateSession } = useSessionStore.getState();
       const createdSessions: Session[] = [];
@@ -66,8 +72,14 @@ export function Sidebar({ activePage, onOpenSettings, onNavigateHome }: SidebarP
           variant.name?.trim() ||
           (sessionName ? `${sessionName} ${variantConfigs.length > 1 ? `(${index + 1})` : ""}` : `Variant ${index + 1}`);
 
+        debug.info("Sidebar", `Creating session ${index + 1}/${variantConfigs.length}`, {
+          index,
+          variantName: variant.name,
+          computedName: name
+        });
+
         const newSession = await createSession(project.id, name, projectPath);
-        debug.info("Sidebar", "Session created", { id: newSession.id, name });
+        debug.info("Sidebar", "Session created successfully", { id: newSession.id, name, index });
 
         // Copy selected gitignored files to worktree
         if (filesToCopy && filesToCopy.length > 0 && newSession.cwd !== projectPath) {
@@ -98,16 +110,22 @@ export function Sidebar({ activePage, onOpenSettings, onNavigateHome }: SidebarP
         createdSessions.push(newSession);
       }
 
-      // Navigate to the new session and open the workspace (no auto chat windows)
+      // Navigate to the new session and open chat windows for all sessions
       onNavigateHome();
-      if (createdSessions[0]) {
+      debug.info("Sidebar", "Sessions created, opening windows", {
+        createdCount: createdSessions.length,
+        sessions: createdSessions.map(s => ({ id: s.id, name: s.name }))
+      });
+      if (createdSessions.length > 0) {
         setActiveSession(createdSessions[0].id);
-        await openWorkspaceWindow({
-          sessionId: createdSessions[0].id,
-          sessionName: createdSessions[0].name,
-          projectName: project.name,
-          cwd: createdSessions[0].cwd,
-        });
+        await openAllProjectSessionChats(
+          createdSessions.map((session) => ({
+            sessionId: session.id,
+            sessionName: session.name,
+            cwd: session.cwd,
+          })),
+          project.name
+        );
       } else {
         setActiveSession(null);
       }

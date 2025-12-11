@@ -10,17 +10,18 @@ function Router() {
   const path = window.location.pathname;
   const params = new URLSearchParams(window.location.search);
   const sessionId = params.get("sessionId");
+  const chatWindowId = params.get("chatWindowId");
   const mode = params.get("mode");
 
-  console.log("[Router] path:", path, "sessionId:", sessionId, "mode:", mode);
+  console.log("[Router] path:", path, "sessionId:", sessionId, "chatWindowId:", chatWindowId, "mode:", mode);
 
-  // Workspace window - load App which handles workspace mode internally
-  if (mode === "workspace") {
-    console.log("[Router] Loading App in workspace mode for session:", sessionId);
+  // Terminal mode - load App which handles terminal mode internally
+  if (mode === "terminal") {
+    console.log("[Router] Loading App in terminal mode");
     return <App />;
   }
 
-  // Chat window route - either via /chat path or via sessionId query param (but not workspace)
+  // Chat window route - either via /chat path or via sessionId query param
   if (path === "/chat" || sessionId) {
     const isNewChat = params.get("newChat") === "true";
 
@@ -32,8 +33,8 @@ function Router() {
       );
     }
 
-    console.log("[Router] Loading ChatPage for session:", sessionId, "isNewChat:", isNewChat);
-    return <ChatPage sessionId={sessionId} isNewChat={isNewChat} />;
+    console.log("[Router] Loading ChatPage for session:", sessionId, "chatWindowId:", chatWindowId, "isNewChat:", isNewChat);
+    return <ChatPage sessionId={sessionId} chatWindowId={chatWindowId || undefined} isNewChat={isNewChat} />;
   }
 
   // Default: main app

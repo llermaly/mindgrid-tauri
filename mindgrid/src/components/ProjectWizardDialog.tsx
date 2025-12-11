@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { PRESETS, CHAT_TYPES, type ProjectPreset, type ChatType } from "../lib/presets";
+import { PRESETS, type ChatType } from "../lib/presets";
 import { GitignoreFilesSelector } from "./GitignoreFilesSelector";
 import { ModelSelector } from "./ModelSelector";
 import type { SessionVariantConfig } from "./CreateSessionDialog";
 import { generateDefaultSessionName, validateSessionName } from "../lib/session-utils";
+import { useSessionStore } from "../stores/sessionStore";
 
 // Hardcoded projects directory - will be a setting later
 const PROJECTS_DIRECTORY = "/Users/gustavollermalylarrain/Documents/proyectos/personales";
@@ -38,7 +39,7 @@ interface ProjectWizardDialogProps {
     sessionName: string,
     chatTypes: ChatType[],
     filesToCopy?: string[],
-    projectCommands?: { buildCommand?: string; runCommand?: string },
+    projectCommands?: { buildCommand?: string; runCommand?: string; systemPrompt?: string; initialPrompt?: string },
     options?: { prompt?: string; model?: string | null; variants?: SessionVariantConfig[] }
   ) => Promise<void>;
 }
@@ -47,7 +48,7 @@ type WizardStep = 'project' | 'configure' | 'variants';
 
 const WIZARD_STEPS: Array<{ id: WizardStep; label: string; helper: string }> = [
   { id: 'project', label: 'Select repository', helper: 'Choose where to work' },
-  { id: 'configure', label: 'Session setup', helper: 'Name, prompt, workflow' },
+  { id: 'configure', label: 'Session setup', helper: 'Name and prompt' },
   { id: 'variants', label: 'Variants (optional)', helper: 'Parallel sessions' },
 ];
 
@@ -56,25 +57,26 @@ export function ProjectWizardDialog({
   onClose,
   onCreate,
 }: ProjectWizardDialogProps) {
+  const { projects, deleteProject } = useSessionStore();
   const [step, setStep] = useState<WizardStep>('project');
   const [repos, setRepos] = useState<GitRepoInfo[]>([]);
   const [loadingRepos, setLoadingRepos] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRepo, setSelectedRepo] = useState<GitRepoInfo | null>(null);
-  const [selectedPreset, setSelectedPreset] = useState<ProjectPreset | null>(null);
   const [projectPath, setProjectPath] = useState("");
   const [projectName, setProjectName] = useState("");
   const [sessionName, setSessionName] = useState(() => generateDefaultSessionName(0));
-  const [prompt, setPrompt] = useState("Create a HELLO.md markdown file with MINDGRID CREATION as a content.");
+  const [systemPrompt, setSystemPrompt] = useState("");
+  const [initialPrompt, setInitialPrompt] = useState("Create a HELLO.md markdown file with MINDGRID CREATION as a content.");
   const [model, setModel] = useState<string | null>(null);
-  const [chatTypes, setChatTypes] = useState<ChatType[]>([]);
+  const [chatTypes] = useState<ChatType[]>([]);
   const [filesToCopy, setFilesToCopy] = useState<string[]>([]);
   const [buildCommand, setBuildCommand] = useState("");
   const [runCommand, setRunCommand] = useState("");
   const [isCreating, setIsCreating] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conflictProject, setConflictProject] = useState<string | null>(null);
-  const [variantsEnabled, setVariantsEnabled] = useState(false);
   const [variants, setVariants] = useState<SessionVariantConfig[]>([]);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const repoListRef = useRef<HTMLDivElement>(null);
@@ -85,20 +87,19 @@ export function ProjectWizardDialog({
       setStep('project');
       setSearchQuery("");
       setSelectedRepo(null);
-      setSelectedPreset(null);
       setProjectPath("");
       setProjectName("");
       setSessionName(generateDefaultSessionName(0));
-      setPrompt("Create a HELLO.md markdown file with MINDGRID CREATION as a content.");
+      setSystemPrompt("");
+      setInitialPrompt("Create a HELLO.md markdown file with MINDGRID CREATION as a content.");
       setModel(null);
-      setChatTypes([]);
       setFilesToCopy([]);
       setBuildCommand("");
       setRunCommand("");
       setIsCreating(false);
+      setIsDeleting(false);
       setError(null);
       setConflictProject(null);
-      setVariantsEnabled(false);
       setVariants([]);
       loadRepos();
       setTimeout(() => searchInputRef.current?.focus(), 50);
@@ -181,12 +182,6 @@ export function ProjectWizardDialog({
     }
   };
 
-  const handlePresetSelect = (preset: ProjectPreset) => {
-    setSelectedPreset(preset);
-    setChatTypes([...preset.chatTypes]);
-    setModel(preset.defaults.model || null);
-  };
-
   const handleNextFromProject = () => {
     if (!selectedRepo) {
       setError("Select a repository to continue");
@@ -194,10 +189,8 @@ export function ProjectWizardDialog({
     }
     setError(null);
     setStep('configure');
-    // Auto-select first preset if none selected
-    if (!selectedPreset) {
-      setSelectedPreset(PRESETS[0]);
-      setChatTypes([...PRESETS[0].chatTypes]);
+    // Set default model if not already set
+    if (!model) {
       setModel(PRESETS[0].defaults.model || null);
     }
   };
@@ -246,11 +239,7 @@ export function ProjectWizardDialog({
       return;
     }
     let normalizedVariants: SessionVariantConfig[] | undefined;
-    if (variantsEnabled) {
-      if (variants.length === 0) {
-        setError("Add at least one variant");
-        return;
-      }
+    if (variants.length > 0) {
       normalizedVariants = variants.map((variant, index) => {
         const fallbackName = `Session #${index + 2}`;
         const name = variant.name.trim() || fallbackName;
@@ -285,6 +274,8 @@ export function ProjectWizardDialog({
       const commands = {
         buildCommand: buildCommand.trim() || undefined,
         runCommand: runCommand.trim() || undefined,
+        systemPrompt: systemPrompt.trim() || undefined,
+        initialPrompt: initialPrompt.trim() || undefined,
       };
       await onCreate(
         projectName.trim(),
@@ -294,9 +285,9 @@ export function ProjectWizardDialog({
         filesToCopy,
         commands,
         {
-          prompt: prompt.trim(),
+          prompt: initialPrompt.trim(),
           model,
-          variants: variantsEnabled ? normalizedVariants : undefined,
+          variants: normalizedVariants,
         }
       );
       onClose();
@@ -326,13 +317,6 @@ export function ProjectWizardDialog({
     }
   };
 
-  const toggleChatType = (type: ChatType) => {
-    if (chatTypes.includes(type)) {
-      setChatTypes(chatTypes.filter(t => t !== type));
-    } else {
-      setChatTypes([...chatTypes, type]);
-    }
-  };
 
   const generateVariantId = () => Math.random().toString(36).slice(2);
 
@@ -345,13 +329,12 @@ export function ProjectWizardDialog({
     return {
       id: generateVariantId(),
       name: overrides?.name ?? fallbackName,
-      prompt: overrides?.prompt ?? prompt,
+      prompt: overrides?.prompt ?? initialPrompt,
       model: overrides?.model ?? model,
     };
   };
 
   const handleAddVariant = () => {
-    setVariantsEnabled(true);
     setVariants((current) => {
       const nextIndex = current.length + 2;
       return [...current, createVariantFromBase(nextIndex)];
@@ -366,6 +349,36 @@ export function ProjectWizardDialog({
     setVariants((current) => current.filter((variant) => variant.id !== id));
   };
 
+  const handleDeleteAndReplace = async () => {
+    if (!conflictProject) return;
+
+    // Find the existing project by path
+    const existingProject = Object.values(projects).find(p => p.path === conflictProject);
+    if (!existingProject) {
+      setError("Could not find existing project to delete");
+      setConflictProject(null);
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      // Delete the existing project
+      await deleteProject(existingProject.id);
+
+      // Close the conflict dialog
+      setConflictProject(null);
+
+      // Retry the creation
+      await handleSubmit();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to delete existing project";
+      setError(msg);
+      setConflictProject(null);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const currentStepIndex = WIZARD_STEPS.findIndex((wizardStep) => wizardStep.id === step);
 
   if (!isOpen) return null;
@@ -373,7 +386,7 @@ export function ProjectWizardDialog({
   return (
     <div className="fixed inset-0 bg-neutral-950/90 backdrop-blur-sm z-50 flex flex-col" onKeyDown={handleKeyDown}>
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-800">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-800" data-tauri-drag-region>
         <div className="flex items-center gap-3">
           <div className="flex flex-col">
             <span className="text-lg font-semibold text-white">New Project</span>
@@ -451,7 +464,7 @@ export function ProjectWizardDialog({
 
       {/* Body */}
       <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto px-6 py-6 pb-12">
           {step === 'project' && (
             <div className="space-y-4 max-w-5xl">
               <div className="relative">
@@ -562,98 +575,45 @@ export function ProjectWizardDialog({
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-zinc-300">
-                    Task / prompt <span className="text-neutral-500">(optional)</span>
-                  </label>
-                  <textarea
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    className="w-full px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-white focus:outline-none focus:border-blue-500 resize-none"
-                    rows={3}
-                    placeholder="Describe the objective for this session"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-neutral-300">
-                    Preferred model <span className="text-neutral-500">(optional)</span>
-                  </label>
-                  <ModelSelector value={model} onChange={setModel} />
-                  <p className="text-xs text-neutral-500">
-                    Defaults to the workflow preset. You can override per variant later.
-                  </p>
-                </div>
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-zinc-300">
+                  System prompt <span className="text-neutral-500">(optional)</span>
+                </label>
+                <textarea
+                  value={systemPrompt}
+                  onChange={(e) => setSystemPrompt(e.target.value)}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  className="w-full px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-white focus:outline-none focus:border-blue-500 resize-y"
+                  rows={3}
+                  placeholder="System instructions that persist across conversation resets (e.g., 'You are an expert assistant')"
+                />
+                <p className="text-xs text-zinc-500">
+                  This prompt persists even after clearing the conversation.
+                </p>
               </div>
 
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-zinc-300">
-                  Workflow
+                  Initial prompt / task <span className="text-neutral-500">(optional)</span>
                 </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {PRESETS.slice(0, 6).map(preset => (
-                    <div
-                      key={preset.id}
-                      onClick={() => handlePresetSelect(preset)}
-                      className={`p-3 border rounded-lg cursor-pointer transition-all text-center ${
-                        selectedPreset?.id === preset.id
-                          ? 'border-blue-500 bg-blue-500/10'
-                          : 'border-zinc-700 hover:border-zinc-600'
-                      }`}
-                    >
-                      <div
-                        className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold text-white mx-auto mb-2"
-                        style={{ backgroundColor: preset.color }}
-                      >
-                        {preset.icon}
-                      </div>
-                      <div className="text-xs font-medium text-white">{preset.name}</div>
-                    </div>
-                  ))}
-                </div>
+                <textarea
+                  value={initialPrompt}
+                  onChange={(e) => setInitialPrompt(e.target.value)}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  className="w-full px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-white focus:outline-none focus:border-blue-500 resize-y"
+                  rows={4}
+                  placeholder="Describe the initial task for this session (e.g., 'Create a HELLO.md file')"
+                />
+                <p className="text-xs text-zinc-500">
+                  Sent once when the chat opens. Cleared after resetting the conversation.
+                </p>
               </div>
 
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-zinc-300">
-                  Chat windows to open
+                <label className="block text-sm font-medium text-neutral-300">
+                  Preferred model <span className="text-neutral-500">(optional)</span>
                 </label>
-                <div className="grid grid-cols-2 gap-2">
-                  {Object.values(CHAT_TYPES).map(info => {
-                    const isSelected = chatTypes.includes(info.id);
-                    return (
-                      <div
-                        key={info.id}
-                        onClick={() => toggleChatType(info.id)}
-                        className={`p-2.5 border rounded-lg cursor-pointer transition-colors ${
-                          isSelected
-                            ? 'border-blue-500 bg-blue-500/10'
-                            : 'border-zinc-700 hover:border-zinc-600'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <div
-                            className="w-5 h-5 rounded flex items-center justify-center text-xs font-bold"
-                            style={{ backgroundColor: `${info.color}30`, color: info.color }}
-                          >
-                            {info.icon}
-                          </div>
-                          <span className="text-sm text-white">{info.name}</span>
-                          {isSelected && (
-                            <svg className="w-4 h-4 text-blue-400 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {chatTypes.length === 0 && (
-                  <p className="mt-2 text-xs text-zinc-500">
-                    No chat windows will open on launch. You can add them later.
-                  </p>
-                )}
+                <ModelSelector value={model} onChange={setModel} />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -695,76 +655,6 @@ export function ProjectWizardDialog({
                     Launch additional sessions to compare models, prompt tweaks, or split features.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setVariantsEnabled(false);
-                    setVariants([]);
-                    setError(null);
-                  }}
-                  className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
-                    variantsEnabled
-                      ? "border-zinc-700 text-neutral-300 hover:border-zinc-600"
-                      : "border-emerald-500 bg-emerald-500/10 text-emerald-300"
-                  }`}
-                  title="Keep only the primary session"
-                >
-                  {variantsEnabled ? "Keep single session" : "Single session ready"}
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {[
-                  {
-                    title: "Model comparison",
-                    body: "Duplicate the current prompt across multiple models to compare outputs side by side.",
-                    action: () => {
-                      setError(null);
-                      setVariantsEnabled(true);
-                      setVariants([
-                        createVariantFromBase(2, { prompt, model: "haiku", name: "Session #2 - Haiku" }),
-                        createVariantFromBase(3, { prompt, model: "sonnet", name: "Session #3 - Sonnet" }),
-                        createVariantFromBase(4, { prompt, model: "opus", name: "Session #4 - Opus" }),
-                        createVariantFromBase(5, { prompt, model: "gpt-5.1-codex-mini", name: "Session #5 - Codex Mini" }),
-                        createVariantFromBase(6, { prompt, model: "gpt-5.1-codex", name: "Session #6 - Codex" }),
-                        createVariantFromBase(7, { prompt, model: "gpt-5.1-codex-max", name: "Session #7 - Codex Max" }),
-                      ]);
-                    },
-                  },
-                  {
-                    title: "Prompt tweaks",
-                    body: "Spin up slight variations of the same task to refine wording.",
-                    action: () => {
-                      setError(null);
-                      setVariantsEnabled(true);
-                      setVariants([
-                        createVariantFromBase(2, { prompt }),
-                        createVariantFromBase(3, { prompt: `${prompt || "Try a shorter brief"}` }),
-                      ]);
-                    },
-                  },
-                  {
-                    title: "Feature lanes",
-                    body: "Create parallel tracks for different features or spikes.",
-                    action: () => {
-                      setError(null);
-                      setVariantsEnabled(true);
-                      setVariants([
-                        createVariantFromBase(2, { name: "Session #2 - Feature A", prompt: "" }),
-                        createVariantFromBase(3, { name: "Session #3 - Feature B", prompt: "" }),
-                      ]);
-                    },
-                  },
-                ].map((template) => (
-                  <button
-                    key={template.title}
-                    onClick={template.action}
-                    className="text-left p-3 border border-zinc-700 rounded-lg bg-zinc-900 hover:border-blue-500 hover:bg-blue-500/5 transition-colors"
-                  >
-                    <div className="text-sm font-semibold text-white mb-1">{template.title}</div>
-                    <p className="text-xs text-neutral-400">{template.body}</p>
-                  </button>
-                ))}
               </div>
 
               <div className="p-3 border border-dashed border-zinc-700 rounded-lg bg-zinc-900/50 space-y-3">
@@ -772,7 +662,7 @@ export function ProjectWizardDialog({
                   <div>
                     <div className="text-sm font-medium text-zinc-200">Custom variants</div>
                     <p className="text-xs text-zinc-500">
-                      Name and tailor each additional session. First variant starts at Session #2. Your current prompt is applied to every variant by default.
+                      Add additional sessions. Your current prompt is applied to every variant by default.
                     </p>
                   </div>
                   <button
@@ -785,11 +675,11 @@ export function ProjectWizardDialog({
                   </button>
                 </div>
 
-                {variantsEnabled && variants.length === 0 && (
-                  <div className="text-xs text-zinc-500">Add a variant to get started.</div>
+                {variants.length === 0 && (
+                  <div className="text-xs text-zinc-500">No variants added. Click "Add variant" to create parallel sessions.</div>
                 )}
 
-                {variantsEnabled && variants.length > 0 && (
+                {variants.length > 0 && (
                   <div className="space-y-3">
                     {variants.map((variant, index) => (
                       <div key={variant.id} className="p-3 rounded-lg border border-zinc-700 bg-zinc-900 space-y-3">
@@ -806,38 +696,36 @@ export function ProjectWizardDialog({
                               placeholder={`Session #${index + 2}`}
                             />
                           </div>
-                          {variants.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveVariant(variant.id)}
-                              className="p-2 rounded text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                              aria-label="Remove variant"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                              </svg>
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveVariant(variant.id)}
+                            className="p-2 rounded text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                            aria-label="Remove variant"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-xs text-zinc-500 mb-1">Model</label>
-                            <ModelSelector
-                              value={variant.model}
-                              onChange={(value) => handleUpdateVariant(variant.id, { model: value })}
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-zinc-500 mb-1">Prompt</label>
-                            <textarea
-                              value={variant.prompt}
-                              onChange={(e) => handleUpdateVariant(variant.id, { prompt: e.target.value })}
-                              rows={2}
-                              className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 resize-none"
-                              placeholder={prompt || "Describe this variant's goal"}
-                            />
-                          </div>
+                        <div className="w-1/2">
+                          <label className="block text-xs text-zinc-500 mb-1">Model</label>
+                          <ModelSelector
+                            value={variant.model}
+                            onChange={(value) => handleUpdateVariant(variant.id, { model: value })}
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs text-zinc-500 mb-1">Prompt</label>
+                          <textarea
+                            value={variant.prompt}
+                            onChange={(e) => handleUpdateVariant(variant.id, { prompt: e.target.value })}
+                            onKeyDown={(e) => e.stopPropagation()}
+                            rows={3}
+                            className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 resize-y"
+                            placeholder={initialPrompt || "Describe this variant's goal"}
+                          />
                         </div>
                       </div>
                     ))}
@@ -848,11 +736,6 @@ export function ProjectWizardDialog({
                   </div>
                 )}
 
-                {!variantsEnabled && (
-                  <div className="text-xs text-zinc-500">
-                    Variants are off. Turn them on using a template above or Add variant.
-                  </div>
-                )}
               </div>
 
               <GitignoreFilesSelector
@@ -879,7 +762,7 @@ export function ProjectWizardDialog({
                 <div>
                   <div className="text-sm font-semibold text-white">Project already exists</div>
                   <p className="text-xs text-neutral-400">
-                    There is already a project at this path. Open it from the list or choose a different folder.
+                    There is already a project at this path. You can delete it and create a new one, or choose a different folder.
                   </p>
                 </div>
               </div>
@@ -889,9 +772,27 @@ export function ProjectWizardDialog({
               <div className="flex justify-end gap-2">
                 <button
                   onClick={() => setConflictProject(null)}
-                  className="px-3 py-1.5 text-sm rounded-lg border border-neutral-700 text-neutral-200 hover:border-neutral-600 hover:bg-neutral-800"
+                  disabled={isDeleting}
+                  className="px-3 py-1.5 text-sm rounded-lg border border-neutral-700 text-neutral-200 hover:border-neutral-600 hover:bg-neutral-800 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Close
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteAndReplace}
+                  disabled={isDeleting}
+                  className="px-3 py-1.5 text-sm rounded-lg bg-red-600 hover:bg-red-500 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {isDeleting ? (
+                    <>
+                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Deleting...
+                    </>
+                  ) : (
+                    "Delete and Replace"
+                  )}
                 </button>
               </div>
             </div>
@@ -910,19 +811,21 @@ export function ProjectWizardDialog({
             <div className="text-sm text-white truncate">{sessionName || "Not set"}</div>
           </div>
           <div>
-            <div className="text-xs uppercase text-neutral-500 mb-1">Workflow</div>
-            <div className="text-sm text-white">{selectedPreset?.name || "Not selected"}</div>
-            <div className="text-[11px] text-neutral-500">{chatTypes.length} chat window{chatTypes.length === 1 ? "" : "s"}</div>
+            <div className="text-xs uppercase text-neutral-500 mb-1">System Prompt</div>
+            <div className="text-sm text-white truncate">{systemPrompt || "None"}</div>
           </div>
           <div>
-            <div className="text-xs uppercase text-neutral-500 mb-1">Prompt / Model</div>
-            <div className="text-sm text-white truncate">{prompt || "No prompt"}</div>
-            <div className="text-[11px] text-neutral-500">{model || "Default model"}</div>
+            <div className="text-xs uppercase text-neutral-500 mb-1">Initial Prompt</div>
+            <div className="text-sm text-white truncate">{initialPrompt || "None"}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase text-neutral-500 mb-1">Model</div>
+            <div className="text-sm text-white truncate">{model || "Default model"}</div>
           </div>
           <div>
             <div className="text-xs uppercase text-neutral-500 mb-1">Variants</div>
             <div className="text-sm text-white">
-              {variantsEnabled ? `${variants.length} variant${variants.length === 1 ? "" : "s"}` : "Single session"}
+              {variants.length > 0 ? `${variants.length} variant${variants.length === 1 ? "" : "s"}` : "Single session"}
             </div>
           </div>
           <div>

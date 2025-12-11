@@ -66,6 +66,22 @@ export const MODELS: ModelConfig[] = [
     provider: 'openai',
     contextWindow: 200000,
   },
+  {
+    id: 'gemini-1.5-pro',
+    name: 'Gemini 1.5 Pro',
+    shortName: 'Gemini Pro',
+    color: '#4285F4',
+    provider: 'google',
+    contextWindow: 1000000,
+  },
+  {
+    id: 'gemini-1.5-flash',
+    name: 'Gemini 1.5 Flash',
+    shortName: 'Gemini Flash',
+    color: '#FBBC05',
+    provider: 'google',
+    contextWindow: 1000000,
+  },
 ];
 
 export const DEFAULT_MODEL = MODELS.find(m => m.isDefault) || MODELS[0];

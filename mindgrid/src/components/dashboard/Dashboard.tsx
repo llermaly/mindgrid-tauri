@@ -2,25 +2,22 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { PRESETS, type ChatType } from "../../lib/presets";
-import { openAllProjectSessionChats, openMultipleChatWindows, openRunCommandWindow, openWorkspaceWindow, runAllProjectSessions } from "../../lib/window-manager";
+import { openAllProjectSessionChats, closeAllProjectSessionChats, closeAllSessionChatWindows, openMultipleChatWindows, runAllProjectSessions, openNewChatInSession, openRunCommandWindow } from "../../lib/window-manager";
 import { useSessionStore, type Project, type Session } from "../../stores/sessionStore";
 import { useUsageStore } from "../../stores/usageStore";
 import { getWorktreeInfo } from "../../lib/dev-mode";
 import { ProjectWizardDialog } from "../ProjectWizardDialog";
 import { ProjectCard } from "./ProjectCard";
-import { ProjectDetailView } from "./ProjectDetailView";
 import { SessionDetailView } from "./SessionDetailView";
 import { UsageLimitsCard } from "./UsageLimitsCard";
-import type { DashboardProject, DashboardSession, DashboardActivity, DashboardGitInfo, DashboardSessionStatus } from "./types";
+import type { DashboardProject, DashboardSession, DashboardGitInfo, DashboardSessionStatus } from "./types";
 import { SettingsPage } from "../../pages/SettingsPage";
-import { AnalyticsPage } from "../../pages/AnalyticsPage";
 import { CreateSessionDialog, type SessionConfig, type SessionVariantConfig } from "../CreateSessionDialog";
-import { PathLink } from "../PathLink";
 import { CustomTitlebar } from "../CustomTitlebar";
 import { TransformerModeIndicator } from "../TransformerTabBar";
 import { useTransformerStore } from "../../stores/transformerStore";
 
-type DashboardView = "all" | "recent" | "active" | "analytics" | "settings";
+type DashboardView = "all" | "settings";
 
 interface DashboardProps {
   shortcutTrigger?: {
@@ -54,8 +51,6 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
   const [activeView, setActiveView] = useState<DashboardView>("all");
   const [showProjectWizard, setShowProjectWizard] = useState(false);
   const [showCreateSessionDialog, setShowCreateSessionDialog] = useState(false);
-  const [activityFilterProject, setActivityFilterProject] = useState<string | null>(null);
-  const [activityFilterSession, setActivityFilterSession] = useState<string | null>(null);
   const [createSessionForProjectId, setCreateSessionForProjectId] = useState<string | null>(null);
   const [worktreeName, setWorktreeName] = useState<string | null>(null);
 
@@ -150,40 +145,7 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
   );
   const selectedProject = activeProjects.find((p) => p.id === selectedProjectId) || null;
 
-  const allActiveSessions = activeProjects.flatMap((project) =>
-    project.sessions
-      .filter((session) => session.status === "running" || session.status === "waiting")
-      .map((session) => ({ project, session }))
-  );
-
-  const recentActivity = useMemo(
-    () => {
-      let activities = activeProjects
-        .flatMap((project) => project.chatHistory.map((item) => ({ ...item, project })))
-        .sort((a, b) => b.timestamp - a.timestamp);
-
-      // Apply filters
-      if (activityFilterProject) {
-        activities = activities.filter(item => item.project.id === activityFilterProject);
-      }
-      if (activityFilterSession) {
-        activities = activities.filter(item => {
-          // Find the session that contains this activity
-          const session = Object.values(sessions).find(s =>
-            s.projectId === item.project.id &&
-            s.messages.some(m => m.id === item.id.split('-')[1])
-          );
-          return session?.id === activityFilterSession;
-        });
-      }
-
-      return activities.slice(0, 50);
-    },
-    [activeProjects, activityFilterProject, activityFilterSession, sessions]
-  );
-
   const isSettingsView = activeView === "settings";
-  const isAnalyticsView = activeView === "analytics";
 
   const handleOpenSession = (project: DashboardProject, session: DashboardSession) => {
     const liveSession = sessions[session.id];
@@ -199,25 +161,12 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
     const liveSession = sessions[sessionId];
     const project = liveSession ? Object.values(projects).find(p => p.id === liveSession.projectId) : null;
     if (liveSession && project) {
-      void openWorkspaceWindow({
+      void openMultipleChatWindows({
         sessionId: liveSession.id,
         sessionName: liveSession.name,
         projectName: project.name,
         cwd: liveSession.cwd,
-      });
-    }
-  };
-
-  const handleRunProject = (dashboardProject: DashboardProject, session: DashboardSession) => {
-    const liveSession = sessions[session.id];
-    if (liveSession && dashboardProject.runCommand) {
-      void openRunCommandWindow({
-        sessionId: liveSession.id,
-        sessionName: liveSession.name,
-        projectName: dashboardProject.name,
-        cwd: liveSession.cwd,
-        command: dashboardProject.runCommand,
-      });
+      }, 1);
     }
   };
 
@@ -233,6 +182,53 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
     if (selectedSessionId === sessionId) {
       setSelectedSessionId(null);
     }
+  };
+
+  const handleOpenNewChat = (session: DashboardSession) => {
+    const storeSession = sessions[session.id];
+    if (!storeSession) return;
+    const project = projects[storeSession.projectId];
+    if (!project) return;
+
+    void openNewChatInSession({
+      sessionId: session.id,
+      sessionName: session.name,
+      projectName: project.name,
+      cwd: storeSession.cwd,
+    });
+  };
+
+  const handleCloseAllChats = async (project: DashboardProject) => {
+    const sessionIds = project.sessions.map(s => s.id);
+    await closeAllProjectSessionChats(sessionIds);
+  };
+
+  const handleCloseSessionChats = async (sessionId: string) => {
+    await closeAllSessionChatWindows(sessionId);
+  };
+
+  const handleRunSession = async (project: DashboardProject, session: DashboardSession) => {
+    if (!project.runCommand) return;
+
+    const storeSession = sessions[session.id];
+    if (!storeSession) return;
+
+    // First, open the chat window if not already open
+    await openMultipleChatWindows({
+      sessionId: session.id,
+      sessionName: session.name,
+      projectName: project.name,
+      cwd: storeSession.cwd,
+    }, 1);
+
+    // Then open the terminal with the run command
+    await openRunCommandWindow({
+      sessionId: session.id,
+      sessionName: session.name,
+      projectName: project.name,
+      cwd: storeSession.cwd,
+      command: project.runCommand,
+    });
   };
 
   const handleOpenCreateSessionDialog = (projectId?: string) => {
@@ -272,7 +268,6 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
           });
         } catch (copyErr) {
           console.error("Failed to copy files:", copyErr);
-          // Don't fail the whole operation, just log the error
         }
       }
 
@@ -309,6 +304,17 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
         })),
         project.name
       );
+    } else if (createdSessions[0]) {
+        // Open the single session chat (which is now the Main Session chat window)
+        await openMultipleChatWindows(
+          {
+            sessionId: createdSessions[0].id,
+            sessionName: createdSessions[0].name,
+            projectName: project.name,
+            cwd: createdSessions[0].cwd,
+          },
+          1
+        );
     }
   };
 
@@ -318,15 +324,16 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
     sessionName: string,
     _chatTypes: ChatType[],
     filesToCopy?: string[],
-    projectCommands?: { buildCommand?: string; runCommand?: string },
+    projectCommands?: { buildCommand?: string; runCommand?: string; systemPrompt?: string; initialPrompt?: string },
     options?: { prompt?: string; model?: string | null; variants?: SessionVariantConfig[] }
   ) => {
     try {
+      // Don't set project defaultModel based on primary session model
+      // Each session will have its model set individually
       const project = await createProject(projectName, projectPath, projectCommands);
-      const variantConfigs =
-        options?.variants && options.variants.length > 0
-          ? options.variants
-          : [{ id: "base", name: sessionName, prompt: options?.prompt, model: options?.model }];
+      // Always include the primary session, then add any variants
+      const primarySession = { id: "base", name: sessionName, prompt: options?.prompt, model: options?.model };
+      const variantConfigs = [primarySession, ...(options?.variants || [])];
 
       const { setSessionModel, updateSession } = useSessionStore.getState();
       const createdSessions: Session[] = [];
@@ -351,16 +358,19 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
           }
         }
 
-        const variantModel = variant.model ?? options?.model;
-        if (variantModel) {
-          setSessionModel(newSession.id, variantModel);
+        // Set the model for each session individually
+        // Use variant's specific model if set, otherwise don't set any model (keep as null)
+        if (variant.model) {
+          setSessionModel(newSession.id, variant.model);
+        } else if (index === 0 && options?.model) {
+          // For the primary session (index 0), use the model from options if variant doesn't have one
+          setSessionModel(newSession.id, options.model);
         }
+        // For other variants without a specific model, leave as null (inherit nothing)
 
         const variantPrompt = variant.prompt || options?.prompt;
-        console.log("[Dashboard] Setting initial prompt for session:", { sessionId: newSession.id, variantPrompt, variantRaw: variant.prompt, optionsPrompt: options?.prompt });
         if (variantPrompt) {
           await updateSession(newSession.id, { initialPrompt: variantPrompt });
-          console.log("[Dashboard] Initial prompt saved successfully");
         }
 
         createdSessions.push(newSession);
@@ -395,12 +405,13 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
     }
   };
 
+
   return (
     <div className="h-screen flex flex-col bg-[var(--bg-primary)] text-[var(--text-primary)]">
       {/* Custom Titlebar */}
       <CustomTitlebar
         title="MindGrid"
-        subtitle={isSettingsView ? "Settings" : isAnalyticsView ? "Analytics" : "Dashboard"}
+        subtitle={isSettingsView ? "Settings" : "Dashboard"}
       >
         {worktreeName && (
           <span className="badge badge-warning">
@@ -413,7 +424,7 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
       </CustomTitlebar>
 
       {/* Header - Search and actions */}
-      {!isSettingsView && !isAnalyticsView && (
+      {!isSettingsView && (
         <div className="h-14 bg-[var(--bg-secondary)] border-b border-[var(--border-subtle)] flex items-center justify-between px-6 flex-shrink-0">
           <div className="flex items-center gap-3">
             <span className="text-lg font-semibold text-[var(--text-primary)]">Projects</span>
@@ -473,62 +484,12 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
                 setSelectedSessionId(null);
               }}
             />
-            <SidebarButton
-              label="Recent Activity"
-              icon={
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              }
-              active={activeView === "recent"}
-              onClick={() => {
-                setActiveView("recent");
-                setSelectedProjectId(null);
-                setSelectedSessionId(null);
-              }}
-            />
-            <SidebarButton
-              label="Active Sessions"
-              icon={
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-                </svg>
-              }
-              active={activeView === "active"}
-              onClick={() => {
-                setActiveView("active");
-                setSelectedProjectId(null);
-                setSelectedSessionId(null);
-              }}
-              badge={
-                allActiveSessions.length > 0 ? (
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-[var(--accent-success)] animate-pulse-dot" />
-                    <span className="text-xs text-[var(--accent-success)]">{allActiveSessions.length}</span>
-                  </span>
-                ) : undefined
-              }
-            />
           </nav>
 
           {/* Divider */}
           <div className="divider" />
 
           <div className="space-y-1">
-            <SidebarButton
-              label="Analytics"
-              icon={
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                </svg>
-              }
-              active={isAnalyticsView}
-              onClick={() => {
-                setSelectedProjectId(null);
-                setSelectedSessionId(null);
-                setActiveView("analytics");
-              }}
-            />
             <SidebarButton
               label="Settings"
               icon={
@@ -550,27 +511,15 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
         <div className="flex-1 overflow-hidden">
           {isSettingsView ? (
             <SettingsPage onBack={() => setActiveView("all")} />
-          ) : isAnalyticsView ? (
-            <AnalyticsPage onBack={() => setActiveView("all")} />
           ) : selectedSessionId && sessions[selectedSessionId] ? (
             <SessionDetailView
               session={sessions[selectedSessionId]}
               projectName={selectedProject?.name || "Unknown Project"}
               onClose={() => setSelectedSessionId(null)}
               onOpenChat={() => handleOpenSessionChat(selectedSessionId)}
+              onCloseAllChats={() => handleCloseSessionChats(selectedSessionId)}
               onDeleteSession={handleDeleteSession}
               onRefreshGitStatus={() => refreshGitStatus(selectedSessionId)}
-            />
-          ) : selectedProject ? (
-            <ProjectDetailView
-              project={selectedProject}
-              preset={presetMap[selectedProject.presetId]}
-              onClose={() => setSelectedProjectId(null)}
-              onOpenSession={handleOpenSession}
-              onCreateSession={() => handleOpenCreateSessionDialog(selectedProject.id)}
-              onDeleteProject={handleDeleteProject}
-              onDeleteSession={handleDeleteSession}
-              onRunProject={handleRunProject}
             />
           ) : (
             <div className="h-full overflow-y-auto scrollbar-thin p-6 bg-[var(--bg-primary)]">
@@ -594,9 +543,13 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
                             onOpen={(p) => setSelectedProjectId(p.id)}
                             onOpenSession={handleOpenSession}
                             onOpenSessionChat={handleOpenSessionChat}
+                            onOpenNewChat={handleOpenNewChat}
                             onCreateSession={(p) => handleOpenCreateSessionDialog(p.id)}
+                            onCloseAllChats={() => handleCloseAllChats(project)}
+                            onCloseSessionChats={handleCloseSessionChats}
                             onDeleteProject={handleDeleteProject}
                             onDeleteSession={handleDeleteSession}
+                            onRunSession={handleRunSession}
                           />
                         ))}
                       </div>
@@ -604,176 +557,12 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
                   </>
                 )}
 
-                {activeView === "recent" && (
-                  <>
-                    <div className="flex items-center justify-between mb-6">
-                      <h1 className="text-2xl font-semibold text-[var(--text-primary)]">Recent Activity</h1>
-                      <div className="flex items-center gap-3">
-                        <select
-                          value={activityFilterProject || ""}
-                          onChange={(e) => {
-                            setActivityFilterProject(e.target.value || null);
-                            setActivityFilterSession(null);
-                          }}
-                          className="px-3 py-1.5 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)] focus:ring-2 focus:ring-[var(--accent-primary-muted)]"
-                        >
-                          <option value="">All Projects</option>
-                          {activeProjects.map((project) => (
-                            <option key={project.id} value={project.id}>
-                              {project.name}
-                            </option>
-                          ))}
-                        </select>
-                        {activityFilterProject && (
-                          <select
-                            value={activityFilterSession || ""}
-                            onChange={(e) => setActivityFilterSession(e.target.value || null)}
-                            className="px-3 py-1.5 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)] focus:ring-2 focus:ring-[var(--accent-primary-muted)]"
-                          >
-                            <option value="">All Sessions</option>
-                            {activeProjects
-                              .find((p) => p.id === activityFilterProject)
-                              ?.sessions.map((session) => (
-                                <option key={session.id} value={session.id}>
-                                  {session.name}
-                                </option>
-                              ))}
-                          </select>
-                        )}
-                        {(activityFilterProject || activityFilterSession) && (
-                          <button
-                            onClick={() => {
-                              setActivityFilterProject(null);
-                              setActivityFilterSession(null);
-                            }}
-                            className="px-3 py-1.5 bg-[var(--bg-hover)] hover:bg-[var(--bg-active)] rounded-lg text-sm text-[var(--text-secondary)] transition-colors"
-                          >
-                            Clear
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {recentActivity.length === 0 ? (
-                      <EmptyActivity />
-                    ) : (
-                      <div className="space-y-3">
-                        {recentActivity.map((item) => {
-                          const preset = presetMap[item.project.presetId];
-                          return (
-                            <div
-                              key={`${item.project.id}-${item.id}`}
-                              className="card p-4 hover:border-[var(--border-default)] cursor-pointer"
-                              onClick={() => setSelectedProjectId(item.project.id)}
-                            >
-                              <div className="flex items-start gap-3">
-                                <div
-                                  className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-medium flex-shrink-0 ${
-                                    item.agent === "coding" ? "bg-[var(--accent-primary-muted)] text-[var(--accent-primary)]" : "bg-[rgba(34,197,94,0.15)] text-[var(--accent-success)]"
-                                  }`}
-                                >
-                                  {item.agent === "coding" ? "C" : "R"}
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <span className="text-xs font-medium text-[var(--text-secondary)]">{item.sessionName}</span>
-                                    <span className="text-xs text-[var(--text-tertiary)]">{item.time}</span>
-                                  </div>
-                                  <p className="text-sm text-[var(--text-primary)] mb-2">{item.message}</p>
-                                  <div className="flex items-center gap-2">
-                                    <div
-                                      className="w-4 h-4 rounded flex items-center justify-center text-xs"
-                                      style={{ background: preset?.color || "#6b7280" }}
-                                    >
-                                      {preset?.icon || "?"}
-                                    </div>
-                                    <span className="text-xs text-[var(--text-tertiary)]">{item.project.name}</span>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {activeView === "active" && (
-                  <>
-                    <div className="flex items-center justify-between mb-6">
-                      <h1 className="text-2xl font-semibold text-[var(--text-primary)]">Active Sessions</h1>
-                      <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
-                        <span className="w-2 h-2 rounded-full bg-[var(--accent-success)] animate-pulse-dot" />
-                        <span>{allActiveSessions.length} active</span>
-                      </div>
-                    </div>
-
-                    {allActiveSessions.length === 0 ? (
-                      <EmptyActive />
-                    ) : (
-                      <div className="space-y-6">
-                        {activeProjects
-                          .filter((project) => project.sessions.some((s) => s.status === "running" || s.status === "waiting"))
-                          .map((project) => {
-                            const preset = presetMap[project.presetId];
-                            const activeSessions = project.sessions.filter(
-                              (session) => session.status === "running" || session.status === "waiting"
-                            );
-                            return (
-                              <div key={project.id} className="card overflow-hidden">
-                                <div
-                                  className="flex items-center gap-3 p-4 border-b border-[var(--border-subtle)] cursor-pointer hover:bg-[var(--bg-hover)] transition-colors"
-                                  onClick={() => setSelectedProjectId(project.id)}
-                                >
-                                  <div
-                                    className="w-8 h-8 rounded-lg flex items-center justify-center text-sm"
-                                    style={{ background: preset?.color || "#6b7280" }}
-                                  >
-                                    {preset?.icon || "?"}
-                                  </div>
-                                  <div className="flex-1">
-                                    <div className="font-medium text-[var(--text-primary)]">{project.name}</div>
-                                    <PathLink path={project.path} className="text-xs text-[var(--text-tertiary)]" />
-                                  </div>
-                                  <span className="text-xs text-[var(--accent-primary)]">{activeSessions.length} active</span>
-                                </div>
-                                <div className="divide-y divide-[var(--border-subtle)]">
-                                  {activeSessions.map((session) => (
-                                    <div
-                                      key={session.id}
-                                      className="flex items-center justify-between p-4 hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
-                                      onClick={() => handleOpenSession(project, session)}
-                                    >
-                                      <div className="flex items-center gap-3">
-                                        <StatusDot status={session.status} />
-                                        <div>
-                                          <div className="text-sm text-[var(--text-primary)]">{session.name}</div>
-                                          <div className="text-xs text-[var(--text-tertiary)]">
-                                            {session.agents.join(", ") || "Coding"}
-                                          </div>
-                                        </div>
-                                      </div>
-                                      <button className="p-1.5 hover:bg-[var(--bg-active)] rounded-lg text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors">
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                        </svg>
-                                      </button>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            );
-                          })}
-                      </div>
-                    )}
-                  </>
-                )}
               </div>
             </div>
           )}
         </div>
       </div>
+
 
       <ProjectWizardDialog
         isOpen={showProjectWizard}
@@ -867,50 +656,6 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
   );
 }
 
-function EmptyActivity() {
-  return (
-    <div className="text-center py-24">
-      <div className="w-20 h-20 mx-auto mb-6 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-2xl flex items-center justify-center">
-        <svg className="w-10 h-10 text-[var(--text-tertiary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-      </div>
-      <h3 className="text-2xl font-semibold text-[var(--text-primary)] mb-3">No recent activity</h3>
-      <p className="text-[var(--text-secondary)]">Start a session to see activity here</p>
-    </div>
-  );
-}
-
-function EmptyActive() {
-  return (
-    <div className="text-center py-24">
-      <div className="w-20 h-20 mx-auto mb-6 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-2xl flex items-center justify-center">
-        <svg className="w-10 h-10 text-[var(--text-tertiary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-        </svg>
-      </div>
-      <h3 className="text-2xl font-semibold text-[var(--text-primary)] mb-3">No active sessions</h3>
-      <p className="text-[var(--text-secondary)]">All sessions are idle or completed</p>
-    </div>
-  );
-}
-
-function StatusDot({ status }: { status: DashboardSession["status"] }) {
-  const colors = {
-    running: "bg-[var(--accent-success)]",
-    waiting: "bg-[var(--accent-primary)]",
-    completed: "bg-[var(--text-tertiary)]",
-    idle: "bg-[var(--text-tertiary)]",
-  };
-
-  const animate = status === "running" || status === "waiting";
-
-  return (
-    <span
-      className={`w-2 h-2 rounded-full ${colors[status] || colors.idle} ${animate ? "animate-pulse-dot" : ""}`}
-    />
-  );
-}
 
 function buildDashboardProjects(
   projects: Project[],
@@ -944,22 +689,6 @@ function buildDashboardProjects(
       };
     });
 
-    const chatHistory: DashboardActivity[] = projectSessions
-      .map((session) => {
-        const lastMessage = session.messages[session.messages.length - 1];
-        if (!lastMessage) return null;
-        return {
-          id: `${session.id}-${lastMessage.id}`,
-          sessionName: session.name,
-          message: lastMessage.content,
-          time: formatRelativeTime(lastMessage.timestamp),
-          agent: "coding",
-          projectId: project.id,
-          timestamp: lastMessage.timestamp,
-        };
-      })
-      .filter(Boolean) as DashboardActivity[];
-
     const gitStatus = projectSessions.find((s) => s.gitStatus)?.gitStatus;
     const gitInfo: DashboardGitInfo | undefined = gitStatus
       ? {
@@ -987,7 +716,6 @@ function buildDashboardProjects(
       sessions: dashboardSessions,
       lastOpened: formatRelativeTime(project.updatedAt || project.createdAt || Date.now()),
       github: gitInfo,
-      chatHistory: chatHistory.sort((a, b) => b.timestamp - a.timestamp),
       stats: {
         totalSessions: projectSessions.length,
         totalMessages,

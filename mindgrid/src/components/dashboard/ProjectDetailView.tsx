@@ -1,31 +1,45 @@
 import { useState, useRef, useEffect } from "react";
 import type { ProjectPreset } from "../../lib/presets";
+import type { PermissionMode, CommitMode } from "../../lib/claude-types";
 import { StatusBadge } from "./StatusBadge";
 import type { DashboardProject, DashboardSession } from "./types";
 import { PathLink } from "../PathLink";
+import { EditProjectDialog } from "./EditProjectDialog";
 
 interface ProjectDetailViewProps {
   project: DashboardProject;
   preset?: ProjectPreset;
+  defaultModel?: string | null;
+  defaultPermissionMode?: PermissionMode;
+  defaultCommitMode?: CommitMode;
   onClose: () => void;
   onOpenSession: (project: DashboardProject, session: DashboardSession) => void;
+  onOpenNewChat: (session: DashboardSession) => void;
   onCreateSession: () => void;
+  onCloseAllChats: () => void;
   onDeleteProject: (projectId: string) => Promise<void>;
   onDeleteSession: (sessionId: string) => Promise<void>;
+  onUpdateProject: (projectId: string, updates: {
+    name?: string;
+    defaultModel?: string | null;
+    defaultPermissionMode?: PermissionMode;
+    defaultCommitMode?: CommitMode;
+    buildCommand?: string | null;
+    runCommand?: string | null;
+  }) => Promise<void>;
   onRunProject?: (project: DashboardProject, session: DashboardSession) => void;
 }
 
 const TABS = [
   { id: "overview", label: "Overview" },
-  { id: "sessions", label: "Sessions" },
   { id: "github", label: "GitHub" },
-  { id: "history", label: "History" },
 ];
 
-export function ProjectDetailView({ project, preset, onClose, onOpenSession, onCreateSession, onDeleteProject, onDeleteSession, onRunProject }: ProjectDetailViewProps) {
-  const [activeTab, setActiveTab] = useState<"overview" | "sessions" | "github" | "history">("overview");
+export function ProjectDetailView({ project, preset, defaultModel, defaultPermissionMode, defaultCommitMode, onClose, onOpenSession, onOpenNewChat, onCreateSession, onCloseAllChats, onDeleteProject, onDeleteSession, onUpdateProject, onRunProject }: ProjectDetailViewProps) {
+  const [activeTab, setActiveTab] = useState<"overview" | "github">("overview");
   const [showDeleteProjectModal, setShowDeleteProjectModal] = useState(false);
   const [showDeleteSessionModal, setShowDeleteSessionModal] = useState<string | null>(null);
+  const [showEditProjectModal, setShowEditProjectModal] = useState(false);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
   const [isDeletingSession, setIsDeletingSession] = useState(false);
   const deleteProjectButtonRef = useRef<HTMLButtonElement>(null);
@@ -118,9 +132,30 @@ export function ProjectDetailView({ project, preset, onClose, onOpenSession, onC
             </svg>
             New Session
           </button>
-          <span className="px-3 py-1.5 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg text-sm text-[var(--text-secondary)]">
-            {preset?.name || "Custom Project"}
-          </span>
+          <button
+            onClick={onCloseAllChats}
+            className="px-3 py-1.5 bg-[var(--bg-surface)] hover:bg-[var(--bg-hover)] border border-[var(--border-default)] rounded-lg text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-2"
+            title="Close all open chat windows for this project"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+            Close All
+          </button>
+          <button
+            onClick={() => setShowEditProjectModal(true)}
+            className="p-1.5 hover:bg-[var(--bg-hover)] rounded-lg text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+            title="Edit project"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+              />
+            </svg>
+          </button>
           <button
             onClick={() => setShowDeleteProjectModal(true)}
             className="p-1.5 hover:bg-[rgba(239,68,68,0.15)] rounded-lg text-[var(--text-tertiary)] hover:text-[var(--accent-error)] transition-colors"
@@ -155,30 +190,10 @@ export function ProjectDetailView({ project, preset, onClose, onOpenSession, onC
       <div className="flex-1 overflow-y-auto scrollbar-thin p-6">
         {activeTab === "overview" && (
           <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="card p-4">
-                <div className="text-2xl font-semibold text-[var(--text-primary)]">{project.stats.totalSessions}</div>
-                <div className="text-sm text-[var(--text-tertiary)]">Total Sessions</div>
-              </div>
-              <div className="card p-4">
-                <div className="text-2xl font-semibold text-[var(--text-primary)]">{project.stats.totalMessages}</div>
-                <div className="text-sm text-[var(--text-tertiary)]">Messages</div>
-              </div>
-              <div className="card p-4">
-                <div className="text-2xl font-semibold text-[var(--text-primary)]">{project.stats.filesModified}</div>
-                <div className="text-sm text-[var(--text-tertiary)]">Files Modified</div>
-              </div>
-            </div>
-
-            <div className="card p-5">
+            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
               <h3 className="text-sm font-medium text-[var(--text-primary)] mb-4">Project Info</h3>
               <div className="space-y-3 text-sm">
-                <InfoRow label="Preset" value={preset?.name || "Custom"} />
                 <InfoRow label="Last Opened" value={project.lastOpened} />
-                <InfoRow
-                  label="Active Sessions"
-                  value={project.sessions.filter((s) => s.status === "running" || s.status === "waiting").length.toString()}
-                />
                 {project.github && (
                   <>
                     <InfoRow label="Repository" value={project.github.repo} mono />
@@ -188,127 +203,113 @@ export function ProjectDetailView({ project, preset, onClose, onOpenSession, onC
               </div>
             </div>
 
-            {project.chatHistory.length > 0 && (
-              <div className="card p-5">
-                <h3 className="text-sm font-medium text-[var(--text-primary)] mb-4">Recent Activity</h3>
-                <div className="space-y-3">
-                  {project.chatHistory.slice(0, 3).map((item) => (
-                    <div key={item.id} className="flex items-start gap-3">
-                      <div
-                        className={`w-6 h-6 rounded flex items-center justify-center text-xs font-medium flex-shrink-0 ${
-                          item.agent === "coding" ? "bg-[var(--accent-primary-muted)] text-[var(--accent-primary)]" : "bg-[rgba(34,197,94,0.15)] text-[var(--accent-success)]"
-                        }`}
-                      >
-                        {item.agent === "coding" ? "C" : "R"}
-                      </div>
+            <div className="space-y-3">
+              <h3 className="text-sm font-medium text-[var(--text-primary)]">Sessions</h3>
+              {project.sessions.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-default)] flex items-center justify-center">
+                    <svg className="w-6 h-6 text-[var(--text-tertiary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={1.5}
+                        d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                      />
+                    </svg>
+                  </div>
+                  <p className="text-[var(--text-secondary)]">No sessions yet</p>
+                  <p className="text-sm text-[var(--text-tertiary)]">Start a new session to begin coding</p>
+                </div>
+              ) : (
+                project.sessions.map((session) => (
+                  <div
+                    key={session.id}
+                    className="flex items-center justify-between p-4 card hover:border-[var(--border-default)] transition-colors cursor-pointer group"
+                    onClick={() => onOpenSession(project, session)}
+                  >
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <StatusBadge status={session.status} />
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm text-[var(--text-secondary)] truncate">{item.message}</p>
-                        <p className="text-xs text-[var(--text-tertiary)]">
-                          {item.sessionName} - {item.time}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === "sessions" && (
-          <div className="space-y-3">
-            {project.sessions.length === 0 ? (
-              <div className="text-center py-12">
-                <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-default)] flex items-center justify-center">
-                  <svg className="w-6 h-6 text-[var(--text-tertiary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={1.5}
-                      d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-                    />
-                  </svg>
-                </div>
-                <p className="text-[var(--text-secondary)]">No sessions yet</p>
-                <p className="text-sm text-[var(--text-tertiary)]">Start a new session to begin coding</p>
-              </div>
-            ) : (
-              project.sessions.map((session) => (
-                <div
-                  key={session.id}
-                  className="flex items-center justify-between p-4 card hover:border-[var(--border-default)] transition-colors cursor-pointer group"
-                  onClick={() => onOpenSession(project, session)}
-                >
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <StatusBadge status={session.status} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-[var(--text-primary)]">{session.name}</span>
-                        {session.isRunning && (
-                          <span className="px-1.5 py-0.5 text-[10px] font-medium bg-[rgba(34,197,94,0.15)] text-[var(--accent-success)] rounded border border-[var(--accent-success)]/30">
-                            RUNNING
-                          </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-[var(--text-primary)]">{session.name}</span>
+                          {session.isRunning && (
+                            <span className="px-1.5 py-0.5 text-[10px] font-medium bg-[rgba(34,197,94,0.15)] text-[var(--accent-success)] rounded border border-[var(--accent-success)]/30">
+                              RUNNING
+                            </span>
+                          )}
+                        </div>
+                        {session.initialPrompt ? (
+                          <div className="text-xs text-[var(--text-tertiary)] truncate" title={session.initialPrompt}>
+                            {session.initialPrompt}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-[var(--text-tertiary)]">{session.agents.join(", ") || "Coding"}</div>
                         )}
                       </div>
-                      {session.initialPrompt ? (
-                        <div className="text-xs text-[var(--text-tertiary)] truncate" title={session.initialPrompt}>
-                          {session.initialPrompt}
-                        </div>
-                      ) : (
-                        <div className="text-xs text-[var(--text-tertiary)]">{session.agents.join(", ") || "Coding"}</div>
-                      )}
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {project.runCommand && onRunProject && (
+                    <div className="flex items-center gap-2 flex-shrink-0">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          onRunProject(project, session);
+                          onOpenNewChat(session);
                         }}
-                        className="p-1.5 hover:bg-[var(--bg-hover)] rounded-lg text-[var(--text-tertiary)] hover:text-[var(--accent-success)] opacity-0 group-hover:opacity-100 transition-all"
-                        title="Run preview"
+                        className="p-1.5 hover:bg-[var(--bg-hover)] rounded-lg text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] transition-all"
+                        title="Open new chat window"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                        </svg>
+                      </button>
+                      {project.runCommand && onRunProject && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onRunProject(project, session);
+                          }}
+                          className="p-1.5 hover:bg-[var(--bg-hover)] rounded-lg text-[var(--text-tertiary)] hover:text-[var(--accent-success)] opacity-0 group-hover:opacity-100 transition-all"
+                          title="Run preview"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
+                            />
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                            />
+                          </svg>
+                        </button>
+                      )}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowDeleteSessionModal(session.id);
+                        }}
+                        className="p-1.5 hover:bg-[rgba(239,68,68,0.15)] rounded-lg text-[var(--text-tertiary)] hover:text-[var(--accent-error)] opacity-0 group-hover:opacity-100 transition-all"
+                        title="Delete session"
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path
                             strokeLinecap="round"
                             strokeLinejoin="round"
                             strokeWidth={2}
-                            d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
-                          />
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                            d="M6 18L18 6M6 6l12 12"
                           />
                         </svg>
                       </button>
-                    )}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setShowDeleteSessionModal(session.id);
-                      }}
-                      className="p-1.5 hover:bg-[rgba(239,68,68,0.15)] rounded-lg text-[var(--text-tertiary)] hover:text-[var(--accent-error)] opacity-0 group-hover:opacity-100 transition-all"
-                      title="Delete session"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M6 18L18 6M6 6l12 12"
-                        />
+                      <svg className="w-4 h-4 text-[var(--text-tertiary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                       </svg>
-                    </button>
-                    <svg className="w-4 h-4 text-[var(--text-tertiary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
+                    </div>
                   </div>
-                </div>
-              ))
-            )}
+                ))
+              )}
+            </div>
           </div>
         )}
 
@@ -370,42 +371,6 @@ export function ProjectDetailView({ project, preset, onClose, onOpenSession, onC
           </div>
         )}
 
-        {activeTab === "history" && (
-          <div className="space-y-3">
-            {project.chatHistory.length === 0 ? (
-              <div className="text-center py-12">
-                <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-default)] flex items-center justify-center">
-                  <svg className="w-6 h-6 text-[var(--text-tertiary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <p className="text-[var(--text-secondary)]">No recent activity</p>
-                <p className="text-sm text-[var(--text-tertiary)]">Start a session to see updates here</p>
-              </div>
-            ) : (
-              project.chatHistory.map((item) => (
-                <div key={item.id} className="card p-4">
-                  <div className="flex items-start gap-3">
-                    <div
-                      className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-medium flex-shrink-0 ${
-                        item.agent === "coding" ? "bg-[var(--accent-primary-muted)] text-[var(--accent-primary)]" : "bg-[rgba(34,197,94,0.15)] text-[var(--accent-success)]"
-                      }`}
-                    >
-                      {item.agent === "coding" ? "C" : "R"}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs font-medium text-[var(--text-secondary)]">{item.sessionName}</span>
-                        <span className="text-xs text-[var(--text-tertiary)]">{item.time}</span>
-                      </div>
-                      <p className="text-sm text-[var(--text-primary)]">{item.message}</p>
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        )}
       </div>
 
       {/* Delete Project Modal */}
@@ -505,6 +470,17 @@ export function ProjectDetailView({ project, preset, onClose, onOpenSession, onC
           </div>
         </div>
       )}
+
+      {/* Edit Project Dialog */}
+      <EditProjectDialog
+        isOpen={showEditProjectModal}
+        project={project}
+        defaultModel={defaultModel}
+        defaultPermissionMode={defaultPermissionMode}
+        defaultCommitMode={defaultCommitMode}
+        onClose={() => setShowEditProjectModal(false)}
+        onSave={(updates) => onUpdateProject(project.id, updates)}
+      />
     </div>
   );
 }

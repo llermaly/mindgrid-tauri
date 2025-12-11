@@ -58,23 +58,44 @@ export function UsageLimitsCard() {
           </svg>
           <h3 className="text-sm font-medium text-[var(--text-primary)]">Usage Limits</h3>
         </div>
-        <button
-          onClick={() => setIsVisible(!isVisible)}
-          className="p-1 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
-          title={isVisible ? "Hide usage limits" : "Show usage limits"}
-        >
-          <svg
-            className={`w-4 h-4 transition-transform ${isVisible ? "rotate-180" : ""}`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+        <div className="flex items-center gap-3">
+          {/* Collapsed view - show 5h session limits inline */}
+          {!isVisible && (
+            <div className="flex items-center gap-3">
+              {claudeUsageData?.currentSession && (
+                <CollapsedUsageBar
+                  label="Claude"
+                  percentage={claudeUsageData.currentSession.percentage}
+                  color="purple"
+                />
+              )}
+              {codexUsageData?.fiveHourLimit && (
+                <CollapsedUsageBar
+                  label="Codex"
+                  percentage={100 - codexUsageData.fiveHourLimit.percentLeft}
+                  color="green"
+                />
+              )}
+            </div>
+          )}
+          <button
+            onClick={() => setIsVisible(!isVisible)}
+            className="p-1 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+            title={isVisible ? "Hide usage limits" : "Show usage limits"}
           >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
+            <svg
+              className={`w-4 h-4 transition-transform ${isVisible ? "rotate-180" : ""}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+        </div>
       </div>
 
-      {isVisible && <div className="space-y-4">
+      {isVisible && <div className="space-y-4 mt-4">
         {/* Claude Limits */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
@@ -261,6 +282,46 @@ interface UsageLimitBarProps {
   label: string;
   percentage: number;
   resetTime: string;
+}
+
+interface CollapsedUsageBarProps {
+  label: string;
+  percentage: number;
+  color: "purple" | "green";
+}
+
+function CollapsedUsageBar({ label, percentage, color }: CollapsedUsageBarProps) {
+  const displayPercentage = Math.min(100, Math.max(0, percentage));
+
+  const getBarColor = (pct: number) => {
+    if (pct >= 90) return 'bg-[var(--accent-error)]';
+    if (pct >= 70) return 'bg-[var(--accent-warning)]';
+    if (pct >= 50) return 'bg-yellow-500';
+    return color === "purple" ? 'bg-purple-500' : 'bg-[var(--accent-success)]';
+  };
+
+  const getTextColor = (pct: number) => {
+    if (pct >= 90) return 'text-[var(--accent-error)]';
+    if (pct >= 70) return 'text-[var(--accent-warning)]';
+    if (pct >= 50) return 'text-yellow-400';
+    return 'text-[var(--text-secondary)]';
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      <div className={`w-1.5 h-1.5 rounded-full ${color === "purple" ? "bg-purple-500" : "bg-[var(--accent-success)]"}`} />
+      <span className="text-[10px] text-[var(--text-tertiary)]">{label}</span>
+      <div className="w-12 h-1.5 bg-[var(--bg-hover)] rounded-full overflow-hidden">
+        <div
+          className={`h-full ${getBarColor(displayPercentage)} rounded-full`}
+          style={{ width: `${displayPercentage}%` }}
+        />
+      </div>
+      <span className={`text-[10px] font-medium ${getTextColor(displayPercentage)}`}>
+        {displayPercentage}%
+      </span>
+    </div>
+  );
 }
 
 function UsageLimitBar({ label, percentage, resetTime }: UsageLimitBarProps) {

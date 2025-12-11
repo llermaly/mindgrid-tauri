@@ -1,12 +1,13 @@
 import { WebviewWindow, getAllWebviewWindows } from "@tauri-apps/api/webviewWindow";
 import { currentMonitor, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
-import { useSessionStore } from "../stores/sessionStore";
+import { useSessionStore, type ChatWindow } from "../stores/sessionStore";
 
 export interface ChatWindowOptions {
   sessionId: string;
   sessionName: string;
   projectName: string;
   cwd: string;
+  chatWindowId?: string; // Optional: specific chat window to open
 }
 
 export interface WindowPosition {
@@ -136,14 +137,17 @@ async function calculateWindowPositions(count: number): Promise<WindowPosition[]
 }
 
 /**
- * Opens a new chat window for the given session.
- * If a window for this session already exists, focus it instead.
+ * Opens a chat window for a specific ChatWindow entity.
+ * If chatWindowId is provided, opens that specific chat window.
+ * Otherwise creates a new ChatWindow and opens it.
  */
 export async function openChatWindow(options: ChatWindowOptions): Promise<WebviewWindow | null> {
-  const { sessionId, sessionName, projectName } = options;
-  const windowLabel = `chat-${sessionId}`;
+  const { sessionId, sessionName, projectName, chatWindowId } = options;
 
-  console.log("[window-manager] openChatWindow called:", { sessionId, windowLabel });
+  // If chatWindowId is provided, use it; otherwise this is a legacy call
+  const windowLabel = chatWindowId ? `chat-${chatWindowId}` : `chat-${sessionId}`;
+
+  console.log("[window-manager] openChatWindow called:", { sessionId, chatWindowId, windowLabel });
 
   // Check if window already exists
   try {
@@ -159,8 +163,10 @@ export async function openChatWindow(options: ChatWindowOptions): Promise<Webvie
   }
 
   try {
-    // Create URL with session info as query params
-    const url = `index.html?sessionId=${encodeURIComponent(sessionId)}`;
+    // Create URL with session info and chatWindowId as query params
+    const url = chatWindowId
+      ? `index.html?sessionId=${encodeURIComponent(sessionId)}&chatWindowId=${encodeURIComponent(chatWindowId)}`
+      : `index.html?sessionId=${encodeURIComponent(sessionId)}`;
 
     console.log("[window-manager] Creating new window:", { windowLabel, url });
 
@@ -191,6 +197,16 @@ export async function openChatWindow(options: ChatWindowOptions): Promise<Webvie
     // Listen for window close
     webview.once("tauri://destroyed", () => {
       console.log(`[window-manager] Chat window closed: ${windowLabel}`);
+
+      // If this is a ChatWindow, check if it should be marked for deletion
+      if (chatWindowId) {
+        const chatWindow = useSessionStore.getState().getChatWindow(chatWindowId);
+        if (chatWindow && !chatWindow.isPinned) {
+          // Mark unpinned window for deletion
+          useSessionStore.getState().markChatWindowForDeletion(chatWindowId);
+        }
+      }
+
       // Check if this was the last window for this session
       void getSessionChatWindowCount(sessionId).then(count => {
         if (count === 0) {
@@ -207,24 +223,28 @@ export async function openChatWindow(options: ChatWindowOptions): Promise<Webvie
 }
 
 /**
- * Opens a new chat in the same session (creates a new Claude conversation)
+ * Opens a new chat in the same session (creates a new ChatWindow and opens it)
+ * The new chat window is unpinned by default and will be flagged for cleanup when closed.
  */
 export async function openNewChatInSession(options: ChatWindowOptions): Promise<WebviewWindow | null> {
   const { sessionId, sessionName, projectName } = options;
-  const timestamp = Date.now();
-  const windowLabel = `chat-${sessionId}-${timestamp}`;
 
-  console.log("[window-manager] openNewChatInSession called:", { sessionId, windowLabel });
+  console.log("[window-manager] openNewChatInSession called:", { sessionId });
 
   try {
-    // Create URL with session info and newChat flag
-    const url = `index.html?sessionId=${encodeURIComponent(sessionId)}&newChat=true`;
+    // Create a new ChatWindow entity (unpinned by default)
+    const chatWindow = await useSessionStore.getState().createChatWindow(sessionId, {
+      isPinned: false, // New chat windows are unpinned
+    });
 
-    console.log("[window-manager] Creating new chat window:", { windowLabel, url });
+    const windowLabel = `chat-${chatWindow.id}`;
+    const url = `index.html?sessionId=${encodeURIComponent(sessionId)}&chatWindowId=${encodeURIComponent(chatWindow.id)}&newChat=true`;
+
+    console.log("[window-manager] Creating new chat window:", { windowLabel, chatWindowId: chatWindow.id, url });
 
     const webview = new WebviewWindow(windowLabel, {
       url,
-      title: `New Chat - ${sessionName} - ${projectName}`,
+      title: `${chatWindow.title} - ${sessionName} - ${projectName}`,
       width: 800,
       height: 700,
       minWidth: 400,
@@ -237,10 +257,29 @@ export async function openNewChatInSession(options: ChatWindowOptions): Promise<
 
     webview.once("tauri://created", () => {
       console.log(`[window-manager] New chat window created: ${windowLabel}`);
+      useSessionStore.getState().markSessionChatOpen(sessionId);
     });
 
     webview.once("tauri://error", (e) => {
       console.error(`[window-manager] New chat window error: ${windowLabel}`, e);
+    });
+
+    // Listen for window close to mark for deletion
+    webview.once("tauri://destroyed", () => {
+      console.log(`[window-manager] Chat window closed: ${windowLabel}`);
+
+      // Mark unpinned window for deletion
+      const cw = useSessionStore.getState().getChatWindow(chatWindow.id);
+      if (cw && !cw.isPinned) {
+        useSessionStore.getState().markChatWindowForDeletion(chatWindow.id);
+      }
+
+      // Check if this was the last window for this session
+      void getSessionChatWindowCount(sessionId).then(count => {
+        if (count === 0) {
+          useSessionStore.getState().markSessionChatClosed(sessionId);
+        }
+      });
     });
 
     return webview;
@@ -316,12 +355,14 @@ async function openChatWindowAtPosition(
   position: WindowPosition,
   windowLabel: string
 ): Promise<WebviewWindow | null> {
-  const { sessionId, sessionName, projectName } = options;
+  const { sessionId, sessionName, projectName, chatWindowId } = options;
 
   try {
-    const url = `index.html?sessionId=${encodeURIComponent(sessionId)}`;
+    const url = chatWindowId
+      ? `index.html?sessionId=${encodeURIComponent(sessionId)}&chatWindowId=${encodeURIComponent(chatWindowId)}`
+      : `index.html?sessionId=${encodeURIComponent(sessionId)}`;
 
-    console.log("[window-manager] Creating window at position:", { windowLabel, position });
+    console.log("[window-manager] Creating window at position:", { windowLabel, chatWindowId, position });
 
     const webview = new WebviewWindow(windowLabel, {
       url,
@@ -339,10 +380,31 @@ async function openChatWindowAtPosition(
 
     webview.once("tauri://created", () => {
       console.log(`[window-manager] Window created: ${windowLabel}`);
+      useSessionStore.getState().markSessionChatOpen(sessionId);
     });
 
     webview.once("tauri://error", (e) => {
       console.error(`[window-manager] Window error: ${windowLabel}`, e);
+    });
+
+    // Listen for window close
+    webview.once("tauri://destroyed", () => {
+      console.log(`[window-manager] Window closed: ${windowLabel}`);
+
+      // If this is a ChatWindow, check if it should be marked for deletion
+      if (chatWindowId) {
+        const chatWindow = useSessionStore.getState().getChatWindow(chatWindowId);
+        if (chatWindow && !chatWindow.isPinned) {
+          useSessionStore.getState().markChatWindowForDeletion(chatWindowId);
+        }
+      }
+
+      // Check if this was the last window for this session
+      void getSessionChatWindowCount(sessionId).then(count => {
+        if (count === 0) {
+          useSessionStore.getState().markSessionChatClosed(sessionId);
+        }
+      });
     });
 
     return webview;
@@ -370,28 +432,51 @@ export async function openMultipleChatWindows(
   // Create windows with a small delay between each to prevent race conditions
   for (let i = 0; i < count; i++) {
     const timestamp = Date.now() + i;
-    const windowLabel = i === 0 ? `chat-${sessionId}` : `chat-${sessionId}-${timestamp}`;
+    
+    // Determine label and ID
+    let windowLabel = `chat-${sessionId}-${timestamp}`;
+    let targetChatWindowId: string | undefined = undefined;
 
-    // Check if first window already exists
+    // If opening the first window, try to use the Main Session window
     if (i === 0) {
-      try {
-        const existingWindows = await getAllWebviewWindows();
-        const existing = existingWindows.find(w => w.label === windowLabel);
-        if (existing) {
-          // Move existing window to position and focus
-          await existing.setPosition(new PhysicalPosition(Math.round(positions[i].x), Math.round(positions[i].y)));
-          await existing.setSize(new PhysicalSize(Math.round(positions[i].width), Math.round(positions[i].height)));
-          windows.push(existing);
-          continue;
-        }
-      } catch (e) {
-        console.log("[window-manager] Error checking existing window:", e);
+      const pinnedWindows = useSessionStore.getState().getPinnedChatWindows(sessionId);
+      const mainChat = pinnedWindows.find(cw => cw.title === "Main Session") || pinnedWindows[0];
+      
+      if (mainChat) {
+        targetChatWindowId = mainChat.id;
+        windowLabel = `chat-${mainChat.id}`;
+      } else {
+        // Legacy fallback
+        windowLabel = `chat-${sessionId}`;
       }
     }
 
-    const webview = await openChatWindowAtPosition(options, positions[i], windowLabel);
+    // Check if window already exists
+    try {
+      const existingWindows = await getAllWebviewWindows();
+      const existing = existingWindows.find(w => w.label === windowLabel);
+      if (existing) {
+        // Move existing window to position and focus
+        await existing.setPosition(new PhysicalPosition(Math.round(positions[i].x), Math.round(positions[i].y)));
+        await existing.setSize(new PhysicalSize(Math.round(positions[i].width), Math.round(positions[i].height)));
+        windows.push(existing);
+        continue;
+      }
+    } catch (e) {
+      console.log("[window-manager] Error checking existing window:", e);
+    }
+
+    const windowOptions: ChatWindowOptions = {
+        ...options,
+        chatWindowId: targetChatWindowId,
+    };
+
+    const webview = await openChatWindowAtPosition(windowOptions, positions[i], windowLabel);
     if (webview) {
       windows.push(webview);
+      console.log(`[window-manager] Multiple windows: ${i + 1}/${count} created: ${windowLabel}`);
+    } else {
+      console.error(`[window-manager] Multiple windows: Failed to create ${i + 1}/${count}: ${windowLabel}`);
     }
 
     // Small delay between window creation
@@ -425,7 +510,11 @@ export async function openAllProjectSessionChats(
 
   if (count === 0) return windows;
 
-  console.log("[window-manager] Opening all project sessions:", { projectName, count });
+  console.log("[window-manager] Opening all project sessions:", {
+    projectName,
+    count,
+    sessions: sessions.map(s => ({ id: s.sessionId, name: s.sessionName }))
+  });
 
   // Calculate positions for all windows
   const positions = await calculateWindowPositions(count);
@@ -433,7 +522,14 @@ export async function openAllProjectSessionChats(
   // Create windows with a small delay between each to prevent race conditions
   for (let i = 0; i < count; i++) {
     const session = sessions[i];
-    const windowLabel = `chat-${session.sessionId}`;
+    
+    // Find the main chat window for this session (legacy fallback: use session ID)
+    const pinnedWindows = useSessionStore.getState().getPinnedChatWindows(session.sessionId);
+    const mainChat = pinnedWindows.find(cw => cw.title === "Main Session") || pinnedWindows[0];
+    
+    // If we found a main chat window, use its ID and label
+    const chatWindowId = mainChat?.id;
+    const windowLabel = chatWindowId ? `chat-${chatWindowId}` : `chat-${session.sessionId}`;
 
     // Check if window already exists
     try {
@@ -455,11 +551,15 @@ export async function openAllProjectSessionChats(
       sessionName: session.sessionName,
       projectName,
       cwd: session.cwd,
+      chatWindowId, // Pass the specific chat window ID if found
     };
 
     const webview = await openChatWindowAtPosition(options, positions[i], windowLabel);
     if (webview) {
       windows.push(webview);
+      console.log(`[window-manager] Window ${i + 1}/${count} created: ${windowLabel}`);
+    } else {
+      console.error(`[window-manager] Failed to create window ${i + 1}/${count}: ${windowLabel}`);
     }
 
     // Small delay between window creation
@@ -467,6 +567,8 @@ export async function openAllProjectSessionChats(
       await new Promise(resolve => setTimeout(resolve, 100));
     }
   }
+
+  console.log(`[window-manager] Finished opening project sessions, created ${windows.length}/${count} windows`);
 
   // Focus the first window after all are created
   if (windows.length > 0) {
@@ -488,7 +590,25 @@ export async function closeAllSessionChatWindows(sessionId: string): Promise<num
   let closedCount = 0;
   try {
     const existingWindows = await getAllWebviewWindows();
-    const sessionWindows = existingWindows.filter(w => w.label.startsWith(`chat-${sessionId}`));
+    
+    // Get all chat window IDs for this session from the store
+    const sessionChatWindows = useSessionStore.getState().getSessionChatWindows(sessionId);
+    const chatWindowIds = new Set(sessionChatWindows.map(cw => cw.id));
+    
+    const sessionWindows = existingWindows.filter(w => {
+      // Check for legacy/timestamped labels: chat-{sessionId} or chat-{sessionId}-...
+      if (w.label === `chat-${sessionId}` || w.label.startsWith(`chat-${sessionId}-`)) {
+        return true;
+      }
+      
+      // Check for chat window ID labels: chat-{chatWindowId}
+      const match = w.label.match(/^chat-(.+)$/);
+      if (match && chatWindowIds.has(match[1])) {
+        return true;
+      }
+      
+      return false;
+    });
 
     for (const window of sessionWindows) {
       try {
@@ -532,6 +652,18 @@ export async function closeAllChatWindows(): Promise<number> {
 }
 
 /**
+ * Close all chat windows for all sessions in a project
+ */
+export async function closeAllProjectSessionChats(sessionIds: string[]): Promise<number> {
+  let closedCount = 0;
+  for (const sessionId of sessionIds) {
+    closedCount += await closeAllSessionChatWindows(sessionId);
+  }
+  console.log(`[window-manager] Closed ${closedCount} windows for project sessions`);
+  return closedCount;
+}
+
+/**
  * Arrange all open chat windows for a session in a grid
  */
 export async function arrangeSessionWindows(sessionId: string): Promise<void> {
@@ -557,122 +689,6 @@ export async function arrangeSessionWindows(sessionId: string): Promise<void> {
     console.log(`[window-manager] Arranged ${sessionWindows.length} windows for session ${sessionId}`);
   } catch (e) {
     console.error("[window-manager] Error arranging windows:", e);
-  }
-}
-
-/**
- * Opens a workspace window for the given session.
- * The workspace shows all panels (Research, Coding, Browser, etc.) in a single window.
- */
-export async function openWorkspaceWindow(options: ChatWindowOptions): Promise<WebviewWindow | null> {
-  const { sessionId, sessionName, projectName } = options;
-  const windowLabel = `workspace-${sessionId}`;
-
-  console.log("[window-manager] openWorkspaceWindow called:", { sessionId, windowLabel });
-
-  // Check if window already exists
-  try {
-    const existingWindows = await getAllWebviewWindows();
-    const existing = existingWindows.find(w => w.label === windowLabel);
-    if (existing) {
-      console.log("[window-manager] Workspace window exists, focusing:", windowLabel);
-      await existing.setFocus();
-      return existing;
-    }
-  } catch (e) {
-    console.log("[window-manager] Error checking existing windows:", e);
-  }
-
-  try {
-    // Get screen dimensions for a larger window
-    const monitor = await currentMonitor();
-    let width = 1400;
-    let height = 900;
-
-    if (monitor) {
-      // Use 80% of screen size
-      width = Math.min(1600, Math.round(monitor.size.width * 0.8));
-      height = Math.min(1000, Math.round(monitor.size.height * 0.8));
-    }
-
-    // Create URL with session info and workspace mode flag
-    const url = `index.html?sessionId=${encodeURIComponent(sessionId)}&mode=workspace`;
-
-    console.log("[window-manager] Creating workspace window:", { windowLabel, url, width, height });
-
-    const webview = new WebviewWindow(windowLabel, {
-      url,
-      title: `Workspace - ${sessionName} - ${projectName}`,
-      width,
-      height,
-      minWidth: 800,
-      minHeight: 600,
-      center: true,
-      decorations: true,
-      resizable: true,
-      focus: true,
-    });
-
-    // Listen for window events
-    webview.once("tauri://created", () => {
-      console.log(`[window-manager] Workspace window created: ${windowLabel}`);
-      // Mark session as active
-      useSessionStore.getState().markSessionChatOpen(sessionId);
-    });
-
-    webview.once("tauri://error", (e) => {
-      console.error(`[window-manager] Workspace window error: ${windowLabel}`, e);
-    });
-
-    // Listen for window close
-    webview.once("tauri://destroyed", () => {
-      console.log(`[window-manager] Workspace window closed: ${windowLabel}`);
-      // Check if this was the last window for this session
-      void getSessionChatWindowCount(sessionId).then(count => {
-        if (count === 0) {
-          useSessionStore.getState().markSessionChatClosed(sessionId);
-        }
-      });
-    });
-
-    return webview;
-  } catch (error) {
-    console.error("[window-manager] Failed to create workspace window:", error);
-    return null;
-  }
-}
-
-/**
- * Focus an existing workspace window if it exists
- */
-export async function focusWorkspaceWindow(sessionId: string): Promise<boolean> {
-  const windowLabel = `workspace-${sessionId}`;
-  try {
-    const existingWindows = await getAllWebviewWindows();
-    const existing = existingWindows.find(w => w.label === windowLabel);
-    if (existing) {
-      await existing.setFocus();
-      return true;
-    }
-  } catch (e) {
-    console.error("[window-manager] Error focusing workspace window:", e);
-  }
-  return false;
-}
-
-/**
- * Close a workspace window
- */
-export async function closeWorkspaceWindow(sessionId: string): Promise<void> {
-  const windowLabel = `workspace-${sessionId}`;
-  try {
-    const existingWindows = await getAllWebviewWindows();
-    const existing = existingWindows.find(w => w.label === windowLabel);
-    if (existing) {
-      await existing.close();
-    }
-  } catch (e) {
-    console.error("[window-manager] Error closing workspace window:", e);
   }
 }
 
@@ -751,6 +767,129 @@ export async function getRunWindowCount(sessionId: string): Promise<number> {
   } catch {
     return 0;
   }
+}
+
+/**
+ * Opens all pinned chat windows for all sessions in a project, arranged side-by-side.
+ * This is the preferred method for "Open Workspace" - only opens pinned/permanent windows.
+ */
+export async function openPinnedChatWindows(
+  sessions: Array<{ sessionId: string; sessionName: string; cwd: string }>,
+  projectName: string
+): Promise<WebviewWindow[]> {
+  const windows: WebviewWindow[] = [];
+
+  // Collect all pinned chat windows across all sessions
+  const pinnedWindowsToOpen: Array<{
+    chatWindow: ChatWindow;
+    session: { sessionId: string; sessionName: string; cwd: string };
+  }> = [];
+
+  for (const session of sessions) {
+    const pinnedWindows = useSessionStore.getState().getPinnedChatWindows(session.sessionId);
+    for (const cw of pinnedWindows) {
+      pinnedWindowsToOpen.push({ chatWindow: cw, session });
+    }
+  }
+
+  const count = pinnedWindowsToOpen.length;
+
+  if (count === 0) {
+    console.log("[window-manager] No pinned chat windows to open for project:", projectName);
+    return windows;
+  }
+
+  console.log("[window-manager] Opening pinned chat windows:", {
+    projectName,
+    count,
+    windows: pinnedWindowsToOpen.map(pw => ({ id: pw.chatWindow.id, title: pw.chatWindow.title, sessionId: pw.session.sessionId }))
+  });
+
+  // Calculate positions for all windows
+  const positions = await calculateWindowPositions(count);
+
+  // Create windows with a small delay between each to prevent race conditions
+  for (let i = 0; i < count; i++) {
+    const { chatWindow, session } = pinnedWindowsToOpen[i];
+    const windowLabel = `chat-${chatWindow.id}`;
+
+    // Check if window already exists
+    try {
+      const existingWindows = await getAllWebviewWindows();
+      const existing = existingWindows.find(w => w.label === windowLabel);
+      if (existing) {
+        // Move existing window to position
+        await existing.setPosition(new PhysicalPosition(Math.round(positions[i].x), Math.round(positions[i].y)));
+        await existing.setSize(new PhysicalSize(Math.round(positions[i].width), Math.round(positions[i].height)));
+        windows.push(existing);
+        continue;
+      }
+    } catch (e) {
+      console.log("[window-manager] Error checking existing window:", e);
+    }
+
+    const options: ChatWindowOptions = {
+      sessionId: session.sessionId,
+      sessionName: session.sessionName,
+      projectName,
+      cwd: session.cwd,
+      chatWindowId: chatWindow.id,
+    };
+
+    const webview = await openChatWindowAtPosition(options, positions[i], windowLabel);
+    if (webview) {
+      windows.push(webview);
+      console.log(`[window-manager] Pinned window ${i + 1}/${count} created: ${windowLabel}`);
+    } else {
+      console.error(`[window-manager] Failed to create pinned window ${i + 1}/${count}: ${windowLabel}`);
+    }
+
+    // Small delay between window creation
+    if (i < count - 1) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+
+  console.log(`[window-manager] Finished opening pinned windows, created ${windows.length}/${count} windows`);
+
+  // Focus the first window after all are created
+  if (windows.length > 0) {
+    await new Promise(resolve => setTimeout(resolve, 200));
+    try {
+      await windows[0].setFocus();
+    } catch (e) {
+      console.log("[window-manager] Could not focus first window:", e);
+    }
+  }
+
+  return windows;
+}
+
+/**
+ * Creates pinned chat windows for a session (used when creating variants at project start)
+ */
+export async function createPinnedChatWindowsForSession(
+  sessionId: string,
+  count: number,
+  options?: { titlePrefix?: string }
+): Promise<ChatWindow[]> {
+  const chatWindows: ChatWindow[] = [];
+
+  for (let i = 0; i < count; i++) {
+    const title = options?.titlePrefix
+      ? `${options.titlePrefix} ${i + 1}`
+      : `Chat ${i + 1}`;
+
+    const chatWindow = await useSessionStore.getState().createChatWindow(sessionId, {
+      title,
+      isPinned: true, // Variants are pinned by default
+    });
+
+    chatWindows.push(chatWindow);
+    console.log(`[window-manager] Created pinned chat window: ${chatWindow.id} (${title})`);
+  }
+
+  return chatWindows;
 }
 
 /**
