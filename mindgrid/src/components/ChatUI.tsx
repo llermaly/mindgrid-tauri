@@ -1666,9 +1666,9 @@ export function ChatUI({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Terminal Panel */}
-      {showTerminal && cwd && (
-        <div className="h-64 border-t border-zinc-700 flex-shrink-0">
+      {/* Terminal Panel - kept mounted but hidden to preserve terminal state */}
+      {cwd && (
+        <div className={`h-64 border-t border-zinc-700 flex-shrink-0 ${showTerminal ? '' : 'hidden'}`}>
           <Terminal mode="raw" cwd={cwd} />
         </div>
       )}
