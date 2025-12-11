@@ -108,16 +108,16 @@ export const GitErrorDialog: React.FC<GitErrorDialogProps> = ({
       onClick={onClose}
     >
       <div
-        className="bg-zinc-800 border border-zinc-700 rounded-lg max-w-2xl w-full max-h-[80vh] overflow-hidden shadow-xl flex flex-col"
+        className="bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-xl max-w-2xl w-full max-h-[80vh] overflow-hidden shadow-xl flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center gap-3 px-4 py-3 bg-red-500/10 border-b border-zinc-700">
-          <AlertCircleIcon className="w-5 h-5 text-red-500 shrink-0" />
-          <span className="text-red-500 font-medium flex-1 truncate">{errorDetails.title}</span>
+        <div className="flex items-center gap-3 px-4 py-3 bg-[var(--accent-error-muted)] border-b border-[var(--border-default)]">
+          <AlertCircleIcon className="w-5 h-5 text-[var(--accent-error)] shrink-0" />
+          <span className="text-[var(--accent-error)] font-medium flex-1 truncate">{errorDetails.title}</span>
           <button
             onClick={onClose}
-            className="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200"
+            className="p-1 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
           >
             <XIcon className="w-4 h-4" />
           </button>
@@ -127,24 +127,24 @@ export const GitErrorDialog: React.FC<GitErrorDialogProps> = ({
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {/* Error Message */}
           <div>
-            <h3 className="text-xs font-medium text-zinc-400 mb-2">Error Message</h3>
-            <div className="p-3 rounded bg-red-500/10 border border-red-500/30">
-              <p className="text-red-400 text-sm">{errorDetails.message}</p>
+            <h3 className="text-xs font-medium text-[var(--text-secondary)] mb-2">Error Message</h3>
+            <div className="p-3 rounded-lg bg-[var(--accent-error-muted)] border border-[var(--accent-error)]">
+              <p className="text-[var(--accent-error)] text-sm">{errorDetails.message}</p>
             </div>
           </div>
 
           {/* Conflicting Files */}
           {errorDetails.conflictingFiles && errorDetails.conflictingFiles.length > 0 && (
-            <div className="rounded border-2 border-amber-500/30 bg-amber-500/10 p-3">
-              <h3 className="text-sm font-semibold text-amber-500 mb-2 flex items-center gap-2">
+            <div className="rounded-lg border-2 border-[var(--accent-warning)] bg-[var(--accent-warning-muted)] p-3">
+              <h3 className="text-sm font-semibold text-[var(--accent-warning)] mb-2 flex items-center gap-2">
                 <AlertCircleIcon className="w-4 h-4" />
                 Conflicting Files
               </h3>
-              <div className="bg-zinc-900/50 rounded p-2">
+              <div className="bg-[var(--bg-primary)]/50 rounded-lg p-2">
                 <ul className="text-sm font-mono space-y-1">
                   {errorDetails.conflictingFiles.map((file, idx) => (
-                    <li key={idx} className="text-zinc-300">
-                      <span className="text-zinc-500 mr-2">*</span>
+                    <li key={idx} className="text-[var(--text-primary)]">
+                      <span className="text-[var(--text-tertiary)] mr-2">*</span>
                       {file}
                     </li>
                   ))}
@@ -157,21 +157,21 @@ export const GitErrorDialog: React.FC<GitErrorDialogProps> = ({
           {errorDetails.conflictingCommits && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {errorDetails.conflictingCommits.ours.length > 0 && (
-                <div className="rounded border border-blue-500/30 bg-blue-500/10 p-3">
-                  <h4 className="text-xs font-semibold text-blue-400 mb-2">Your Commits</h4>
+                <div className="rounded-lg border border-[var(--accent-primary)] bg-[var(--accent-primary-muted)] p-3">
+                  <h4 className="text-xs font-semibold text-[var(--accent-primary)] mb-2">Your Commits</h4>
                   <div className="text-xs font-mono space-y-1 max-h-24 overflow-y-auto">
                     {errorDetails.conflictingCommits.ours.map((commit, idx) => (
-                      <div key={idx} className="text-blue-300/80 truncate">{commit}</div>
+                      <div key={idx} className="text-[var(--text-primary)] truncate">{commit}</div>
                     ))}
                   </div>
                 </div>
               )}
               {errorDetails.conflictingCommits.theirs.length > 0 && (
-                <div className="rounded border border-green-500/30 bg-green-500/10 p-3">
-                  <h4 className="text-xs font-semibold text-green-400 mb-2">Incoming Commits</h4>
+                <div className="rounded-lg border border-[var(--accent-success)] bg-[var(--accent-success-muted)] p-3">
+                  <h4 className="text-xs font-semibold text-[var(--accent-success)] mb-2">Incoming Commits</h4>
                   <div className="text-xs font-mono space-y-1 max-h-24 overflow-y-auto">
                     {errorDetails.conflictingCommits.theirs.map((commit, idx) => (
-                      <div key={idx} className="text-green-300/80 truncate">{commit}</div>
+                      <div key={idx} className="text-[var(--text-primary)] truncate">{commit}</div>
                     ))}
                   </div>
                 </div>
@@ -180,13 +180,13 @@ export const GitErrorDialog: React.FC<GitErrorDialogProps> = ({
           )}
 
           {/* Git Output */}
-          <div className="rounded border-2 border-red-500/30 bg-red-500/10 p-3">
-            <h3 className="text-sm font-semibold text-red-500 mb-2 flex items-center gap-2">
+          <div className="rounded-lg border-2 border-[var(--accent-error)] bg-[var(--accent-error-muted)] p-3">
+            <h3 className="text-sm font-semibold text-[var(--accent-error)] mb-2 flex items-center gap-2">
               <FileTextIcon className="w-4 h-4" />
               Git Output
             </h3>
-            <div className="bg-zinc-900/50 rounded p-3 max-h-48 overflow-y-auto">
-              <pre className="text-sm whitespace-pre-wrap font-mono text-zinc-300">
+            <div className="bg-[var(--bg-primary)]/50 rounded-lg p-3 max-h-48 overflow-y-auto">
+              <pre className="text-sm whitespace-pre-wrap font-mono text-[var(--text-primary)]">
                 {errorDetails.output || 'No output available'}
               </pre>
             </div>
@@ -195,9 +195,9 @@ export const GitErrorDialog: React.FC<GitErrorDialogProps> = ({
           {/* Working Directory */}
           {errorDetails.workingDirectory && (
             <div>
-              <h3 className="text-xs font-medium text-zinc-400 mb-2">Working Directory</h3>
-              <div className="p-2 rounded bg-zinc-700/50 border border-zinc-600">
-                <p className="text-zinc-300 text-sm font-mono truncate">{errorDetails.workingDirectory}</p>
+              <h3 className="text-xs font-medium text-[var(--text-secondary)] mb-2">Working Directory</h3>
+              <div className="p-2 rounded-lg bg-[var(--bg-hover)]/50 border border-[var(--border-default)]">
+                <p className="text-[var(--text-primary)] text-sm font-mono truncate">{errorDetails.workingDirectory}</p>
               </div>
             </div>
           )}
@@ -205,18 +205,18 @@ export const GitErrorDialog: React.FC<GitErrorDialogProps> = ({
           {/* Commands */}
           {(errorDetails.command || errorDetails.commands) && (
             <div>
-              <h3 className="text-xs font-medium text-zinc-400 mb-2">
+              <h3 className="text-xs font-medium text-[var(--text-secondary)] mb-2">
                 {errorDetails.commands ? 'Git Commands Executed' : 'Git Command'}
               </h3>
               <div className="space-y-2">
                 {errorDetails.command && (
-                  <div className="p-2 rounded bg-zinc-700/50 border border-zinc-600">
-                    <p className="font-mono text-sm text-zinc-300">{errorDetails.command}</p>
+                  <div className="p-2 rounded-lg bg-[var(--bg-hover)]/50 border border-[var(--border-default)]">
+                    <p className="font-mono text-sm text-[var(--text-primary)]">{errorDetails.command}</p>
                   </div>
                 )}
                 {errorDetails.commands?.map((cmd, idx) => (
-                  <div key={idx} className="p-2 rounded bg-zinc-700/50 border border-zinc-600">
-                    <p className="font-mono text-sm text-zinc-300">{cmd}</p>
+                  <div key={idx} className="p-2 rounded-lg bg-[var(--bg-hover)]/50 border border-[var(--border-default)]">
+                    <p className="font-mono text-sm text-[var(--text-primary)]">{cmd}</p>
                   </div>
                 ))}
               </div>
@@ -224,12 +224,12 @@ export const GitErrorDialog: React.FC<GitErrorDialogProps> = ({
           )}
 
           {/* Troubleshooting Tips */}
-          <div className="rounded bg-blue-500/10 border border-blue-500/30 p-3">
+          <div className="rounded-lg bg-[var(--accent-primary-muted)] border border-[var(--accent-primary)] p-3">
             <div className="flex items-start gap-2">
-              <InfoIcon className="w-4 h-4 text-blue-400 mt-0.5 shrink-0" />
+              <InfoIcon className="w-4 h-4 text-[var(--accent-primary)] mt-0.5 shrink-0" />
               <div>
-                <h4 className="text-sm font-medium text-blue-400 mb-1">Troubleshooting Tips</h4>
-                <ul className="text-sm text-blue-300/80 space-y-1">
+                <h4 className="text-sm font-medium text-[var(--accent-primary)] mb-1">Troubleshooting Tips</h4>
+                <ul className="text-sm text-[var(--text-primary)] space-y-1">
                   {tips.map((tip, idx) => (
                     <li key={idx}>* {tip}</li>
                   ))}
@@ -240,12 +240,12 @@ export const GitErrorDialog: React.FC<GitErrorDialogProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-4 py-3 border-t border-zinc-700 bg-zinc-800/50">
+        <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--border-default)] bg-[var(--bg-secondary)]/50">
           <div>
             {(errorDetails.isRebaseConflict || errorDetails.hasConflicts) && onResolveWithClaude && (
               <button
                 onClick={onResolveWithClaude}
-                className="px-3 py-1.5 text-sm font-medium rounded bg-green-600 hover:bg-green-500 text-white flex items-center gap-2"
+                className="px-3 py-1.5 text-sm font-medium rounded-lg bg-[var(--accent-success)] hover:bg-[var(--accent-success)]/80 text-white flex items-center gap-2"
               >
                 <CheckIcon className="w-4 h-4" />
                 Use Claude to Resolve
@@ -255,7 +255,7 @@ export const GitErrorDialog: React.FC<GitErrorDialogProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={handleCopy}
-              className="px-3 py-1.5 text-sm font-medium rounded bg-zinc-700 hover:bg-zinc-600 text-zinc-300 flex items-center gap-2"
+              className="px-3 py-1.5 text-sm font-medium rounded-lg bg-[var(--bg-hover)] hover:bg-[var(--bg-active)] text-[var(--text-primary)] flex items-center gap-2"
             >
               {copied ? (
                 <>
@@ -271,7 +271,7 @@ export const GitErrorDialog: React.FC<GitErrorDialogProps> = ({
             </button>
             <button
               onClick={onClose}
-              className="px-3 py-1.5 text-sm font-medium rounded bg-zinc-700 hover:bg-zinc-600 text-zinc-300"
+              className="px-3 py-1.5 text-sm font-medium rounded-lg bg-[var(--bg-hover)] hover:bg-[var(--bg-active)] text-[var(--text-primary)]"
             >
               Close
             </button>

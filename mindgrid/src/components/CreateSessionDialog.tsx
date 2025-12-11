@@ -232,17 +232,17 @@ export function CreateSessionDialog({
       onClick={onClose}
     >
       <div
-        className="bg-zinc-800 border border-zinc-700 rounded-xl w-full max-w-lg mx-4 shadow-2xl max-h-[90vh] overflow-hidden flex flex-col"
+        className="bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-xl w-full max-w-lg mx-4 shadow-2xl max-h-[90vh] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
       >
         {/* Header */}
-        <div className="px-6 py-4 border-b border-zinc-700">
-          <h2 className="text-xl font-semibold text-zinc-100 mb-1">
+        <div className="px-6 py-4 border-b border-[var(--border-default)]">
+          <h2 className="text-xl font-semibold text-[var(--text-primary)] mb-1">
             New Session
           </h2>
-          <p className="text-sm text-zinc-400">
-            Create a new session in <span className="text-zinc-300">{projectName}</span>
+          <p className="text-sm text-[var(--text-secondary)]">
+            Create a new session in <span className="text-[var(--text-primary)]">{projectName}</span>
           </p>
         </div>
 
@@ -250,8 +250,8 @@ export function CreateSessionDialog({
         <div className="flex-1 overflow-y-auto p-6 space-y-5">
           {/* Session Name Input */}
           <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-2">
-              Session Name <span className="text-red-400">*</span>
+            <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
+              Session Name <span className="text-[var(--accent-error)]">*</span>
             </label>
             <input
               ref={inputRef}
@@ -259,17 +259,17 @@ export function CreateSessionDialog({
               value={sessionName}
               onChange={(e) => handleNameChange(e.target.value)}
               placeholder="e.g., Feature Development"
-              className={`w-full px-4 py-2.5 bg-zinc-900 border rounded-lg text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 transition-colors ${
+              className={`w-full px-4 py-2.5 bg-[var(--bg-surface)] border rounded-lg text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 transition-colors ${
                 error
-                  ? "border-red-500 focus:ring-red-500/50"
-                  : "border-zinc-600 focus:ring-blue-500/50 focus:border-blue-500"
+                  ? "border-[var(--accent-error)] focus:ring-[var(--accent-error)]/50"
+                  : "border-[var(--border-default)] focus:ring-[var(--accent-primary)]/50 focus:border-[var(--accent-primary)]"
               }`}
               maxLength={30}
             />
             {error ? (
-              <p className="mt-1.5 text-sm text-red-400">{error}</p>
+              <p className="mt-1.5 text-sm text-[var(--accent-error)]">{error}</p>
             ) : (
-              <p className="mt-1.5 text-xs text-zinc-500">
+              <p className="mt-1.5 text-xs text-[var(--text-tertiary)]">
                 {sessionName.length}/30 characters
               </p>
             )}
@@ -277,21 +277,21 @@ export function CreateSessionDialog({
 
           {/* Worktree Name Preview */}
           {worktreeName && (
-            <div className="p-3 bg-zinc-900/50 rounded-lg border border-zinc-700">
-              <p className="text-xs text-zinc-500 mb-1">Git worktree:</p>
-              <p className="text-sm font-mono text-zinc-300">{worktreeName}</p>
+            <div className="p-3 bg-[var(--bg-surface)]/50 rounded-lg border border-[var(--border-default)]">
+              <p className="text-xs text-[var(--text-tertiary)] mb-1">Git worktree:</p>
+              <p className="text-sm font-mono text-[var(--text-primary)]">{worktreeName}</p>
             </div>
           )}
 
           {/* Quick Suggestions */}
           <div>
-            <p className="text-xs text-zinc-500 mb-2">Quick suggestions:</p>
+            <p className="text-xs text-[var(--text-tertiary)] mb-2">Quick suggestions:</p>
             <div className="flex flex-wrap gap-2">
               {suggestions.slice(0, 4).map((suggestion) => (
                 <button
                   key={suggestion}
                   onClick={() => handleNameChange(suggestion)}
-                  className="px-2 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded transition-colors"
+                  className="px-2 py-1 text-xs bg-[var(--bg-hover)] hover:bg-[var(--bg-active)] text-[var(--text-primary)] rounded-lg transition-colors"
                 >
                   {suggestion}
                 </button>
@@ -301,15 +301,15 @@ export function CreateSessionDialog({
 
           {/* Initial Prompt */}
           <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-2">
-              Initial Prompt <span className="text-zinc-500">(Optional)</span>
+            <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
+              Initial Prompt <span className="text-[var(--text-tertiary)]">(Optional)</span>
             </label>
             <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder="Describe what you want to work on..."
               rows={3}
-              className="w-full px-4 py-2.5 bg-zinc-900 border border-zinc-600 rounded-lg text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 resize-none"
+              className="w-full px-4 py-2.5 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/50 focus:border-[var(--accent-primary)] resize-none"
             />
           </div>
 

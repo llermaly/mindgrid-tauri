@@ -107,21 +107,21 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div className="bg-zinc-800 border border-zinc-700 rounded-lg max-w-lg w-full shadow-xl overflow-hidden animate-in fade-in duration-200">
+      <div className="bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-xl max-w-lg w-full shadow-xl overflow-hidden animate-in fade-in duration-200">
         {/* Header */}
-        <div className={`flex items-center gap-3 px-4 py-3 border-b border-zinc-700 ${
-          isHighRisk ? 'bg-amber-500/10' : 'bg-blue-500/10'
+        <div className={`flex items-center gap-3 px-4 py-3 border-b border-[var(--border-default)] ${
+          isHighRisk ? 'bg-[var(--accent-warning-muted)]' : 'bg-[var(--accent-primary-muted)]'
         }`}>
           {isHighRisk ? (
-            <AlertTriangleIcon className="w-5 h-5 text-amber-500 shrink-0" />
+            <AlertTriangleIcon className="w-5 h-5 text-[var(--accent-warning)] shrink-0" />
           ) : (
-            <ShieldIcon className="w-5 h-5 text-blue-400 shrink-0" />
+            <ShieldIcon className="w-5 h-5 text-[var(--accent-primary)] shrink-0" />
           )}
           <div className="flex-1 min-w-0">
-            <h3 className={`font-medium ${isHighRisk ? 'text-amber-500' : 'text-blue-400'}`}>
+            <h3 className={`font-medium ${isHighRisk ? 'text-[var(--accent-warning)]' : 'text-[var(--accent-primary)]'}`}>
               Permission Required
             </h3>
-            <p className="text-xs text-zinc-400 truncate">
+            <p className="text-xs text-[var(--text-tertiary)] truncate">
               {getToolDescription(request.toolName)}
             </p>
           </div>
@@ -132,23 +132,23 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
           {/* Tool name and summary */}
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <span className={`px-2 py-0.5 text-xs font-medium rounded ${
+              <span className={`px-2 py-0.5 text-xs font-medium rounded-lg ${
                 isHighRisk
-                  ? 'bg-amber-500/20 text-amber-400'
-                  : 'bg-blue-500/20 text-blue-400'
+                  ? 'bg-[var(--accent-warning-muted)] text-[var(--accent-warning)]'
+                  : 'bg-[var(--accent-primary-muted)] text-[var(--accent-primary)]'
               }`}>
                 {request.toolName}
               </span>
               {isHighRisk && (
-                <span className="px-2 py-0.5 text-xs font-medium rounded bg-red-500/20 text-red-400">
+                <span className="px-2 py-0.5 text-xs font-medium rounded-lg bg-[var(--accent-error-muted)] text-[var(--accent-error)]">
                   High Risk
                 </span>
               )}
             </div>
 
             {summary && (
-              <div className="p-2 bg-zinc-900 rounded border border-zinc-700">
-                <code className="text-sm text-zinc-300 font-mono break-all">
+              <div className="p-2 bg-[var(--bg-primary)] rounded-lg border border-[var(--border-default)]">
+                <code className="text-sm text-[var(--text-primary)] font-mono break-all">
                   {summary.length > 200 ? `${summary.slice(0, 200)}...` : summary}
                 </code>
               </div>
@@ -157,8 +157,8 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
 
           {/* Warning for high-risk tools */}
           {isHighRisk && (
-            <div className="p-3 rounded bg-amber-500/10 border border-amber-500/30">
-              <p className="text-xs text-amber-400">
+            <div className="p-3 rounded-lg bg-[var(--accent-warning-muted)] border border-[var(--accent-warning)]">
+              <p className="text-xs text-[var(--accent-warning)]">
                 This tool can modify files or execute commands on your system.
                 Review the details before approving.
               </p>
@@ -169,7 +169,7 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
           <div>
             <button
               onClick={() => setShowDetails(!showDetails)}
-              className="text-xs text-zinc-400 hover:text-zinc-300 flex items-center gap-1"
+              className="text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] flex items-center gap-1"
             >
               <svg
                 className={`w-3 h-3 transition-transform ${showDetails ? 'rotate-90' : ''}`}
@@ -184,8 +184,8 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
             </button>
 
             {showDetails && (
-              <div className="mt-2 p-3 bg-zinc-900 rounded border border-zinc-700 max-h-48 overflow-auto">
-                <pre className="text-xs text-zinc-400 font-mono whitespace-pre-wrap">
+              <div className="mt-2 p-3 bg-[var(--bg-primary)] rounded-lg border border-[var(--border-default)] max-h-48 overflow-auto">
+                <pre className="text-xs text-[var(--text-secondary)] font-mono whitespace-pre-wrap">
                   {formatToolInput(request.toolInput)}
                 </pre>
               </div>
@@ -194,20 +194,20 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-zinc-700 bg-zinc-800/50">
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-[var(--border-default)] bg-[var(--bg-secondary)]/50">
           <button
             onClick={() => onDeny(request.id)}
-            className="px-4 py-2 text-sm font-medium rounded bg-zinc-700 hover:bg-zinc-600 text-zinc-300 flex items-center gap-2"
+            className="px-4 py-2 text-sm font-medium rounded-lg bg-[var(--bg-hover)] hover:bg-[var(--bg-active)] text-[var(--text-primary)] flex items-center gap-2"
           >
             <XIcon className="w-4 h-4" />
             Deny
           </button>
           <button
             onClick={() => onAllow(request.id)}
-            className={`px-4 py-2 text-sm font-medium rounded flex items-center gap-2 ${
+            className={`px-4 py-2 text-sm font-medium rounded-lg flex items-center gap-2 ${
               isHighRisk
-                ? 'bg-amber-600 hover:bg-amber-500 text-white'
-                : 'bg-blue-600 hover:bg-blue-500 text-white'
+                ? 'bg-[var(--accent-warning)] hover:bg-[var(--accent-warning)]/80 text-white'
+                : 'bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-hover)] text-white'
             }`}
           >
             <CheckIcon className="w-4 h-4" />
