@@ -206,6 +206,7 @@ export function ChatPage({ sessionId, chatWindowId, isNewChat }: ChatPageProps) 
           permissionMode={session.permissionMode}
           commitMode={session.commitMode}
           gitAhead={session.gitStatus?.ahead ?? 0}
+          gitFilesChanged={session.gitStatus?.files_changed ?? 0}
           sessionName={displayName}
           systemPrompt={project?.systemPrompt ?? undefined}
           initialPrompt={isNewChat ? undefined : project?.initialPrompt ?? undefined}
@@ -215,6 +216,7 @@ export function ChatPage({ sessionId, chatWindowId, isNewChat }: ChatPageProps) 
           onCommitModeChange={handleCommitModeChange}
           onModelChange={handleModelChange}
           onClearSession={handleClearSession}
+          onCommit={() => checkpointCommit(sessionId).then(success => ({ success, error: success ? undefined : "Failed to commit" }))}
           onGitPush={handleGitPush}
           onGetPrInfo={handleGetPrInfo}
           onCreatePr={handleCreatePr}

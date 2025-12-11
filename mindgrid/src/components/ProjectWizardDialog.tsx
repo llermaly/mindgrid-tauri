@@ -14,9 +14,6 @@ const PROJECTS_DIRECTORY = "/Users/gustavollermalylarrain/Documents/proyectos/pe
 // Default project for development - mindgrid-tauri
 const DEFAULT_PROJECT_PATH = "/Users/gustavollermalylarrain/Documents/proyectos/personales/mindgrid-tauri";
 
-// Main repo path for referencing scripts that may not exist in worktrees
-const MAIN_REPO_PATH = "/Users/gustavollermalylarrain/Documents/proyectos/personales/mindgrid-tauri";
-
 // Project-specific build/run commands
 const PROJECT_COMMANDS: Record<string, { buildCommand: string; runCommand: string }> = {
   "mindgrid-tauri": {

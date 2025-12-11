@@ -27,10 +27,22 @@ async function ensureSchema(database: Database) {
   try {
     const columns = await database.select<Array<{ name: string }>>("PRAGMA table_info(sessions)");
     const hasClaudeSessionId = columns.some((col) => col.name === "claude_session_id");
+    const hasPermissionMode = columns.some((col) => col.name === "permission_mode");
+    const hasCommitMode = columns.some((col) => col.name === "commit_mode");
 
     if (!hasClaudeSessionId) {
       debug.warn("Database", "sessions table missing claude_session_id column, adding it");
       await database.execute("ALTER TABLE sessions ADD COLUMN claude_session_id TEXT");
+    }
+
+    if (!hasPermissionMode) {
+      debug.warn("Database", "sessions table missing permission_mode column, adding it");
+      await database.execute("ALTER TABLE sessions ADD COLUMN permission_mode TEXT DEFAULT 'bypassPermissions'");
+    }
+
+    if (!hasCommitMode) {
+      debug.warn("Database", "sessions table missing commit_mode column, adding it");
+      await database.execute("ALTER TABLE sessions ADD COLUMN commit_mode TEXT DEFAULT 'checkpoint'");
     }
   } catch (err) {
     debug.warn("Database", "Failed to check schema, using store fallback", err);

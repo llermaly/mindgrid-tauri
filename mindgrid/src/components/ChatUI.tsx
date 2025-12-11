@@ -31,6 +31,7 @@ interface ChatUIProps {
   permissionMode?: PermissionMode;
   commitMode?: CommitMode;
   gitAhead?: number;
+  gitFilesChanged?: number;
   sessionName?: string;
   systemPrompt?: string | null;
   initialPrompt?: string;
@@ -41,6 +42,7 @@ interface ChatUIProps {
   onCommitModeChange?: (mode: CommitMode) => void;
   onModelChange?: (model: string) => void;
   onClearSession?: () => void;
+  onCommit?: () => Promise<{ success: boolean; error?: string }>;
   onGitPush?: () => Promise<{ success: boolean; error?: string }>;
   onGetPrInfo?: () => Promise<PrInfo | null>;
   onCreatePr?: (title: string, body: string) => Promise<{ success: boolean; url?: string; error?: string }>;
@@ -414,6 +416,7 @@ export function ChatUI({
   permissionMode = 'default',
   commitMode = 'checkpoint',
   gitAhead = 0,
+  gitFilesChanged = 0,
   sessionName = '',
   systemPrompt,
   initialPrompt,
@@ -424,6 +427,7 @@ export function ChatUI({
   onCommitModeChange,
   onModelChange,
   onClearSession,
+  onCommit,
   onGitPush,
   onGetPrInfo,
   onCreatePr,
@@ -435,6 +439,8 @@ export function ChatUI({
   const initialPromptSentRef = useRef(false);
   const [showCommitDropdown, setShowCommitDropdown] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [isCommitting, setIsCommitting] = useState(false);
+  const [commitError, setCommitError] = useState<string | null>(null);
   const [isPushing, setIsPushing] = useState(false);
   const [pushError, setPushError] = useState<string | null>(null);
   const [prInfo, setPrInfo] = useState<PrInfo | null>(null);
@@ -814,6 +820,25 @@ export function ChatUI({
     }
   }, []);
 
+  const handleCommit = useCallback(async () => {
+    if (!onCommit || isCommitting) return;
+    setIsCommitting(true);
+    setCommitError(null);
+    try {
+      const result = await onCommit();
+      if (!result.success) {
+        setCommitError(result.error || "Failed to commit changes");
+      } else {
+        // Clear error on success
+        setCommitError(null);
+      }
+    } catch (error) {
+      setCommitError(error instanceof Error ? error.message : "Failed to commit changes");
+    } finally {
+      setIsCommitting(false);
+    }
+  }, [onCommit, isCommitting]);
+
   const handleGitPush = useCallback(async () => {
     if (!onGitPush || isPushing) return;
     setIsPushing(true);
@@ -1175,8 +1200,40 @@ export function ChatUI({
             )}
           </div>
 
-          {/* Push Button - show when there are commits ahead */}
-          {onGitPush && gitAhead > 0 && (
+          {/* Commit Button - show when there are uncommitted changes */}
+          {onCommit && gitFilesChanged > 0 && (
+            <div className="relative">
+              <button
+                onClick={handleCommit}
+                disabled={isCommitting || isRunning}
+                className={`text-xs px-2 py-1 rounded flex items-center gap-1 ${
+                  commitError
+                    ? 'bg-red-600 hover:bg-red-500 text-white'
+                    : isCommitting
+                    ? 'bg-zinc-700 text-zinc-400 cursor-wait'
+                    : 'bg-yellow-600 hover:bg-yellow-500 text-white'
+                }`}
+                title={commitError || `Commit ${gitFilesChanged} file${gitFilesChanged > 1 ? 's' : ''}`}
+              >
+                {isCommitting ? (
+                  <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+                    <path d="M12 2a10 10 0 0 1 10 10" />
+                  </svg>
+                ) : (
+                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <circle cx="12" cy="12" r="4" />
+                    <line x1="1.05" y1="12" x2="7" y2="12" />
+                    <line x1="17.01" y1="12" x2="22.96" y2="12" />
+                  </svg>
+                )}
+                {isCommitting ? 'Committing...' : `Commit (${gitFilesChanged})`}
+              </button>
+            </div>
+          )}
+
+          {/* Push Button - show when there are commits ahead and no uncommitted changes */}
+          {onGitPush && gitAhead > 0 && gitFilesChanged === 0 && (
             <div className="relative">
               <button
                 onClick={handleGitPush}
@@ -1206,8 +1263,8 @@ export function ChatUI({
             </div>
           )}
 
-          {/* Create PR Button - show for worktrees without PR */}
-          {onCreatePr && cwd?.includes('.mindgrid/worktrees') && !prInfo && (
+          {/* Create PR Button - show for worktrees without PR, when all changes are committed and pushed */}
+          {onCreatePr && cwd?.includes('.mindgrid/worktrees') && !prInfo && gitFilesChanged === 0 && gitAhead === 0 && (
             <button
               onClick={() => {
                 if (!ghAvailable) return;
@@ -1215,7 +1272,7 @@ export function ChatUI({
                 setPrBody(`Changes from session: ${sessionName}`);
                 setShowPrDialog(true);
               }}
-              disabled={isCreatingPr || gitAhead > 0 || !ghAvailable}
+              disabled={isCreatingPr || !ghAvailable}
               className={`text-xs px-2 py-1 rounded flex items-center gap-1 ${
                 ghAvailable
                   ? 'bg-purple-600 hover:bg-purple-500 text-white disabled:bg-zinc-700 disabled:text-zinc-400'
@@ -1224,8 +1281,6 @@ export function ChatUI({
               title={
                 !ghAvailable
                   ? "Install gh CLI for GitHub features (brew install gh)"
-                  : gitAhead > 0
-                  ? "Push changes first before creating PR"
                   : "Create Pull Request"
               }
             >
