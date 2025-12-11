@@ -141,7 +141,12 @@ pub async fn run_codex(prompt: String, model: Option<String>, cwd: Option<String
 
     let status = child.wait().await.map_err(|e| format!("Failed to wait for Codex runner: {}", e))?;
     if !status.success() {
-        return Err(format!("Codex runner exited with status {:?}", status.code()));
+        // Return the actual error output instead of just the status code
+        if !combined.trim().is_empty() {
+            return Err(combined);
+        } else {
+            return Err(format!("Codex runner exited with status {:?}", status.code()));
+        }
     }
 
     Ok(combined)

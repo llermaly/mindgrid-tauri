@@ -95,6 +95,8 @@ export interface ChatWindow {
   markedForDeletion?: boolean; // Flag for cleanup when unpinned window is closed
 }
 
+export type SessionStatus = 'active' | 'closed';
+
 export interface Session {
   id: string;
   name: string;
@@ -115,6 +117,8 @@ export interface Session {
   permissionMode: PermissionMode;
   commitMode: CommitMode;
   initialPrompt?: string; // The initial prompt used when creating the session
+  status: SessionStatus; // active = can work on, closed = archived after PR merge
+  prUrl?: string | null; // PR URL after merge, for historical reference
 }
 
 export interface Project {
@@ -589,6 +593,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       updatedAt: Date.now(),
       permissionMode: defaultPermissionMode, // Inherit from project default
       commitMode: defaultCommitMode, // Inherit from project default
+      status: 'active', // New sessions start as active
+      prUrl: null, // No PR initially
     };
 
     debug.info("SessionStore", "Creating session", { name, projectId, id: session.id, cwd: session.cwd });
@@ -1669,6 +1675,15 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
     debug.info("SessionStore", "Merging PR", { sessionId, squash });
 
+    // Get PR info before merging to save the URL
+    let prUrl: string | null = null;
+    try {
+      const prInfo = await get().getPrInfo(sessionId);
+      prUrl = prInfo?.url || null;
+    } catch (err) {
+      debug.warn("SessionStore", "Failed to get PR URL before merge", err);
+    }
+
     try {
       const result = await invoke<{ success: boolean; message?: string; error?: string }>("git_merge_pr", {
         workingDirectory: session.cwd,
@@ -1677,8 +1692,25 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
       if (result.success) {
         debug.info("SessionStore", "PR merged successfully", { sessionId });
-        // Refresh git status after merge
-        await get().refreshGitStatus(sessionId);
+
+        // Mark session as closed and store PR URL
+        set((state) => ({
+          sessions: {
+            ...state.sessions,
+            [sessionId]: {
+              ...state.sessions[sessionId],
+              status: 'closed',
+              prUrl,
+              updatedAt: Date.now(),
+            },
+          },
+        }));
+
+        // Save to database
+        await db.saveSession(get().sessions[sessionId]);
+
+        // Don't refresh git status after merge - the worktree branch has been deleted
+        // and git commands will fail in this directory
       } else {
         debug.error("SessionStore", "PR merge failed", { sessionId, error: result.error });
       }

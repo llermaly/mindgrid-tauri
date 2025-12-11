@@ -80,6 +80,14 @@ export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSess
   };
 
   const activeSessions = project.sessions.filter(
+    (session) => session.lifecycleStatus === 'active'
+  );
+
+  const closedSessions = project.sessions.filter(
+    (session) => session.lifecycleStatus === 'closed'
+  );
+
+  const runningActiveSessions = activeSessions.filter(
     (session) => session.status === "running" || session.status === "waiting"
   );
 
@@ -158,23 +166,31 @@ export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSess
       {/* Stats */}
       <div className="flex items-center gap-4 text-sm">
         <span className="text-[var(--text-secondary)]">
-          {project.sessions.length} session{project.sessions.length !== 1 ? "s" : ""}
+          {activeSessions.length} active session{activeSessions.length !== 1 ? "s" : ""}
         </span>
-        {activeSessions.length > 0 && (
+        {closedSessions.length > 0 && (
+          <span className="text-[var(--text-tertiary)]">
+            {closedSessions.length} closed
+          </span>
+        )}
+        {runningActiveSessions.length > 0 && (
           <span className="flex items-center gap-2 text-[var(--accent-success)]">
             <span className="w-2 h-2 rounded-full bg-[var(--accent-success)] animate-pulse-dot" />
-            {activeSessions.length} active
+            {runningActiveSessions.length} running
           </span>
         )}
         <span className="text-[var(--text-tertiary)] ml-auto">{project.lastOpened}</span>
       </div>
 
       {/* Sessions list */}
-      {project.sessions.length > 0 && (
-        <div className="mt-4 pt-4 border-t border-[var(--border-subtle)]">
-          <div className="text-xs text-[var(--text-tertiary)] mb-2 uppercase tracking-wider font-medium">Sessions</div>
-          <div className="space-y-1">
-            {project.sessions.slice(0, 4).map((session) => {
+      {(activeSessions.length > 0 || closedSessions.length > 0) && (
+        <div className="mt-4 pt-4 border-t border-[var(--border-subtle)] space-y-4">
+          {/* Active Sessions */}
+          {activeSessions.length > 0 && (
+            <div>
+              <div className="text-xs text-[var(--text-tertiary)] mb-2 uppercase tracking-wider font-medium">Active Sessions</div>
+              <div className="space-y-1">
+                {activeSessions.slice(0, 3).map((session) => {
               const sessionColor = getSessionColor(session.id);
               return (
               <div
@@ -220,7 +236,7 @@ export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSess
                       <path strokeLinecap="round" strokeLinejoin="round" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
                     </svg>
                   </button>
-                  {project.runCommand && onRunSession && (
+                  {project.runCommand && onRunSession && session.lifecycleStatus === 'active' && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -271,18 +287,86 @@ export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSess
               </div>
             );
             })}
-            {project.sessions.length > 4 && (
-              <button
+              </div>
+            </div>
+          )}
+
+          {/* Closed Sessions */}
+          {closedSessions.length > 0 && (
+            <div>
+              <div className="text-xs text-[var(--text-tertiary)] mb-2 uppercase tracking-wider font-medium">Closed Sessions</div>
+              <div className="space-y-1">
+                {closedSessions.slice(0, 3).map((session) => {
+              const sessionColor = getSessionColor(session.id);
+              return (
+              <div
+                key={session.id}
+                className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[var(--bg-hover)] opacity-60 transition-opacity cursor-pointer group/session"
+                style={{ borderLeft: `3px solid ${sessionColor.border}` }}
                 onClick={(e) => {
                   e.stopPropagation();
-                  onOpen(project);
+                  onOpenSession(project, session);
                 }}
-                className="w-full px-3 py-2 text-xs text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] rounded-lg hover:bg-[var(--bg-hover)] transition-colors text-left"
               >
-                +{project.sessions.length - 4} more sessions...
-              </button>
-            )}
-          </div>
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <div
+                    className="w-2 h-2 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: sessionColor.border }}
+                    title="Session color indicator"
+                  />
+                  <span className="text-[var(--text-tertiary)] text-xs truncate">{session.name}</span>
+                  {session.prUrl && (
+                    <a
+                      href={session.prUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-[var(--accent-primary)] hover:text-[var(--accent-primary-hover)] text-xs flex items-center gap-1"
+                      title="View merged PR"
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                        <circle cx="18" cy="18" r="3" />
+                        <circle cx="6" cy="6" r="3" />
+                        <path d="M13 6h3a2 2 0 0 1 2 2v7" />
+                        <line x1="6" y1="9" x2="6" y2="21" />
+                      </svg>
+                      PR
+                    </a>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 opacity-0 group-hover/session:opacity-100 transition-opacity">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowDeleteSessionModal(session.id);
+                    }}
+                    className="p-1.5 rounded hover:bg-[rgba(239,68,68,0.15)] text-[var(--text-tertiary)] hover:text-[var(--accent-error)] transition-colors"
+                    title="Delete session"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            );
+            })}
+              </div>
+            </div>
+          )}
+
+          {/* Show more button */}
+          {(activeSessions.length + closedSessions.length) > 6 && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpen(project);
+              }}
+              className="w-full px-3 py-2 text-xs text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] rounded-lg hover:bg-[var(--bg-hover)] transition-colors text-left"
+            >
+              +{(activeSessions.length + closedSessions.length) - 6} more sessions...
+            </button>
+          )}
         </div>
       )}
 

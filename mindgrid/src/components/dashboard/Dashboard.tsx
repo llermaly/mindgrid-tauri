@@ -213,6 +213,19 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
     const storeSession = sessions[session.id];
     if (!storeSession) return;
 
+    // Check if directory exists before trying to run
+    try {
+      const dirExists = await invoke<boolean>("path_exists", { path: storeSession.cwd });
+      if (!dirExists) {
+        console.error("[Dashboard] Working directory no longer exists:", storeSession.cwd);
+        // TODO: Show a toast notification to the user
+        return;
+      }
+    } catch (error) {
+      console.error("[Dashboard] Failed to check directory:", error);
+      return;
+    }
+
     // First, open the chat window if not already open
     await openMultipleChatWindows({
       sessionId: session.id,
@@ -439,7 +452,7 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search projects..."
-                className="w-64 h-9 pr-3 pl-12 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent-primary)] focus:ring-2 focus:ring-[var(--accent-primary-muted)] transition-all"
+                className="w-64 h-9 pr-3 pl-14 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent-primary)] focus:ring-2 focus:ring-[var(--accent-primary-muted)] transition-all"
               />
               <svg
                 className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)] pointer-events-none"
@@ -682,10 +695,12 @@ function buildDashboardProjects(
         id: session.id,
         name: session.name,
         status,
+        lifecycleStatus: session.status || 'active', // Lifecycle status (active/closed)
         agents: deriveAgents(session),
         updatedAt: session.updatedAt || session.createdAt || Date.now(),
         initialPrompt: session.initialPrompt,
         isRunning: isSessionRunning(session.id),
+        prUrl: session.prUrl || null,
       };
     });
 

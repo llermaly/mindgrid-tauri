@@ -17,6 +17,12 @@ fn is_dev_mode() -> bool {
     DEV_MODE.load(Ordering::Relaxed)
 }
 
+/// Check if a path exists
+#[tauri::command]
+fn path_exists(path: String) -> bool {
+    std::path::Path::new(&path).exists()
+}
+
 /// Get worktree info if running from a git worktree
 /// Returns None if running from main repo, Some(worktree_name) if running from a worktree
 #[tauri::command]
@@ -186,6 +192,15 @@ pub fn run() {
             "#,
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 3,
+            description: "add_session_status_and_pr_url",
+            sql: r#"
+                ALTER TABLE sessions ADD COLUMN status TEXT NOT NULL DEFAULT 'active';
+                ALTER TABLE sessions ADD COLUMN pr_url TEXT;
+            "#,
+            kind: MigrationKind::Up,
+        },
     ];
 
     // Build database URI based on dev mode
@@ -240,6 +255,7 @@ pub fn run() {
             codex::codex_list_models,
             codex::run_codex,
             is_dev_mode,
+            path_exists,
             get_worktree_info,
         ])
         .run(tauri::generate_context!())

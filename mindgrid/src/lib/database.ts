@@ -29,6 +29,8 @@ async function ensureSchema(database: Database) {
     const hasClaudeSessionId = columns.some((col) => col.name === "claude_session_id");
     const hasPermissionMode = columns.some((col) => col.name === "permission_mode");
     const hasCommitMode = columns.some((col) => col.name === "commit_mode");
+    const hasStatus = columns.some((col) => col.name === "status");
+    const hasPrUrl = columns.some((col) => col.name === "pr_url");
 
     if (!hasClaudeSessionId) {
       debug.warn("Database", "sessions table missing claude_session_id column, adding it");
@@ -43,6 +45,16 @@ async function ensureSchema(database: Database) {
     if (!hasCommitMode) {
       debug.warn("Database", "sessions table missing commit_mode column, adding it");
       await database.execute("ALTER TABLE sessions ADD COLUMN commit_mode TEXT DEFAULT 'checkpoint'");
+    }
+
+    if (!hasStatus) {
+      debug.warn("Database", "sessions table missing status column, adding it");
+      await database.execute("ALTER TABLE sessions ADD COLUMN status TEXT NOT NULL DEFAULT 'active'");
+    }
+
+    if (!hasPrUrl) {
+      debug.warn("Database", "sessions table missing pr_url column, adding it");
+      await database.execute("ALTER TABLE sessions ADD COLUMN pr_url TEXT");
     }
   } catch (err) {
     debug.warn("Database", "Failed to check schema, using store fallback", err);
@@ -136,6 +148,8 @@ export async function loadSessions(): Promise<Session[]> {
     isRunning: false, // Runtime only
     permissionMode: session.permissionMode || 'default', // Default permission mode
     commitMode: session.commitMode || 'checkpoint', // Default commit mode
+    status: session.status || 'active', // Default to active for old sessions
+    prUrl: session.prUrl || null, // Default to null
   }));
 }
 
@@ -163,6 +177,8 @@ export async function saveSession(session: Session): Promise<void> {
     permissionMode: session.permissionMode || 'default',
     commitMode: session.commitMode || 'checkpoint',
     initialPrompt: session.initialPrompt, // Preserve initial prompt for auto-send
+    status: session.status || 'active',
+    prUrl: session.prUrl || null,
   };
 
   if (index >= 0) {

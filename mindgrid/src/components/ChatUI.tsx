@@ -14,6 +14,7 @@ import { useCodexRunner } from "../hooks/useCodexRunner";
 import { useUsageStore } from "../stores/usageStore";
 import { getModelById } from "../lib/models";
 import { Terminal } from "./Terminal";
+import { openRunCommandWindow } from "../lib/window-manager";
 
 interface PrInfo {
   number: number;
@@ -24,6 +25,7 @@ interface PrInfo {
 
 interface ChatUIProps {
   className?: string;
+  sessionId?: string;
   cwd?: string;
   claudeSessionId?: string | null;
   messages: ParsedMessage[];
@@ -33,6 +35,8 @@ interface ChatUIProps {
   gitAhead?: number;
   gitFilesChanged?: number;
   sessionName?: string;
+  projectName?: string;
+  runCommand?: string;
   systemPrompt?: string | null;
   initialPrompt?: string;
   ghAvailable?: boolean;
@@ -377,6 +381,15 @@ function MessageItem({ message }: { message: ParsedMessage }) {
                 <div className="text-sm text-purple-200 italic whitespace-pre-wrap">
                   {message.content}
                 </div>
+              ) : message.isError ? (
+                <div className="relative rounded-xl border border-red-900/60 bg-red-950/20 p-3 overflow-hidden shadow-[0_18px_40px_-28px_rgba(239,68,68,0.55)]">
+                  <div className="absolute inset-0 bg-gradient-to-br from-red-500/5 via-red-500/10 to-transparent blur-xl pointer-events-none" />
+                  <div className="relative">
+                    <div className="text-sm text-red-200 whitespace-pre-wrap">
+                      {message.content}
+                    </div>
+                  </div>
+                </div>
               ) : (
                 <div className="relative rounded-xl border border-emerald-900/60 bg-black/20 p-3 overflow-hidden shadow-[0_18px_40px_-28px_rgba(16,185,129,0.55)]">
                   <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-emerald-500/10 to-transparent blur-xl pointer-events-none" />
@@ -409,6 +422,7 @@ function MessageItem({ message }: { message: ParsedMessage }) {
 
 export function ChatUI({
   className = "",
+  sessionId,
   cwd,
   claudeSessionId,
   messages,
@@ -418,6 +432,8 @@ export function ChatUI({
   gitAhead = 0,
   gitFilesChanged = 0,
   sessionName = '',
+  projectName,
+  runCommand,
   systemPrompt,
   initialPrompt,
   ghAvailable = false,
@@ -446,6 +462,7 @@ export function ChatUI({
   const [prInfo, setPrInfo] = useState<PrInfo | null>(null);
   const [isCreatingPr, setIsCreatingPr] = useState(false);
   const [isMergingPr, setIsMergingPr] = useState(false);
+  const [mergeError, setMergeError] = useState<string | null>(null);
   const [showPrDialog, setShowPrDialog] = useState(false);
   const [prTitle, setPrTitle] = useState("");
   const [prBody, setPrBody] = useState("");
@@ -901,20 +918,52 @@ export function ChatUI({
   const handleMergePr = useCallback(async () => {
     if (!onMergePr || isMergingPr) return;
     setIsMergingPr(true);
+    setMergeError(null);
     try {
       const result = await onMergePr(true); // squash merge
       if (result.success) {
         setPrInfo(null); // PR is merged, clear info
+        setMergeError(null);
         setSuccessMessage("PR merged successfully! Branch has been deleted.");
         // Auto-hide success message after 5 seconds
         setTimeout(() => setSuccessMessage(null), 5000);
+      } else {
+        setMergeError(result.error || "Failed to merge PR");
       }
+    } catch (error) {
+      setMergeError(error instanceof Error ? error.message : "Failed to merge PR");
     } finally {
       setIsMergingPr(false);
     }
   }, [onMergePr, isMergingPr]);
 
-  
+  const handleRun = useCallback(async () => {
+    if (!runCommand || !cwd || !sessionId || !sessionName || !projectName) return;
+
+    try {
+      // Check if directory exists before trying to run
+      const dirExists = await invoke<boolean>("path_exists", { path: cwd });
+      if (!dirExists) {
+        setSuccessMessage("Cannot run: Working directory no longer exists (worktree may have been deleted)");
+        setTimeout(() => setSuccessMessage(null), 5000);
+        return;
+      }
+
+      await openRunCommandWindow({
+        sessionId,
+        sessionName,
+        projectName,
+        cwd,
+        command: runCommand,
+      });
+    } catch (error) {
+      console.error("[ChatUI] Failed to run command:", error);
+      setSuccessMessage(`Failed to run: ${error instanceof Error ? error.message : String(error)}`);
+      setTimeout(() => setSuccessMessage(null), 5000);
+    }
+  }, [runCommand, cwd, sessionId, sessionName, projectName]);
+
+
   const headerClasses = isAnswering
     ? "relative overflow-hidden flex items-center justify-between px-4 py-3 border-b border-emerald-800/60 bg-gradient-to-r from-emerald-950/70 via-emerald-900/55 to-zinc-900/60 shadow-[0_10px_40px_-24px_rgba(16,185,129,0.6)]"
     : "relative overflow-hidden flex items-center justify-between px-4 py-3 border-b border-zinc-700 bg-zinc-800/50";
@@ -1319,11 +1368,13 @@ export function ChatUI({
                   className={`text-xs px-2 py-1 rounded flex items-center gap-1 ${
                     !ghAvailable
                       ? 'bg-zinc-700 text-zinc-500 cursor-not-allowed'
+                      : mergeError
+                      ? 'bg-red-600 hover:bg-red-500 text-white'
                       : isMergingPr
                       ? 'bg-zinc-700 text-zinc-400 cursor-wait'
                       : 'bg-green-600 hover:bg-green-500 text-white'
                   }`}
-                  title={!ghAvailable ? "Install gh CLI for GitHub features (brew install gh)" : "Squash and merge PR"}
+                  title={!ghAvailable ? "Install gh CLI for GitHub features (brew install gh)" : mergeError || "Squash and merge PR"}
                 >
                   {isMergingPr ? (
                     <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -1348,6 +1399,28 @@ export function ChatUI({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Run Button */}
+          {runCommand && (
+            <button
+              onClick={handleRun}
+              className="p-1.5 rounded hover:bg-zinc-700 text-zinc-400 hover:text-green-400 transition-colors"
+              title="Run command"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+            </button>
+          )}
+
           {/* Terminal Toggle Button */}
           {cwd && (
             <button

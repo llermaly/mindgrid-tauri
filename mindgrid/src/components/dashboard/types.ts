@@ -1,15 +1,18 @@
 import type { ProjectPreset } from "../../lib/presets";
 
 export type DashboardSessionStatus = "running" | "waiting" | "idle" | "completed";
+export type SessionLifecycleStatus = "active" | "closed";
 
 export interface DashboardSession {
   id: string;
   name: string;
-  status: DashboardSessionStatus;
+  status: DashboardSessionStatus; // Chat window status
+  lifecycleStatus: SessionLifecycleStatus; // Lifecycle status (active/closed)
   agents: string[];
   updatedAt: number;
   initialPrompt?: string;
   isRunning?: boolean; // Has an open run/preview window
+  prUrl?: string | null; // PR URL if merged
 }
 
 export interface DashboardGitInfo {

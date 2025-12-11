@@ -199,6 +199,7 @@ export function ChatPage({ sessionId, chatWindowId, isNewChat }: ChatPageProps) 
       <div className="flex-1 min-h-0">
         <ChatUI
           className="h-full"
+          sessionId={sessionId}
           cwd={session.cwd}
           claudeSessionId={claudeSessionIdToUse}
           messages={messages}
@@ -208,6 +209,8 @@ export function ChatPage({ sessionId, chatWindowId, isNewChat }: ChatPageProps) 
           gitAhead={session.gitStatus?.ahead ?? 0}
           gitFilesChanged={session.gitStatus?.files_changed ?? 0}
           sessionName={displayName}
+          projectName={project?.name}
+          runCommand={project?.runCommand}
           systemPrompt={project?.systemPrompt ?? undefined}
           initialPrompt={isNewChat ? undefined : project?.initialPrompt ?? undefined}
           onClaudeEvent={handleClaudeEvent}

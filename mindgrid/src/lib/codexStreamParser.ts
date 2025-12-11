@@ -45,6 +45,12 @@ export class CodexStreamParser {
       return this.buildOutput();
     }
 
+    // Check if this is an error envelope
+    if (envelope?.error) {
+      this.sections.messages.push(`Error: ${envelope.error}`);
+      return this.buildOutput();
+    }
+
     const content = envelope?.content;
     if (typeof content !== 'string' || !content.trim()) {
       return this.buildOutput();

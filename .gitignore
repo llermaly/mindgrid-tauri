@@ -4,3 +4,4 @@ worktrees/
 .mindgrid/
 tmp-docs
 .gemini-clipboard/
+.DS_Store
