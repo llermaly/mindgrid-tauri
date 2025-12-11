@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { PRESETS, type ChatType } from "../../lib/presets";
-import { openAllProjectSessionChats, closeAllProjectSessionChats, closeAllSessionChatWindows, openMultipleChatWindows, runAllProjectSessions, openNewChatInSession } from "../../lib/window-manager";
+import { openAllProjectSessionChats, closeAllProjectSessionChats, closeAllSessionChatWindows, openMultipleChatWindows, runAllProjectSessions, openNewChatInSession, openRunCommandWindow } from "../../lib/window-manager";
 import { useSessionStore, type Project, type Session } from "../../stores/sessionStore";
 import { useUsageStore } from "../../stores/usageStore";
 import { getWorktreeInfo } from "../../lib/dev-mode";
@@ -205,6 +205,30 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
 
   const handleCloseSessionChats = async (sessionId: string) => {
     await closeAllSessionChatWindows(sessionId);
+  };
+
+  const handleRunSession = async (project: DashboardProject, session: DashboardSession) => {
+    if (!project.runCommand) return;
+
+    const storeSession = sessions[session.id];
+    if (!storeSession) return;
+
+    // First, open the chat window if not already open
+    await openMultipleChatWindows({
+      sessionId: session.id,
+      sessionName: session.name,
+      projectName: project.name,
+      cwd: storeSession.cwd,
+    }, 1);
+
+    // Then open the terminal with the run command
+    await openRunCommandWindow({
+      sessionId: session.id,
+      sessionName: session.name,
+      projectName: project.name,
+      cwd: storeSession.cwd,
+      command: project.runCommand,
+    });
   };
 
   const handleOpenCreateSessionDialog = (projectId?: string) => {
@@ -525,6 +549,7 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
                             onCloseSessionChats={handleCloseSessionChats}
                             onDeleteProject={handleDeleteProject}
                             onDeleteSession={handleDeleteSession}
+                            onRunSession={handleRunSession}
                           />
                         ))}
                       </div>
