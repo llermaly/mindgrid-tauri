@@ -21,7 +21,7 @@ const MAIN_REPO_PATH = "/Users/gustavollermalylarrain/Documents/proyectos/person
 const PROJECT_COMMANDS: Record<string, { buildCommand: string; runCommand: string }> = {
   "mindgrid-tauri": {
     buildCommand: "cd mindgrid && npm install && npm run build",
-    runCommand: `cd mindgrid && npm install && ${MAIN_REPO_PATH}/mindgrid/scripts/tauri-preview.sh`,
+    runCommand: "cd mindgrid && npm install && ./scripts/tauri-preview.sh",
   },
 };
 

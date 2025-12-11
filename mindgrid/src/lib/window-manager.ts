@@ -178,7 +178,7 @@ export async function openChatWindow(options: ChatWindowOptions): Promise<Webvie
       minWidth: 400,
       minHeight: 300,
       center: true,
-      decorations: true,
+      decorations: false, // Use custom title bar to avoid double controls
       resizable: true,
       focus: true,
     });
@@ -250,7 +250,7 @@ export async function openNewChatInSession(options: ChatWindowOptions): Promise<
       minWidth: 400,
       minHeight: 300,
       center: true,
-      decorations: true,
+      decorations: false, // Use custom title bar to avoid double controls
       resizable: true,
       focus: true,
     });
@@ -373,7 +373,7 @@ async function openChatWindowAtPosition(
       height: Math.round(position.height),
       minWidth: WINDOW_DEFAULTS.minWidth,
       minHeight: WINDOW_DEFAULTS.minHeight,
-      decorations: true,
+      decorations: false, // Use custom title bar to avoid double controls
       resizable: true,
       focus: false, // Don't steal focus when opening multiple
     });
@@ -711,8 +711,8 @@ export async function openRunCommandWindow(options: RunCommandWindowOptions): Pr
   console.log("[window-manager] openRunCommandWindow called:", { sessionId, windowLabel, command, cwd });
 
   try {
-    // Create URL with cwd and run command (no need to load session)
-    const url = `index.html?mode=terminal&cwd=${encodeURIComponent(cwd)}&runCommand=${encodeURIComponent(command)}`;
+    // Create URL with cwd, run command, and sessionId for color coding
+    const url = `index.html?mode=terminal&sessionId=${encodeURIComponent(sessionId)}&sessionName=${encodeURIComponent(sessionName)}&projectName=${encodeURIComponent(projectName)}&cwd=${encodeURIComponent(cwd)}&runCommand=${encodeURIComponent(command)}`;
 
     console.log("[window-manager] Creating run command window:", { windowLabel, url });
 
@@ -724,7 +724,7 @@ export async function openRunCommandWindow(options: RunCommandWindowOptions): Pr
       minWidth: 400,
       minHeight: 300,
       center: true,
-      decorations: true,
+      decorations: false, // Use custom title bar to avoid double controls
       resizable: true,
       focus: true,
     });
@@ -918,7 +918,7 @@ export async function runAllProjectSessions(
     const windowLabel = `run-${session.sessionId}-${timestamp}`;
 
     try {
-      const url = `index.html?mode=terminal&cwd=${encodeURIComponent(session.cwd)}&runCommand=${encodeURIComponent(command)}`;
+      const url = `index.html?mode=terminal&sessionId=${encodeURIComponent(session.sessionId)}&sessionName=${encodeURIComponent(session.sessionName)}&projectName=${encodeURIComponent(projectName)}&cwd=${encodeURIComponent(session.cwd)}&runCommand=${encodeURIComponent(command)}`;
 
       const webview = new WebviewWindow(windowLabel, {
         url,
@@ -929,7 +929,7 @@ export async function runAllProjectSessions(
         height: Math.round(positions[i].height),
         minWidth: WINDOW_DEFAULTS.minWidth,
         minHeight: WINDOW_DEFAULTS.minHeight,
-        decorations: true,
+        decorations: false, // Use custom title bar to avoid double controls
         resizable: true,
         focus: false, // Don't steal focus when opening multiple
       });

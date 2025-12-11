@@ -1,8 +1,10 @@
 import { useEffect, useState, useCallback } from "react";
 import { ChatUI } from "../components/ChatUI";
+import { CustomTitlebar } from "../components/CustomTitlebar";
 import { useSessionStore } from "../stores/sessionStore";
 import type { ClaudeEvent, ParsedMessage, PermissionMode, CommitMode } from "../lib/claude-types";
 import { debug } from "../stores/debugStore";
+import { getSessionColorVars } from "../lib/session-colors";
 
 interface ChatPageProps {
   sessionId: string;
@@ -154,32 +156,44 @@ export function ChatPage({ sessionId, chatWindowId, isNewChat }: ChatPageProps) 
 
   console.log("[ChatPage] Session loaded:", { sessionId, chatWindowId, displayName, messagesCount: messages.length });
 
+  // Get session color for visual identification
+  const sessionColorVars = getSessionColorVars(sessionId);
+
+  // Build subtitle for titlebar
+  const subtitle = [
+    chatWindow && session ? session.name : null,
+    project?.name,
+  ].filter(Boolean).join(" / ");
+
   return (
-    <div className="h-screen flex flex-col bg-zinc-900">
-      {/* Minimal header for chat window */}
-      <header className="flex items-center justify-between px-4 py-2 bg-zinc-800 border-b border-zinc-700">
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-green-500" />
-          <span className="text-sm font-medium text-zinc-200">{displayName}</span>
-          {chatWindow && session && (
-            <span className="text-xs text-zinc-500">/ {session.name}</span>
-          )}
-          {project && (
-            <span className="text-xs text-zinc-500">/ {project.name}</span>
-          )}
+    <div
+      className="h-screen flex flex-col bg-zinc-900"
+      style={{
+        ...sessionColorVars as React.CSSProperties,
+        border: '2px solid var(--session-border)',
+      }}
+    >
+      {/* Custom titlebar with session color accent */}
+      <CustomTitlebar
+        title={displayName}
+        subtitle={subtitle}
+        showControls={true}
+      >
+        {/* Additional info in titlebar */}
+        <div className="flex items-center gap-3 text-xs">
           {chatWindow?.isPinned && (
-            <svg className="w-3 h-3 text-amber-400" fill="currentColor" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-            </svg>
+            <div className="flex items-center gap-1" title="Pinned window">
+              <svg className="w-3 h-3 text-amber-400" fill="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+              </svg>
+            </div>
           )}
-        </div>
-        <div className="flex items-center gap-2 text-xs text-zinc-500">
-          <span>{messages.length} messages</span>
+          <span className="text-zinc-500">{messages.length} msgs</span>
           {totalCost > 0 && (
-            <span>${totalCost.toFixed(4)}</span>
+            <span className="text-zinc-500">${totalCost.toFixed(4)}</span>
           )}
         </div>
-      </header>
+      </CustomTitlebar>
 
       {/* Chat UI fills the rest */}
       <div className="flex-1 min-h-0">
@@ -193,8 +207,8 @@ export function ChatPage({ sessionId, chatWindowId, isNewChat }: ChatPageProps) 
           commitMode={session.commitMode}
           gitAhead={session.gitStatus?.ahead ?? 0}
           sessionName={displayName}
-          systemPrompt={project?.systemPrompt}
-          initialPrompt={isNewChat ? undefined : project?.initialPrompt}
+          systemPrompt={project?.systemPrompt ?? undefined}
+          initialPrompt={isNewChat ? undefined : project?.initialPrompt ?? undefined}
           onClaudeEvent={handleClaudeEvent}
           onClaudeMessage={handleClaudeMessage}
           onPermissionModeChange={handlePermissionModeChange}

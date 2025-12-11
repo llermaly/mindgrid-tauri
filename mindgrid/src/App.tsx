@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { Dashboard } from "./components/dashboard/Dashboard";
 import { Terminal } from "./components/Terminal";
+import { CustomTitlebar } from "./components/CustomTitlebar";
 import { useSessionStore } from "./stores/sessionStore";
 import { isDevMode, getWorktreeInfo } from "./lib/dev-mode";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getSessionColorVars } from "./lib/session-colors";
 import {
   useGlobalShortcuts,
   focusMainWindow,
@@ -11,20 +13,29 @@ import {
   cyclePrevWindow,
 } from "./hooks/useGlobalShortcuts";
 
-function getWindowParams(): { mode: "main" | "terminal"; sessionId: string | null; runCommand: string | null; cwd: string | null } {
+function getWindowParams(): {
+  mode: "main" | "terminal";
+  sessionId: string | null;
+  sessionName: string | null;
+  projectName: string | null;
+  runCommand: string | null;
+  cwd: string | null;
+} {
   const params = new URLSearchParams(window.location.search);
   const modeParam = params.get("mode");
   const mode: "main" | "terminal" = modeParam === "terminal" ? "terminal" : "main";
   return {
     mode,
     sessionId: params.get("sessionId"),
+    sessionName: params.get("sessionName"),
+    projectName: params.get("projectName"),
     runCommand: params.get("runCommand"),
     cwd: params.get("cwd"),
   };
 }
 
 function App() {
-  const { mode: windowMode, runCommand, cwd: urlCwd } = getWindowParams();
+  const { mode: windowMode, sessionId, sessionName, projectName, runCommand, cwd: urlCwd } = getWindowParams();
 
   // State for triggering actions from global shortcuts
   const [shortcutTrigger, setShortcutTrigger] = useState<{
@@ -87,9 +98,28 @@ function App() {
 
   // Terminal mode doesn't need the store - render immediately if we have cwd from URL
   if (windowMode === "terminal" && urlCwd) {
+    const sessionColorVars = sessionId ? getSessionColorVars(sessionId) : {};
+    const subtitle = [sessionName, projectName].filter(Boolean).join(" / ");
+
     return (
-      <div className="h-full bg-neutral-900">
-        <Terminal cwd={urlCwd} initialCommand={runCommand || undefined} mode="raw" />
+      <div
+        className="h-screen flex flex-col bg-neutral-900"
+        style={{
+          ...sessionColorVars as React.CSSProperties,
+          ...(sessionId ? { border: '2px solid var(--session-border)' } : {}),
+        }}
+      >
+        {/* Custom titlebar with session color accent */}
+        <CustomTitlebar
+          title="Terminal"
+          subtitle={subtitle || undefined}
+          showControls={true}
+        />
+
+        {/* Terminal fills the rest */}
+        <div className="flex-1 min-h-0">
+          <Terminal cwd={urlCwd} initialCommand={runCommand || undefined} mode="raw" />
+        </div>
       </div>
     );
   }
@@ -114,9 +144,29 @@ function App() {
         </div>
       );
     }
+
+    const sessionColorVars = sessionId ? getSessionColorVars(sessionId) : {};
+    const subtitle = [sessionName, projectName].filter(Boolean).join(" / ");
+
     return (
-      <div className="h-full bg-neutral-900">
-        <Terminal cwd={urlCwd} initialCommand={runCommand || undefined} mode="raw" />
+      <div
+        className="h-screen flex flex-col bg-neutral-900"
+        style={{
+          ...sessionColorVars as React.CSSProperties,
+          ...(sessionId ? { border: '2px solid var(--session-border)' } : {}),
+        }}
+      >
+        {/* Custom titlebar with session color accent */}
+        <CustomTitlebar
+          title="Terminal"
+          subtitle={subtitle || undefined}
+          showControls={true}
+        />
+
+        {/* Terminal fills the rest */}
+        <div className="flex-1 min-h-0">
+          <Terminal cwd={urlCwd} initialCommand={runCommand || undefined} mode="raw" />
+        </div>
       </div>
     );
   }

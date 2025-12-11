@@ -8,6 +8,7 @@ import { StatusBadge } from "./StatusBadge";
 import type { DashboardSessionStatus } from "./types";
 import { MonacoDiffViewer } from "../diff/MonacoDiffViewer";
 import { openChatWindow, openNewChatInSession } from "../../lib/window-manager";
+import { getSessionColor } from "../../lib/session-colors";
 
 const SESSION_TABS = [
   { id: "overview", label: "Overview" },
@@ -160,10 +161,16 @@ export function SessionDetailView({
     sessionStatus = "idle";
   }
 
+  // Get session color for visual identification
+  const sessionColor = getSessionColor(session.id);
+
   return (
     <div className="h-full flex flex-col bg-[var(--bg-primary)]">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-subtle)]">
+      <div
+        className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-subtle)]"
+        style={{ borderLeftWidth: '4px', borderLeftColor: sessionColor.border }}
+      >
         <div className="flex items-center gap-4">
           <button
             onClick={onClose}
@@ -173,6 +180,11 @@ export function SessionDetailView({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
           </button>
+          <div
+            className="w-3 h-3 rounded-full flex-shrink-0"
+            style={{ backgroundColor: sessionColor.border }}
+            title="Session color indicator"
+          />
           <div className="flex items-center gap-3">
             <StatusBadge status={sessionStatus} size="lg" />
             <div>
