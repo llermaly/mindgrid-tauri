@@ -84,7 +84,16 @@ export function ChatPage({ sessionId, chatWindowId, isNewChat }: ChatPageProps) 
       // Auto-checkpoint on result events when commitMode is 'checkpoint'
       if (event.type === "result" && session?.commitMode === "checkpoint" && sessionId) {
         debug.info("ChatPage", "Triggering auto-checkpoint after Claude response");
-        checkpointCommit(sessionId);
+        try {
+          const success = await checkpointCommit(sessionId);
+          if (success) {
+            debug.info("ChatPage", "Auto-checkpoint completed successfully");
+          } else {
+            debug.info("ChatPage", "Auto-checkpoint: no changes to commit");
+          }
+        } catch (error) {
+          debug.error("ChatPage", "Auto-checkpoint failed", error);
+        }
       }
     },
     [sessionId, chatWindowId, storeHandleClaudeEvent, handleChatWindowClaudeEvent, session?.commitMode, checkpointCommit]

@@ -12,6 +12,7 @@ import { UsagePopup } from "./UsagePopup";
 import { CodexUsagePopup } from "./CodexUsagePopup";
 import { useCodexRunner } from "../hooks/useCodexRunner";
 import { useUsageStore } from "../stores/usageStore";
+import { useSessionStore } from "../stores/sessionStore";
 import { getModelById } from "../lib/models";
 import { Terminal } from "./Terminal";
 import { openRunCommandWindow } from "../lib/window-manager";
@@ -449,6 +450,10 @@ export function ChatUI({
   onCreatePr,
   onMergePr,
 }: ChatUIProps) {
+  // Get session status and PR URL from store
+  const session = sessionId ? useSessionStore.getState().sessions[sessionId] : null;
+  const isSessionClosed = session?.status === 'closed';
+  const sessionPrUrl = session?.prUrl;
   const [input, setInput] = useState("");
   const [hasStarted, setHasStarted] = useState(false);
   const [showModeDropdown, setShowModeDropdown] = useState(false);
@@ -1617,6 +1622,42 @@ export function ChatUI({
         )}
       </div>
 
+      {/* Session Closed Banner */}
+      {isSessionClosed && sessionPrUrl && (
+        <div className="bg-gradient-to-r from-blue-950/40 via-blue-900/30 to-zinc-900/60 border-b border-blue-800/50 px-4 py-3 flex items-center justify-between shadow-[0_4px_20px_-8px_rgba(59,130,246,0.5)]">
+          <div className="flex items-center gap-3">
+            <div className="flex-shrink-0 w-10 h-10 rounded-full bg-blue-500/20 border border-blue-500/40 flex items-center justify-center">
+              <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div>
+              <div className="text-sm font-medium text-blue-200">Session Closed</div>
+              <div className="text-xs text-zinc-400 mt-0.5">
+                This session has been merged and archived. The PR has been merged and the branch deleted.
+              </div>
+            </div>
+          </div>
+          <a
+            href={sessionPrUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium text-white flex items-center gap-2 transition-colors shadow-[0_4px_12px_-4px_rgba(59,130,246,0.6)]"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <circle cx="18" cy="18" r="3" />
+              <circle cx="6" cy="6" r="3" />
+              <path d="M13 6h3a2 2 0 0 1 2 2v7" />
+              <line x1="6" y1="9" x2="6" y2="21" />
+            </svg>
+            View Merged PR
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+          </a>
+        </div>
+      )}
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {filteredMessages.length === 0 ? (
@@ -1675,18 +1716,33 @@ export function ChatUI({
 
       {/* Input */}
       <div className="p-4 border-t border-zinc-700 bg-zinc-800/30">
-        <div className="flex flex-col gap-3">
-          <div className="flex items-end gap-3">
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Send a message..."
-              className="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:border-emerald-500 text-zinc-200 placeholder-zinc-500 min-h-[54px] max-h-[200px] shadow-inner shadow-black/40"
-              rows={1}
-              disabled={false}
-            />
+        {isSessionClosed ? (
+          <div className="text-center py-4 text-zinc-500 text-sm">
+            This session is closed and cannot accept new messages.
+            {sessionPrUrl && (
+              <a
+                href={sessionPrUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ml-2 text-blue-400 hover:text-blue-300 underline"
+              >
+                View merged PR
+              </a>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <div className="flex items-end gap-3">
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Send a message..."
+                className="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:border-emerald-500 text-zinc-200 placeholder-zinc-500 min-h-[54px] max-h-[200px] shadow-inner shadow-black/40"
+                rows={1}
+                disabled={false}
+              />
             <div className="flex items-center gap-2 bg-zinc-900/60 border border-zinc-800 rounded-2xl p-1.5 shadow-inner shadow-black/30">
               <button
                 onClick={() => fileInputRef.current?.click()}
@@ -1762,33 +1818,34 @@ export function ChatUI({
             onChange={handleAttachment}
           />
 
-          <div className="flex items-center gap-4 text-xs text-zinc-500">
-            <span>Press Enter to send, Shift+Enter for new line</span>
-            {pathInfo && (
-              <div className="flex items-center gap-1 ml-auto">
-                <button
-                  onClick={() => openInEditor(pathInfo.projectPath)}
-                  className="hover:text-emerald-400 hover:underline cursor-pointer transition-colors"
-                  title={`Open project in VS Code: ${pathInfo.projectPath}`}
-                >
-                  {pathInfo.projectName}
-                </button>
-                {pathInfo.isWorktree && pathInfo.worktreeName && pathInfo.worktreePath && (
-                  <>
-                    <span className="text-zinc-600">/</span>
-                    <button
-                      onClick={() => openInEditor(pathInfo.worktreePath!)}
-                      className="hover:text-emerald-400 hover:underline cursor-pointer transition-colors"
-                      title={`Open worktree in VS Code: ${pathInfo.worktreePath}`}
-                    >
-                      {pathInfo.worktreeName}
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
+            <div className="flex items-center gap-4 text-xs text-zinc-500">
+              <span>Press Enter to send, Shift+Enter for new line</span>
+              {pathInfo && (
+                <div className="flex items-center gap-1 ml-auto">
+                  <button
+                    onClick={() => openInEditor(pathInfo.projectPath)}
+                    className="hover:text-emerald-400 hover:underline cursor-pointer transition-colors"
+                    title={`Open project in VS Code: ${pathInfo.projectPath}`}
+                  >
+                    {pathInfo.projectName}
+                  </button>
+                  {pathInfo.isWorktree && pathInfo.worktreeName && pathInfo.worktreePath && (
+                    <>
+                      <span className="text-zinc-600">/</span>
+                      <button
+                        onClick={() => openInEditor(pathInfo.worktreePath!)}
+                        className="hover:text-emerald-400 hover:underline cursor-pointer transition-colors"
+                        title={`Open worktree in VS Code: ${pathInfo.worktreePath}`}
+                      >
+                        {pathInfo.worktreeName}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
