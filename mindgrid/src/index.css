@@ -226,6 +226,24 @@ a:hover {
   animation: scale-in 200ms ease-out;
 }
 
+@keyframes wizard-enter-forward {
+  from { opacity: 0; transform: translate3d(18px, 10px, 0) scale(0.992); filter: blur(2px); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); filter: blur(0); }
+}
+
+@keyframes wizard-enter-back {
+  from { opacity: 0; transform: translate3d(-18px, 10px, 0) scale(0.992); filter: blur(2px); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); filter: blur(0); }
+}
+
+.wizard-enter-forward {
+  animation: wizard-enter-forward 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.wizard-enter-back {
+  animation: wizard-enter-back 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 @keyframes shimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
@@ -240,6 +258,38 @@ a:hover {
   );
   background-size: 200% 100%;
   animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes wizard-cta-shine {
+  0% { transform: translate3d(-140%, 0, 0) skewX(-16deg); }
+  100% { transform: translate3d(280%, 0, 0) skewX(-16deg); }
+}
+
+.animate-wizard-cta-shine {
+  animation: wizard-cta-shine 900ms cubic-bezier(0.22, 1, 0.36, 1) 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse-dot,
+  .animate-spin,
+  .animate-fade-in,
+  .animate-slide-up,
+  .animate-scale-in,
+  .animate-shimmer,
+  .animate-wizard-cta-shine,
+  .animate-wizard-ambient-spin,
+  .animate-wizard-ambient-spin-reverse,
+  .animate-wizard-compare-scan,
+  .animate-wizard-radar-sweep,
+  .animate-wizard-node-pulse,
+  .animate-wizard-node-pulse-slow,
+  .wizard-enter-forward,
+  .wizard-enter-back,
+  .animate-float-soft,
+  .animate-float-soft-slow,
+  .animate-float-soft-reverse {
+    animation: none !important;
+  }
 }
 
 /* ============================================================================
@@ -650,6 +700,92 @@ select:hover {
 /* Glow effect */
 .glow-accent {
   box-shadow: 0 0 20px var(--accent-primary-muted);
+}
+
+/* ============================================================================
+   AMBIENT ORB ANIMATIONS (CleanMyMac-inspired)
+   ============================================================================ */
+
+@keyframes float-soft {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(6px, -10px, 0); }
+}
+
+@keyframes float-soft-reverse {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(-6px, 8px, 0); }
+}
+
+.animate-float-soft {
+  animation: float-soft 7s ease-in-out infinite;
+}
+
+.animate-float-soft-slow {
+  animation: float-soft 11s ease-in-out infinite;
+}
+
+.animate-float-soft-reverse {
+  animation: float-soft-reverse 9s ease-in-out infinite;
+}
+
+/* ============================================================================
+   WIZARD MICRO-MOTION (CleanMyMac-inspired)
+   ============================================================================ */
+
+@keyframes wizard-ambient-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes wizard-ambient-spin-reverse {
+  from { transform: rotate(360deg); }
+  to { transform: rotate(0deg); }
+}
+
+.animate-wizard-ambient-spin {
+  transform-origin: center;
+  animation: wizard-ambient-spin 18s linear infinite;
+}
+
+.animate-wizard-ambient-spin-reverse {
+  transform-origin: center;
+  animation: wizard-ambient-spin-reverse 24s linear infinite;
+}
+
+@keyframes wizard-compare-scan {
+  0% { background-position: 0 0; opacity: 0.30; }
+  50% { background-position: 0 100%; opacity: 0.55; }
+  100% { background-position: 0 200%; opacity: 0.30; }
+}
+
+.animate-wizard-compare-scan {
+  background-size: 100% 200%;
+  animation: wizard-compare-scan 2.8s ease-in-out infinite;
+}
+
+@keyframes wizard-radar-sweep {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-wizard-radar-sweep {
+  transform-origin: center;
+  animation: wizard-radar-sweep 5.2s linear infinite;
+}
+
+@keyframes wizard-node-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.72; }
+  50% { transform: scale(1.18); opacity: 1; }
+}
+
+.animate-wizard-node-pulse {
+  transform-origin: center;
+  animation: wizard-node-pulse 2.2s ease-in-out infinite;
+}
+
+.animate-wizard-node-pulse-slow {
+  transform-origin: center;
+  animation: wizard-node-pulse 3.2s ease-in-out infinite;
 }
 
 /* ============================================================================
