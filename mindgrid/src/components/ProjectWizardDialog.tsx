@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { PRESETS, type ChatType } from "../lib/presets";
 import { GitignoreFilesSelector } from "./GitignoreFilesSelector";
 import { ModelSelector } from "./ModelSelector";
@@ -63,7 +64,7 @@ const INTENTIONS: Array<{
 }> = [
   {
     id: "start",
-    label: "Start from scratch",
+    label: "New Project",
     helper: "Create a brand‑new project",
     iconBg: "bg-emerald-500/15",
     iconFg: "text-emerald-300",
@@ -160,6 +161,8 @@ const INTENTION_THEME: Record<
     ctaGradient: string;
     welcome: string;
     subline: string;
+    bgBaseGradient: string;
+    bgRadialGradients: string;
   }
 > = {
   start: {
@@ -173,6 +176,8 @@ const INTENTION_THEME: Record<
     ctaGradient: "from-emerald-500 via-teal-500 to-cyan-500",
     welcome: "Let's build something new",
     subline: INTENTION_DETAILS.start.description,
+    bgBaseGradient: "from-[#1a4d3f] via-[#1a3d4d] to-[#0d3a3a]",
+    bgRadialGradients: "bg-[radial-gradient(900px_700px_at_0%_0%,rgba(16,185,129,0.45),transparent_55%),radial-gradient(800px_700px_at_100%_0%,rgba(20,184,166,0.4),transparent_60%),radial-gradient(900px_700px_at_50%_120%,rgba(6,182,212,0.35),transparent_60%)]",
   },
   compare: {
     heroGradient: "from-violet-400/25 via-indigo-500/15 to-transparent",
@@ -185,6 +190,8 @@ const INTENTION_THEME: Record<
     ctaGradient: "from-violet-500 via-indigo-500 to-purple-500",
     welcome: "Let's compare side‑by‑side",
     subline: INTENTION_DETAILS.compare.description,
+    bgBaseGradient: "from-[#2c1460] via-[#1b2c7a] to-[#0b3a53]",
+    bgRadialGradients: "bg-[radial-gradient(900px_700px_at_0%_0%,rgba(168,85,247,0.55),transparent_55%),radial-gradient(800px_700px_at_100%_0%,rgba(99,102,241,0.5),transparent_60%),radial-gradient(900px_700px_at_50%_120%,rgba(147,51,234,0.45),transparent_60%)]",
   },
   research: {
     heroGradient: "from-sky-400/25 via-cyan-500/15 to-transparent",
@@ -197,6 +204,8 @@ const INTENTION_THEME: Record<
     ctaGradient: "from-sky-500 via-cyan-500 to-blue-500",
     welcome: "Let's explore together",
     subline: INTENTION_DETAILS.research.description,
+    bgBaseGradient: "from-[#1a3a4d] via-[#1a2d5a] to-[#0d2a4a]",
+    bgRadialGradients: "bg-[radial-gradient(900px_700px_at_0%_0%,rgba(14,165,233,0.50),transparent_55%),radial-gradient(800px_700px_at_100%_0%,rgba(6,182,212,0.45),transparent_60%),radial-gradient(900px_700px_at_50%_120%,rgba(59,130,246,0.40),transparent_60%)]",
   },
   train: {
     heroGradient: "from-amber-400/25 via-orange-500/15 to-transparent",
@@ -209,6 +218,8 @@ const INTENTION_THEME: Record<
     ctaGradient: "from-amber-500 via-orange-500 to-yellow-500",
     welcome: "Let's tune MindGrid to you",
     subline: INTENTION_DETAILS.train.description,
+    bgBaseGradient: "from-[#4d3a1a] via-[#5a2d1a] to-[#4a2a0d]",
+    bgRadialGradients: "bg-[radial-gradient(900px_700px_at_0%_0%,rgba(245,158,11,0.50),transparent_55%),radial-gradient(800px_700px_at_100%_0%,rgba(251,146,60,0.45),transparent_60%),radial-gradient(900px_700px_at_50%_120%,rgba(234,179,8,0.40),transparent_60%)]",
   },
 };
 
@@ -621,6 +632,8 @@ export function ProjectWizardDialog({
   const [error, setError] = useState<string | null>(null);
   const [conflictProject, setConflictProject] = useState<string | null>(null);
   const [variants, setVariants] = useState<SessionVariantConfig[]>([]);
+  const [isClosing, setIsClosing] = useState(false);
+  const [shouldRender, setShouldRender] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const repoListRef = useRef<HTMLDivElement>(null);
   const repoDropdownRef = useRef<HTMLDivElement>(null);
@@ -735,6 +748,20 @@ export function ProjectWizardDialog({
     parallaxRef.current.hovering = false;
     startParallax();
   };
+
+  // Handle opening/closing animations
+  useEffect(() => {
+    if (isOpen) {
+      setShouldRender(true);
+      setIsClosing(false);
+    } else if (shouldRender) {
+      setIsClosing(true);
+      const timer = setTimeout(() => {
+        setShouldRender(false);
+      }, 250); // Match animation duration
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, shouldRender]);
 
   // Load repos when dialog opens
   useEffect(() => {
@@ -1087,11 +1114,13 @@ export function ProjectWizardDialog({
           ? "Gather context before you change anything."
           : "Teach MindGrid your style with examples.";
 
-  if (!isOpen) return null;
+  if (!shouldRender) return null;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md"
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md transition-opacity duration-250 ${
+        isClosing ? 'opacity-0' : 'opacity-100'
+      }`}
       onKeyDown={handleKeyDown}
     >
       <div
@@ -1104,99 +1133,127 @@ export function ProjectWizardDialog({
             ["--my" as never]: 0,
           } as React.CSSProperties
         }
-        className="relative w-[min(1220px,96vw)] h-[min(880px,94vh)] rounded-[28px] overflow-hidden shadow-[0_30px_90px_rgba(0,0,0,0.7)] ring-1 ring-white/10 bg-[var(--bg-secondary)] animate-scale-in"
+        className={`relative w-[min(1220px,96vw)] h-[min(880px,94vh)] rounded-[28px] overflow-hidden shadow-[0_30px_90px_rgba(0,0,0,0.7)] ring-1 ring-white/10 ${
+          isClosing ? 'animate-scale-out' : 'animate-scale-in'
+        }`}
       >
-        <div className="absolute inset-0 pointer-events-none bg-gradient-to-br from-[#2c1460] via-[#1b2c7a] to-[#0b3a53] opacity-85 will-change-transform [transform:translate3d(calc(var(--mx)*10px),calc(var(--my)*8px),0)_scale(1.03)]" />
-        <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(900px_700px_at_0%_0%,rgba(168,85,247,0.55),transparent_55%),radial-gradient(800px_700px_at_100%_0%,rgba(59,130,246,0.5),transparent_60%),radial-gradient(900px_700px_at_50%_120%,rgba(236,72,153,0.45),transparent_60%)] opacity-70 mix-blend-screen will-change-transform [transform:translate3d(calc(var(--mx)*-16px),calc(var(--my)*14px),0)_scale(1.04)]" />
+        <div className={`absolute inset-0 pointer-events-none bg-gradient-to-br ${intentionTheme.bgBaseGradient} opacity-85 will-change-transform [transform:translate3d(calc(var(--mx)*10px),calc(var(--my)*8px),0)_scale(1.03)] transition-all duration-700`} />
+        <div className={`absolute inset-0 pointer-events-none ${intentionTheme.bgRadialGradients} opacity-70 mix-blend-screen will-change-transform [transform:translate3d(calc(var(--mx)*-16px),calc(var(--my)*14px),0)_scale(1.04)] transition-all duration-700`} />
         <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(to_bottom,rgba(255,255,255,0.08),transparent_18%,transparent_82%,rgba(0,0,0,0.35))] will-change-transform [transform:translate3d(calc(var(--mx)*4px),calc(var(--my)*-4px),0)]" />
         <div className="relative flex flex-col h-full">
-          {/* Header */}
+          {/* Header with macOS window controls */}
           <div
-            className="relative grid grid-cols-[1fr_auto_1fr] items-center px-6 py-4 border-b border-white/10 bg-black/10 backdrop-blur-xl"
+            className="relative flex items-center justify-between px-6 py-3"
             data-tauri-drag-region
           >
-            <div className="flex items-center gap-3">
-              <div className="flex flex-col">
-                <span className="text-sm font-semibold text-white tracking-tight leading-tight">Create Project</span>
-                <span className="text-[11px] text-white/55 leading-tight">
-                  {step === "intention" && "Choose your intention"}
-                  {step === "project" && "Select repository"}
-                  {step === "configure" && "Configure session"}
-                  {step === "variants" && "Add variants"}
-                </span>
-              </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onClose}
+                className="w-3 h-3 rounded-full bg-[#ff5f57] hover:bg-[#ff5f57]/80 transition-colors"
+                aria-label="Close"
+                title="Close"
+              />
+              <button
+                onClick={async () => {
+                  const appWindow = getCurrentWindow();
+                  await appWindow.minimize();
+                }}
+                className="w-3 h-3 rounded-full bg-[#febc2e] hover:bg-[#febc2e]/80 transition-colors"
+                aria-label="Minimize"
+                title="Minimize"
+              />
+              <button
+                onClick={async () => {
+                  const appWindow = getCurrentWindow();
+                  await appWindow.toggleMaximize();
+                }}
+                className="w-3 h-3 rounded-full bg-[#28c840] hover:bg-[#28c840]/80 transition-colors"
+                aria-label="Maximize"
+                title="Maximize"
+              />
             </div>
-
-            <div></div>
-
-            <button
-              onClick={onClose}
-              className="absolute top-1/2 -translate-y-1/2 right-6 p-2 text-white/60 hover:text-white transition-colors duration-200"
-              aria-label="Close"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+            <div className="flex-1" />
           </div>
 
           {/* Body */}
           <div className="flex flex-1 min-h-0 overflow-hidden">
             {/* Intentions Sidebar */}
-            <aside className="w-[92px] shrink-0 border-r border-white/10 bg-black/20 backdrop-blur-2xl p-3 pt-6 flex flex-col items-center gap-3">
-              {INTENTIONS.map((item) => {
+            <aside className={`shrink-0 p-3 pt-6 flex flex-col transition-all duration-500 relative ${
+              step === "intention" ? "w-[200px] gap-0" : "w-[92px] items-center gap-3"
+            }`}>
+              {INTENTIONS.map((item, idx) => {
                 const active = intention === item.id;
+                const isExpanded = step === "intention";
                 return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => {
-                      if (intention !== item.id) setIntention(item.id);
-                      if (step !== "intention") setStep("intention");
-                      setError(null);
-                    }}
-                    title={item.helper}
-                    aria-label={item.label}
-                    className={`group relative w-full rounded-2xl border overflow-visible transition-all duration-300 ease-out ${
-                      active
-                        ? "bg-white/10 border-white/20 shadow-[0_14px_40px_rgba(0,0,0,0.55)]"
-                        : "bg-transparent border-transparent hover:bg-white/5 hover:border-white/10"
-                    }`}
-                  >
-                    <div
-                      className={`absolute inset-0 rounded-2xl transition-opacity duration-300 ${item.accentGradient} ${
-                        active ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-                      }`}
-                    />
-                    <div className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 rounded-full blur-2xl opacity-0 transition-opacity duration-300 ${item.iconBg} ${active ? "opacity-40" : "group-hover:opacity-60"}`} />
-                    <div className="relative flex items-center justify-center py-3">
-                      <div
-                        className={`relative w-11 h-11 rounded-2xl flex items-center justify-center border transition-all duration-300 group-hover:-rotate-2 group-hover:scale-[1.03] ${
-                          active ? "bg-white/10 border-white/20 shadow-[0_10px_30px_rgba(0,0,0,0.45)]" : "bg-white/5 border-white/10"
-                        }`}
-                      >
-                        <div className={`absolute inset-0 rounded-2xl ${item.accentGradient} opacity-0 group-hover:opacity-100 transition-opacity duration-300`} />
-                        <IntentionIcon
-                          id={item.id}
-                          className={`relative w-5 h-5 transition-colors duration-300 drop-shadow-sm ${
-                            active ? item.iconFg : `text-white/70 ${
-                              item.id === 'start' ? 'group-hover:text-emerald-300' :
-                              item.id === 'compare' ? 'group-hover:text-violet-300' :
-                              item.id === 'research' ? 'group-hover:text-sky-300' :
-                              'group-hover:text-amber-300'
+                  <div key={item.id} className="w-full">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (intention !== item.id) setIntention(item.id);
+                        if (step !== "intention") setStep("intention");
+                        setError(null);
+                      }}
+                      title={item.helper}
+                      aria-label={item.label}
+                      className={`group relative w-full transition-all duration-500 ease-out ${
+                        isExpanded
+                          ? `flex items-center gap-3 px-3 py-3 rounded-2xl ${active ? 'bg-white/10' : 'hover:bg-white/5'}`
+                          : `rounded-2xl border overflow-visible ${
+                              active
+                                ? "bg-white/10 border-white/20 shadow-[0_14px_40px_rgba(0,0,0,0.55)]"
+                                : "bg-transparent border-transparent hover:bg-white/5 hover:border-white/10"
                             }`
-                          }`}
-                        />
-                      </div>
-                    </div>
+                      }`}
+                    >
+                      {/* Glows - always rounded */}
+                      {isExpanded && active && (
+                        <div className={`absolute inset-0 rounded-2xl transition-opacity duration-700 ease-in-out ${item.accentGradient} opacity-100`} />
+                      )}
+                      {!isExpanded && (
+                        <>
+                          <div
+                            className={`absolute inset-0 rounded-2xl transition-opacity duration-700 ease-in-out ${item.accentGradient} ${
+                              active ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                            }`}
+                          />
+                          <div className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-1 rounded-full blur-sm opacity-0 transition-all duration-700 ease-out ${item.iconBg} ${active ? "opacity-40" : "group-hover:opacity-60"}`} />
+                        </>
+                      )}
 
-                    <div className="pointer-events-none absolute left-full ml-3 top-1/2 -translate-y-1/2 z-30 opacity-0 translate-x-[-6px] group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-200 ease-out">
-                      <div className="relative rounded-xl bg-black/95 backdrop-blur-xl border border-white/20 shadow-[0_18px_50px_rgba(0,0,0,0.7)] px-3 py-2">
-                        <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 rotate-45 bg-black/95 border-l border-t border-white/20" />
-                        <div className="text-sm font-semibold text-white whitespace-nowrap">{item.label}</div>
+                      <div className={`relative flex ${isExpanded ? "items-center" : "items-center justify-center py-3"}`}>
+                        <div className={`relative w-11 h-11 rounded-2xl flex items-center justify-center border border-transparent bg-transparent transition-all duration-500 ease-out ${!isExpanded && 'group-hover:-rotate-2 group-hover:scale-[1.03]'}`}>
+                          <IntentionIcon
+                            id={item.id}
+                            className={`relative w-5 h-5 transition-all duration-500 ease-out drop-shadow-sm ${
+                              active ? item.iconFg : `text-white/70 ${
+                                item.id === 'start' ? 'group-hover:text-emerald-300' :
+                                item.id === 'compare' ? 'group-hover:text-violet-300' :
+                                item.id === 'research' ? 'group-hover:text-sky-300' :
+                                'group-hover:text-amber-300'
+                              }`
+                            }`}
+                          />
+                        </div>
+
+                        {isExpanded && (
+                          <span className={`text-sm font-medium leading-tight transition-colors duration-300 ${
+                            active ? 'text-white' : 'text-white/70 group-hover:text-white/90'
+                          }`}>
+                            {item.label}
+                          </span>
+                        )}
                       </div>
-                    </div>
-                  </button>
+
+                      {!isExpanded && (
+                        <div className="pointer-events-none absolute left-full ml-3 top-1/2 -translate-y-1/2 z-30 opacity-0 translate-x-[-6px] group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-400 ease-out">
+                          <div className="relative rounded-xl bg-[rgb(0,0,0)] border border-white/20 shadow-[0_18px_50px_rgba(0,0,0,0.9)] px-3 py-2 transition-all duration-400 ease-out">
+                            <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 rotate-45 bg-[rgb(0,0,0)] border-l border-t border-white/20" />
+                            <div className="text-sm font-semibold text-white whitespace-nowrap">{item.label}</div>
+                          </div>
+                        </div>
+                      )}
+                    </button>
+                  </div>
                 );
               })}
             </aside>
@@ -1214,17 +1271,19 @@ export function ProjectWizardDialog({
             <div key={intention} className="max-w-5xl space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-[1.15fr,0.85fr] gap-6">
 	                <div
-	                  className={`group relative overflow-hidden rounded-3xl p-6 md:p-7 bg-gradient-to-br ${intentionTheme.heroGradient} border border-white/10 hover:border-white/20 shadow-[0_16px_50px_rgba(0,0,0,0.5)]`}
+	                  className={`group relative overflow-hidden rounded-3xl p-6 md:p-7 bg-gradient-to-br ${intentionTheme.heroGradient} border border-white/10 hover:border-white/20 shadow-[0_12px_32px_rgba(0,0,0,0.3)]`}
 	                >
 	                  <div className={`absolute -top-24 -right-20 w-72 h-72 rounded-full blur-3xl opacity-70 ${intentionTheme.glow}`} />
 	                  <IntentionScene intention={intention} theme={intentionTheme} />
                   <div className="relative max-w-[560px]">
-                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${intentionTheme.iconBg} shadow-sm`}>
-                      <IntentionIcon id={intention} className={`w-6 h-6 ${intentionTheme.iconFg}`} />
+                    <div className="flex items-center gap-4 mb-1">
+                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${intentionTheme.iconBg} shadow-sm`}>
+                        <IntentionIcon id={intention} className={`w-5 h-5 ${intentionTheme.iconFg}`} />
+                      </div>
+	                      <h2 className="text-3xl md:text-4xl font-semibold text-white tracking-tight leading-none">
+	                        {intentionTheme.welcome}
+	                      </h2>
                     </div>
-	                    <h2 className="mt-4 text-3xl md:text-4xl font-semibold text-white tracking-tight">
-	                      {intentionTheme.welcome}
-	                    </h2>
 	                    <p className="mt-2 text-base md:text-lg text-white/80 leading-relaxed">
 	                      {intentionTheme.subline}
 	                    </p>
@@ -1242,10 +1301,28 @@ export function ProjectWizardDialog({
 	                    <p className="mt-3 text-sm text-white/55">
 	                      You can switch intentions anytime from the left.
 	                    </p>
+
+	                    {intention === "start" && (
+	                      <button
+	                        onClick={handleNextFromIntention}
+	                        disabled={isCreating}
+	                        className={`group relative mt-6 px-6 py-3 text-sm font-semibold rounded-2xl text-white bg-gradient-to-r ${intentionTheme.ctaGradient} shadow-[0_10px_30px_rgba(0,0,0,0.4)] hover:shadow-[0_16px_48px_rgba(0,0,0,0.6)] active:scale-[0.98] transition-all duration-300 ease-out disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-white/25`}
+	                      >
+	                        <span className="pointer-events-none absolute inset-0 rounded-2xl bg-black/20" />
+	                        <span className={`pointer-events-none absolute -inset-1 rounded-2xl blur-xl opacity-50 ${intentionTheme.glow}`} />
+	                        <span className="pointer-events-none absolute inset-0 rounded-2xl bg-[linear-gradient(to_bottom,rgba(255,255,255,0.35),transparent_58%)] opacity-20" />
+	                        <span className="relative">
+	                          {isCreating ? "Creating..." : "Get Started"}
+	                        </span>
+	                        <svg className="relative w-4 h-4 transition-transform group-hover:translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+	                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+	                        </svg>
+	                      </button>
+	                    )}
 	                  </div>
                 </div>
 
-                <div className="relative overflow-hidden rounded-3xl bg-white/5 border border-white/10 p-5 md:p-6 shadow-[0_10px_30px_rgba(0,0,0,0.3)]">
+                <div className="relative overflow-hidden rounded-3xl bg-white/5 border border-white/10 p-5 md:p-6 shadow-[0_8px_20px_rgba(0,0,0,0.2)]">
                   <div className="absolute inset-0 pointer-events-none opacity-60 mix-blend-screen will-change-transform [transform:translate3d(calc(var(--mx)*-6px),calc(var(--my)*6px),0)] bg-[radial-gradient(420px_240px_at_0%_0%,rgba(255,255,255,0.10),transparent_60%),radial-gradient(520px_320px_at_100%_100%,rgba(255,255,255,0.08),transparent_60%)]" />
 	                  <div className="relative">
 	                    <div className="flex items-center justify-between gap-3">
@@ -1256,19 +1333,18 @@ export function ProjectWizardDialog({
 	                    </div>
 	
 	                    <div className="relative mt-5">
-	                      <div className="pointer-events-none absolute left-6 top-6 bottom-6 w-px bg-gradient-to-b from-transparent via-white/20 to-transparent" />
 	                      <div className="space-y-2">
 	                        {INTENTION_DETAILS[intention].steps.map((s, idx) => (
 	                          <div
 	                            key={s}
-	                            className="group relative flex items-start gap-3 rounded-2xl bg-white/5 border border-white/10 p-3 hover:bg-white/10 hover:border-white/20 transition-all duration-300"
+	                            className="group relative flex items-start gap-3 rounded-2xl bg-white/5 border border-white/10 p-3 hover:bg-white/10 hover:border-white/20 transition-all duration-500 ease-out"
 	                          >
-	                            <div className="relative w-12 h-12 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-center shrink-0 shadow-sm group-hover:shadow-[0_12px_30px_rgba(0,0,0,0.42)] transition-shadow">
+	                            <div className="relative w-12 h-12 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-center shrink-0 shadow-sm group-hover:shadow-[0_12px_30px_rgba(0,0,0,0.42)] transition-all duration-500 ease-out">
 	                              <div className={`absolute inset-0 rounded-2xl ${intentionTheme.kickerBg} opacity-40`} />
-	                              <FlowStepIcon index={idx} className={`relative w-5 h-5 ${intentionTheme.iconFg}`} />
+	                              <FlowStepIcon index={idx} className={`relative w-5 h-5 ${intentionTheme.iconFg} transition-transform duration-500 ease-out group-hover:scale-110`} />
 	                            </div>
-	                            <div className="pt-1 text-sm text-white/80 leading-snug group-hover:text-white">{s}</div>
-	                            <div className="pointer-events-none absolute inset-0 rounded-2xl bg-[radial-gradient(260px_120px_at_20%_20%,rgba(255,255,255,0.12),transparent_60%)] opacity-0 group-hover:opacity-60 transition-opacity duration-300" />
+	                            <div className="pt-1 text-sm text-white/80 leading-snug group-hover:text-white transition-colors duration-500 ease-out">{s}</div>
+	                            <div className="pointer-events-none absolute inset-0 rounded-2xl bg-[radial-gradient(260px_120px_at_20%_20%,rgba(255,255,255,0.12),transparent_60%)] opacity-0 group-hover:opacity-60 transition-opacity duration-700 ease-in-out" />
 	                          </div>
 	                        ))}
 	                      </div>
@@ -1344,71 +1420,52 @@ export function ProjectWizardDialog({
                 <p className="text-sm text-white/60 mt-1">Pick where MindGrid will work for this intention.</p>
               </div>
 
-              {/* Repository Dropdown */}
-              <div ref={repoDropdownRef} className="relative">
-                <button
-                  type="button"
-                  onClick={() => setShowRepoDropdown(!showRepoDropdown)}
-                  className="w-full group flex items-center gap-4 px-5 py-4 rounded-3xl text-left transition-all bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 shadow-[0_8px_24px_rgba(0,0,0,0.25)]"
-                >
-                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition-all bg-white/10 border border-white/15 group-hover:bg-white/15">
-                    <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
-                    </svg>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    {selectedRepo ? (
-                      <>
-                        <div className="font-semibold text-white text-base truncate">{selectedRepo.name}</div>
-                        <div className="text-sm text-white/50 font-mono truncate mt-0.5">{selectedRepo.path}</div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="font-semibold text-white/60 text-base">Select a repository...</div>
-                        <div className="text-sm text-white/40 mt-0.5">{repos.length} repositories available</div>
-                      </>
-                    )}
-                  </div>
-                  <svg
-                    className={`w-5 h-5 text-white/60 transition-transform ${showRepoDropdown ? 'rotate-180' : ''}`}
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-
-                {/* Dropdown Menu */}
-                {showRepoDropdown && (
-                  <div className="absolute top-full mt-2 left-0 right-0 z-50 rounded-2xl bg-[#1a1a2e] border border-white/20 shadow-[0_20px_60px_rgba(0,0,0,0.6)] overflow-hidden backdrop-blur-xl">
-                    {/* Search */}
-                    <div className="p-3 border-b border-white/10">
-                      <div className="relative">
-                        <svg
-                          className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/50"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
-                        <input
-                          ref={searchInputRef}
-                          type="text"
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          placeholder="Search repositories…"
-                          autoFocus
-                          className="w-full pl-10 pr-3 py-2 bg-white/5 border border-white/10 rounded-xl text-white text-sm placeholder:text-white/40 focus:outline-none focus:border-white/25 focus:ring-1 focus:ring-white/15 transition-all"
-                        />
-                      </div>
+              {/* Repository Selection */}
+              <div className="space-y-3">
+                <div ref={repoDropdownRef} className="relative">
+                  {/* Combobox Input */}
+                  <div className="relative">
+                    <div className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-xl flex items-center justify-center bg-white/10 border border-white/15 pointer-events-none">
+                      <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                      </svg>
                     </div>
+                    <input
+                      ref={searchInputRef}
+                      type="text"
+                      value={showRepoDropdown ? searchQuery : (selectedRepo?.name || "")}
+                      onChange={(e) => {
+                        setSearchQuery(e.target.value);
+                        if (!showRepoDropdown) setShowRepoDropdown(true);
+                      }}
+                      onFocus={() => {
+                        setShowRepoDropdown(true);
+                        if (selectedRepo) setSearchQuery("");
+                      }}
+                      placeholder="Search repositories..."
+                      className="w-full pl-[72px] pr-12 py-4 bg-white/5 border border-white/10 rounded-2xl text-white text-sm placeholder:text-white/40 focus:outline-none focus:border-white/20 focus:bg-white/8 transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowRepoDropdown(!showRepoDropdown)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 p-1"
+                    >
+                      <svg
+                        className={`w-4 h-4 text-white/60 transition-transform ${showRepoDropdown ? 'rotate-180' : ''}`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                  </div>
 
-                    {/* Repository List */}
-                    <div className="max-h-[400px] overflow-y-auto scrollbar-thin">
+                  {/* Dropdown List */}
+                  {showRepoDropdown && (
+                    <div className="absolute top-full mt-2 left-0 right-0 z-50 rounded-xl bg-[#1a1a2e] border border-white/20 shadow-[0_20px_60px_rgba(0,0,0,0.6)] overflow-hidden backdrop-blur-xl max-h-[320px] overflow-y-auto scrollbar-thin">
                       {loadingRepos ? (
-                        <div className="p-8 text-center text-white/60 flex flex-col items-center justify-center">
+                        <div className="p-6 text-center text-white/60 flex flex-col items-center justify-center">
                           <svg className="w-5 h-5 animate-spin mx-auto mb-2" fill="none" viewBox="0 0 24 24">
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -1416,7 +1473,7 @@ export function ProjectWizardDialog({
                           <div className="text-xs">Loading repositories…</div>
                         </div>
                       ) : filteredRepos.length === 0 ? (
-                        <div className="p-8 text-center text-sm text-white/60">
+                        <div className="p-6 text-center text-sm text-white/60">
                           {searchQuery ? "No matching repositories" : "No git repositories found"}
                         </div>
                       ) : (
@@ -1450,24 +1507,31 @@ export function ProjectWizardDialog({
                           );
                         })
                       )}
-                    </div>
 
-                    {/* Browse Option */}
-                    <div className="p-3 border-t border-white/10">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          handleSelectFolder();
-                          setShowRepoDropdown(false);
-                        }}
-                        className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/15 text-sm text-white/80 hover:text-white transition-all"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                        </svg>
-                        Browse for folder
-                      </button>
+                      {/* Browse Option */}
+                      <div className="p-3 border-t border-white/10">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleSelectFolder();
+                            setShowRepoDropdown(false);
+                          }}
+                          className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/15 text-sm text-white/80 hover:text-white transition-all"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                          </svg>
+                          Browse for folder
+                        </button>
+                      </div>
                     </div>
+                  )}
+                </div>
+
+                {/* Selected Path Display */}
+                {selectedRepo && (
+                  <div className="px-4 py-2 rounded-xl bg-white/5 border border-white/10">
+                    <div className="text-xs text-white/50 font-mono truncate">{selectedRepo.path}</div>
                   </div>
                 )}
               </div>
@@ -1525,7 +1589,7 @@ export function ProjectWizardDialog({
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="rounded-3xl bg-white/5 border border-white/10 p-5 space-y-4 shadow-[0_10px_30px_rgba(0,0,0,0.3)]">
+                <div className="rounded-3xl bg-white/5 border border-white/10 p-5 space-y-4 shadow-[0_8px_20px_rgba(0,0,0,0.2)]">
                   <div className="space-y-2">
                     <label className="block text-xs uppercase tracking-wide text-white/60">Session name</label>
                     <input
@@ -1546,7 +1610,7 @@ export function ProjectWizardDialog({
                   </div>
                 </div>
 
-                <div className="rounded-3xl bg-white/5 border border-white/10 p-5 space-y-4 shadow-[0_10px_30px_rgba(0,0,0,0.3)]">
+                <div className="rounded-3xl bg-white/5 border border-white/10 p-5 space-y-4 shadow-[0_8px_20px_rgba(0,0,0,0.2)]">
                   <div className="space-y-2">
                     <label className="block text-xs uppercase tracking-wide text-white/60">
                       System prompt <span className="text-white/40 normal-case">(optional)</span>
@@ -1579,7 +1643,7 @@ export function ProjectWizardDialog({
                 </div>
               </div>
 
-              <div className="rounded-3xl bg-white/5 border border-white/10 p-5 md:p-6 shadow-[0_10px_30px_rgba(0,0,0,0.3)]">
+              <div className="rounded-3xl bg-white/5 border border-white/10 p-5 md:p-6 shadow-[0_8px_20px_rgba(0,0,0,0.2)]">
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <div className="text-sm font-semibold text-white">Commands (optional)</div>
@@ -1662,7 +1726,7 @@ export function ProjectWizardDialog({
                 </p>
               </div>
 
-              <div className="rounded-3xl bg-white/5 border border-white/10 p-5 md:p-6 space-y-4 shadow-[0_10px_30px_rgba(0,0,0,0.3)]">
+              <div className="rounded-3xl bg-white/5 border border-white/10 p-5 md:p-6 space-y-4 shadow-[0_8px_20px_rgba(0,0,0,0.2)]">
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <div className="text-sm font-semibold text-white">Parallel sessions</div>
@@ -1762,7 +1826,7 @@ export function ProjectWizardDialog({
                 )}
               </div>
 
-              <div className="rounded-3xl bg-white/5 border border-white/10 p-5 md:p-6 shadow-[0_10px_30px_rgba(0,0,0,0.3)]">
+              <div className="rounded-3xl bg-white/5 border border-white/10 p-5 md:p-6 shadow-[0_8px_20px_rgba(0,0,0,0.2)]">
                 <GitignoreFilesSelector
                   projectPath={projectPath}
                   selectedFiles={filesToCopy}
@@ -1830,71 +1894,63 @@ export function ProjectWizardDialog({
       </div>
     </div>
 
-    {/* Footer */}
-    <div className="flex items-center justify-between px-6 py-3 h-16 shrink-0 border-t border-white/10 bg-black/10 backdrop-blur-xl">
-      <div className="flex items-center gap-2 text-xs text-white/65 min-w-0">
-        <div className="truncate">
-          {step === "intention" && intention === "start" && "Choose your workflow to continue"}
-          {step === "intention" && intention !== "start" && "More workflows coming soon"}
-          {step === "project" && !selectedRepo && "Pick a repository to continue"}
-          {step === "project" && selectedRepo && `Selected: ${selectedRepo.name}`}
-          {step === "configure" && "Name your session and add a first task"}
-          {step === "variants" && "Add optional variants or finish"}
-        </div>
-      </div>
-      <div className="flex items-center gap-2">
-        {intention === "start" && currentStepIndex > 0 && (
-          <button
-            onClick={handleBack}
-            className="group inline-flex items-center gap-2 px-4 py-2 text-sm rounded-full border border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white hover:border-white/15 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled={isCreating}
-          >
-            <svg className="w-4 h-4 opacity-80 group-hover:opacity-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            Back
-          </button>
-        )}
-        {(intention === "start" || step !== "intention") && (
-          <button
-            onClick={
-              step === "intention"
-                ? handleNextFromIntention
-                : step === "project"
-                  ? handleNextFromProject
-                  : step === "configure"
-                    ? handleNextFromConfigure
-                    : handleSubmit
-            }
-            disabled={
-              isCreating ||
-              (step === "intention" && intention !== "start") ||
-              (step === "project" && !selectedRepo) ||
-              (step === "configure" && (!projectPath || !sessionName.trim()))
-            }
-          className={`group relative px-6 py-2.5 min-w-[160px] text-sm font-semibold rounded-full text-white bg-gradient-to-r ${intentionTheme.ctaGradient} shadow-[0_14px_42px_rgba(0,0,0,0.48)] hover:shadow-[0_22px_64px_rgba(0,0,0,0.65)] active:scale-[0.98] transition-[box-shadow,transform,filter] duration-300 ease-out disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-white/25 transform-gpu`}
-        >
-          <span className={`pointer-events-none absolute -inset-1 rounded-full blur-2xl opacity-60 ${intentionTheme.glow}`} />
-          <span className="pointer-events-none absolute inset-0 rounded-full bg-[linear-gradient(to_bottom,rgba(255,255,255,0.42),transparent_58%)] opacity-30" />
-          <span className="pointer-events-none absolute inset-0 rounded-full bg-[radial-gradient(220px_90px_at_30%_10%,rgba(255,255,255,0.40),transparent_60%)] opacity-0 group-hover:opacity-40 transition-opacity duration-300" />
-          <span className="pointer-events-none absolute inset-0 rounded-full overflow-hidden">
-            <span className="absolute -left-1/2 top-0 h-full w-1/2 skew-x-[-16deg] bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.55),transparent)] opacity-0 group-hover:opacity-60 group-hover:animate-wizard-cta-shine" />
-          </span>
-          {isCreating ? (
-            <>
-              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+    {/* Footer for non-intention steps */}
+    {step !== "intention" && (
+      <div className="flex items-center justify-between px-6 py-4 shrink-0 border-t border-white/5">
+        <div>
+          {currentStepIndex > 0 && (
+            <button
+              onClick={handleBack}
+              className="group inline-flex items-center gap-2 px-4 py-2 text-sm rounded-full border border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white hover:border-white/15 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={isCreating}
+            >
+              <svg className="w-4 h-4 opacity-80 group-hover:opacity-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
-              Creating...
-            </>
-          ) : (
-            step === "variants" ? "Create project" : "Continue"
+              Back
+            </button>
           )}
-          </button>
-        )}
+        </div>
+        <button
+          onClick={
+            step === "project"
+              ? handleNextFromProject
+              : step === "configure"
+                ? handleNextFromConfigure
+                : handleSubmit
+          }
+          disabled={
+            isCreating ||
+            (step === "project" && !selectedRepo) ||
+            (step === "configure" && (!projectPath || !sessionName.trim()))
+          }
+          className={`group relative px-6 py-2.5 min-w-[140px] text-sm font-semibold rounded-2xl text-white bg-gradient-to-r ${intentionTheme.ctaGradient} shadow-[0_10px_30px_rgba(0,0,0,0.4)] hover:shadow-[0_16px_48px_rgba(0,0,0,0.6)] active:scale-[0.98] transition-all duration-300 ease-out disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-white/25`}
+        >
+          <span className="pointer-events-none absolute inset-0 rounded-2xl bg-black/20" />
+          <span className={`pointer-events-none absolute -inset-1 rounded-2xl blur-xl opacity-50 ${intentionTheme.glow}`} />
+          <span className="pointer-events-none absolute inset-0 rounded-2xl bg-[linear-gradient(to_bottom,rgba(255,255,255,0.35),transparent_58%)] opacity-20" />
+          <span className="relative">
+            {isCreating ? (
+              <>
+                <svg className="w-4 h-4 animate-spin inline mr-2" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Creating...
+              </>
+            ) : (
+              step === "variants" ? "Create Project" : "Continue"
+            )}
+          </span>
+          {!isCreating && (
+            <svg className="relative w-4 h-4 transition-transform group-hover:translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+            </svg>
+          )}
+        </button>
       </div>
-    </div>
+    )}
+
         </div>
       </div>
     </div>

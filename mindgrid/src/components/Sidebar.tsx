@@ -47,6 +47,9 @@ export function Sidebar({ activePage, onOpenSettings, onNavigateHome }: SidebarP
     try {
       debug.info("Sidebar", "Creating project with wizard", { projectName, projectPath, sessionName, chatTypes, filesToCopy });
 
+      // Close the wizard immediately to start transition
+      setShowProjectWizard(false);
+
       // Create the project
       const project = await createProject(projectName, projectPath);
       debug.info("Sidebar", "Project created", { id: project.id });

@@ -226,22 +226,31 @@ a:hover {
   animation: scale-in 200ms ease-out;
 }
 
+@keyframes scale-out {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.92); }
+}
+
+.animate-scale-out {
+  animation: scale-out 250ms ease-in forwards;
+}
+
 @keyframes wizard-enter-forward {
-  from { opacity: 0; transform: translate3d(18px, 10px, 0) scale(0.992); filter: blur(2px); }
-  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); filter: blur(0); }
+  from { opacity: 0; transform: translate3d(20px, 8px, 0) scale(0.98); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
 }
 
 @keyframes wizard-enter-back {
-  from { opacity: 0; transform: translate3d(-18px, 10px, 0) scale(0.992); filter: blur(2px); }
-  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); filter: blur(0); }
+  from { opacity: 0; transform: translate3d(-20px, 8px, 0) scale(0.98); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
 }
 
 .wizard-enter-forward {
-  animation: wizard-enter-forward 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: wizard-enter-forward 450ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .wizard-enter-back {
-  animation: wizard-enter-back 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: wizard-enter-back 450ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @keyframes shimmer {
