@@ -1,26 +1,16 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { PRESETS, type ChatType } from "../lib/presets";
-import { GitignoreFilesSelector } from "./GitignoreFilesSelector";
+import type { ChatType } from "../lib/presets";
 import { ModelSelector } from "./ModelSelector";
 import type { SessionVariantConfig } from "./CreateSessionDialog";
 import { generateDefaultSessionName, validateSessionName } from "../lib/session-utils";
 import { useSessionStore } from "../stores/sessionStore";
+import { getLastUsedModel, setLastUsedModel } from "../lib/database";
+import { MODELS } from "../lib/models";
 
 // Hardcoded projects directory - will be a setting later
 const PROJECTS_DIRECTORY = "/Users/gustavollermalylarrain/Documents/proyectos/personales";
-
-// Default project for development - mindgrid-tauri
-const DEFAULT_PROJECT_PATH = "/Users/gustavollermalylarrain/Documents/proyectos/personales/mindgrid-tauri";
-
-// Project-specific build/run commands
-const PROJECT_COMMANDS: Record<string, { buildCommand: string; runCommand: string }> = {
-  "mindgrid-tauri": {
-    buildCommand: "cd mindgrid && npm install && npm run build",
-    runCommand: "cd mindgrid && npm install && ./scripts/tauri-preview.sh",
-  },
-};
 
 interface GitRepoInfo {
   name: string;
@@ -41,64 +31,83 @@ interface ProjectWizardDialogProps {
   ) => Promise<void>;
 }
 
-type WizardStep = 'project' | 'configure' | 'variants';
-
-const WIZARD_STEPS: Array<{ id: WizardStep; label: string; helper: string }> = [
-  { id: 'project', label: 'Select repository', helper: 'Choose where to work' },
-  { id: 'configure', label: 'Session setup', helper: 'Name and prompt' },
-  { id: 'variants', label: 'Variants (optional)', helper: 'Parallel sessions' },
-];
-
 export function ProjectWizardDialog({
   isOpen,
   onClose,
   onCreate,
 }: ProjectWizardDialogProps) {
   const { projects, deleteProject } = useSessionStore();
-  const [step, setStep] = useState<WizardStep>('project');
+
+  // Repository state
   const [repos, setRepos] = useState<GitRepoInfo[]>([]);
   const [loadingRepos, setLoadingRepos] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRepo, setSelectedRepo] = useState<GitRepoInfo | null>(null);
-  const [projectPath, setProjectPath] = useState("");
-  const [projectName, setProjectName] = useState("");
-  const [sessionName, setSessionName] = useState(() => generateDefaultSessionName(0));
-  const [systemPrompt, setSystemPrompt] = useState("");
-  const [initialPrompt, setInitialPrompt] = useState("Create a HELLO.md markdown file with MINDGRID CREATION as a content.");
+  const [showAllRepos, setShowAllRepos] = useState(false);
+
+  // Main config
   const [model, setModel] = useState<string | null>(null);
-  const [chatTypes] = useState<ChatType[]>([]);
-  const [filesToCopy, setFilesToCopy] = useState<string[]>([]);
-  const [buildCommand, setBuildCommand] = useState("");
-  const [runCommand, setRunCommand] = useState("");
+  const [sessionName, setSessionName] = useState(() => generateDefaultSessionName(0));
+
+  // Advanced options
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [systemPrompt, setSystemPrompt] = useState("");
+  const [initialTask, setInitialTask] = useState("");
+  const [previewCommand, setPreviewCommand] = useState("");
+
+  // Parallel sessions (variants)
+  const [variants, setVariants] = useState<SessionVariantConfig[]>([]);
+
+  // UI state
   const [isCreating, setIsCreating] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conflictProject, setConflictProject] = useState<string | null>(null);
-  const [variants, setVariants] = useState<SessionVariantConfig[]>([]);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const repoListRef = useRef<HTMLDivElement>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  // Load repos when dialog opens
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Compute recent projects (repos that have been used as projects before)
+  const recentRepos = useMemo(() => {
+    const projectPaths = new Set(Object.values(projects).map(p => p.path));
+    return repos.filter(r => projectPaths.has(r.path)).slice(0, 5);
+  }, [repos, projects]);
+
+  // Remaining repos count for "+N more" chip
+  const remainingReposCount = repos.length - recentRepos.length;
+
+  // Filtered repos for search
+  const filteredRepos = repos.filter(repo =>
+    repo.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // Load repos and last used model when dialog opens
   useEffect(() => {
     if (isOpen) {
-      setStep('project');
+      // Reset state
       setSearchQuery("");
       setSelectedRepo(null);
-      setProjectPath("");
-      setProjectName("");
+      setShowAllRepos(false);
       setSessionName(generateDefaultSessionName(0));
       setSystemPrompt("");
-      setInitialPrompt("Create a HELLO.md markdown file with MINDGRID CREATION as a content.");
-      setModel(null);
-      setFilesToCopy([]);
-      setBuildCommand("");
-      setRunCommand("");
+      setInitialTask("");
+      setPreviewCommand("");
+      setAdvancedOpen(false);
+      setVariants([]);
       setIsCreating(false);
       setIsDeleting(false);
       setError(null);
       setConflictProject(null);
-      setVariants([]);
+
+      // Load repos
       loadRepos();
+
+      // Load last used model
+      getLastUsedModel().then(lastModel => {
+        const defaultModel = MODELS.find(m => m.isDefault)?.id || 'sonnet';
+        setModel(lastModel || defaultModel);
+      });
+
+      // Focus search input
       setTimeout(() => searchInputRef.current?.focus(), 50);
     }
   }, [isOpen]);
@@ -110,25 +119,6 @@ export function ProjectWizardDialog({
         parentDirectory: PROJECTS_DIRECTORY,
       });
       setRepos(result);
-
-      // Pre-select mindgrid-tauri if available
-      const defaultRepo = result.find(r => r.path === DEFAULT_PROJECT_PATH);
-      if (defaultRepo) {
-        setSelectedRepo(defaultRepo);
-        setProjectPath(defaultRepo.path);
-        setProjectName(defaultRepo.name);
-        // Set default commands
-        const commands = PROJECT_COMMANDS[defaultRepo.name];
-        if (commands) {
-          setBuildCommand(commands.buildCommand);
-          setRunCommand(commands.runCommand);
-        }
-        // Scroll to the selected item after render
-        setTimeout(() => {
-          const selectedElement = repoListRef.current?.querySelector(`[data-path="${defaultRepo.path}"]`);
-          selectedElement?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-        }, 100);
-      }
     } catch (err) {
       console.error("Failed to load repos:", err);
       setRepos([]);
@@ -137,24 +127,16 @@ export function ProjectWizardDialog({
     }
   };
 
-  const filteredRepos = repos.filter(repo =>
-    repo.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
   const handleSelectRepo = (repo: GitRepoInfo) => {
     setSelectedRepo(repo);
-    setProjectPath(repo.path);
-    setProjectName(repo.name);
     setConflictProject(null);
-    // Set default commands if available
-    const commands = PROJECT_COMMANDS[repo.name];
-    if (commands) {
-      setBuildCommand(commands.buildCommand);
-      setRunCommand(commands.runCommand);
-    } else {
-      setBuildCommand("");
-      setRunCommand("");
-    }
+    setError(null);
+  };
+
+  const handleClearSelection = () => {
+    setSelectedRepo(null);
+    setShowAllRepos(false);
+    setTimeout(() => searchInputRef.current?.focus(), 50);
   };
 
   const handleSelectFolder = async () => {
@@ -168,73 +150,35 @@ export function ProjectWizardDialog({
 
       if (selected) {
         const path = selected as string;
-        setProjectPath(path);
         const folderName = path.split("/").pop() || "Untitled";
-        setProjectName(folderName);
         setSelectedRepo({ name: folderName, path });
         setConflictProject(null);
+        setError(null);
       }
     } catch (err) {
       console.error("Failed to select folder:", err);
     }
   };
 
-  const handleNextFromProject = () => {
-    if (!selectedRepo) {
-      setError("Select a repository to continue");
-      return;
-    }
-    setError(null);
-    setStep('configure');
-    // Set default model if not already set
-    if (!model) {
-      setModel(PRESETS[0].defaults.model || null);
-    }
-  };
-
-  const handleNextFromConfigure = () => {
-    if (!projectPath) {
-      setError("Select a project folder to continue");
-      return;
-    }
-    const trimmedSessionName = sessionName.trim();
-    const validationError = validateSessionName(trimmedSessionName);
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-    setError(null);
-    setStep('variants');
-  };
-
-  const handleBack = () => {
-    if (step === 'variants') {
-      setStep('configure');
-    } else if (step === 'configure') {
-      setStep('project');
-    }
-    setError(null);
-  };
-
   const handleSubmit = async () => {
-    if (!projectPath) {
-      setError("Please select a project folder");
+    if (!selectedRepo) {
+      setError("Please select a repository");
       return;
     }
-    if (!projectName.trim()) {
-      setError("Please enter a project name");
-      return;
-    }
+
     const trimmedSessionName = sessionName.trim();
     if (!trimmedSessionName) {
       setError("Please enter a session name");
       return;
     }
-    const baseValidationError = validateSessionName(trimmedSessionName);
-    if (baseValidationError) {
-      setError(baseValidationError);
+
+    const validationError = validateSessionName(trimmedSessionName);
+    if (validationError) {
+      setError(validationError);
       return;
     }
+
+    // Validate variant names
     let normalizedVariants: SessionVariantConfig[] | undefined;
     if (variants.length > 0) {
       normalizedVariants = variants.map((variant, index) => {
@@ -243,21 +187,23 @@ export function ProjectWizardDialog({
         const promptValue = (variant.prompt || "").trim();
         return { ...variant, name, prompt: promptValue };
       });
+
       for (const variant of normalizedVariants) {
-        const validationError = validateSessionName(variant.name);
-        if (validationError) {
-          setError(`Variant "${variant.name}": ${validationError}`);
+        const variantValidationError = validateSessionName(variant.name);
+        if (variantValidationError) {
+          setError(`Session "${variant.name}": ${variantValidationError}`);
           return;
         }
         if (variant.name === trimmedSessionName) {
-          setError("Variant names must differ from the main session name");
+          setError("Session names must be unique");
           return;
         }
       }
+
       const seen = new Set<string>();
       for (const variant of normalizedVariants) {
         if (seen.has(variant.name)) {
-          setError(`Duplicate variant name "${variant.name}"`);
+          setError(`Duplicate session name "${variant.name}"`);
           return;
         }
         seen.add(variant.name);
@@ -266,23 +212,28 @@ export function ProjectWizardDialog({
 
     setIsCreating(true);
     setError(null);
+
     try {
-      // Use the editable command values from state
+      // Save last used model
+      if (model) {
+        await setLastUsedModel(model);
+      }
+
       const commands = {
-        buildCommand: buildCommand.trim() || undefined,
-        runCommand: runCommand.trim() || undefined,
+        runCommand: previewCommand.trim() || undefined,
         systemPrompt: systemPrompt.trim() || undefined,
-        initialPrompt: initialPrompt.trim() || undefined,
+        initialPrompt: initialTask.trim() || undefined,
       };
+
       await onCreate(
-        projectName.trim(),
-        projectPath,
-        sessionName.trim(),
-        chatTypes,
-        filesToCopy,
+        selectedRepo.name,
+        selectedRepo.path,
+        trimmedSessionName,
+        [], // chatTypes - empty, not used in new flow
+        [], // filesToCopy - empty, not in new spec
         commands,
         {
-          prompt: initialPrompt.trim(),
+          prompt: initialTask.trim(),
           model,
           variants: normalizedVariants,
         }
@@ -292,8 +243,9 @@ export function ProjectWizardDialog({
       const msg = err instanceof Error ? err.message : "Failed to create project";
       setError(msg);
       setIsCreating(false);
+
       if (err instanceof Error && err.message.toLowerCase().includes("project already exists")) {
-        setConflictProject(projectPath);
+        setConflictProject(selectedRepo.path);
         setError(null);
       }
     }
@@ -302,44 +254,32 @@ export function ProjectWizardDialog({
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
       onClose();
-    } else if (e.key === "Enter") {
+    } else if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
-      if (step === 'project') {
-        handleNextFromProject();
-      } else if (step === 'configure') {
-        handleNextFromConfigure();
-      } else if (step === 'variants') {
+      if (selectedRepo && !isCreating) {
         handleSubmit();
       }
     }
   };
 
-
   const generateVariantId = () => Math.random().toString(36).slice(2);
-
-  const createVariantFromBase = (
-    position?: number,
-    overrides?: Partial<SessionVariantConfig>
-  ): SessionVariantConfig => {
-    const variantIndex = position ?? variants.length + 2;
-    const fallbackName = `Session #${variantIndex}`;
-    return {
-      id: generateVariantId(),
-      name: overrides?.name ?? fallbackName,
-      prompt: overrides?.prompt ?? initialPrompt,
-      model: overrides?.model ?? model,
-    };
-  };
 
   const handleAddVariant = () => {
     setVariants((current) => {
       const nextIndex = current.length + 2;
-      return [...current, createVariantFromBase(nextIndex)];
+      return [...current, {
+        id: generateVariantId(),
+        name: `Session #${nextIndex}`,
+        prompt: "",
+        model: model,
+      }];
     });
   };
 
   const handleUpdateVariant = (id: string, updates: Partial<SessionVariantConfig>) => {
-    setVariants((current) => current.map((variant) => (variant.id === id ? { ...variant, ...updates } : variant)));
+    setVariants((current) =>
+      current.map((variant) => (variant.id === id ? { ...variant, ...updates } : variant))
+    );
   };
 
   const handleRemoveVariant = (id: string) => {
@@ -349,7 +289,6 @@ export function ProjectWizardDialog({
   const handleDeleteAndReplace = async () => {
     if (!conflictProject) return;
 
-    // Find the existing project by path
     const existingProject = Object.values(projects).find(p => p.path === conflictProject);
     if (!existingProject) {
       setError("Could not find existing project to delete");
@@ -359,13 +298,8 @@ export function ProjectWizardDialog({
 
     setIsDeleting(true);
     try {
-      // Delete the existing project
       await deleteProject(existingProject.id);
-
-      // Close the conflict dialog
       setConflictProject(null);
-
-      // Retry the creation
       await handleSubmit();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to delete existing project";
@@ -376,73 +310,353 @@ export function ProjectWizardDialog({
     }
   };
 
-  const currentStepIndex = WIZARD_STEPS.findIndex((wizardStep) => wizardStep.id === step);
-
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 bg-[var(--bg-primary)]/90 backdrop-blur-sm z-50 flex flex-col" onKeyDown={handleKeyDown}>
-      {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-default)]" data-tauri-drag-region>
-        <div className="flex items-center gap-3">
-          <div className="flex flex-col">
-            <span className="text-lg font-semibold text-white">New Project</span>
-            <span className="text-xs text-[var(--text-tertiary)]">Step {currentStepIndex + 1} of {WIZARD_STEPS.length}</span>
-          </div>
-          <div className="flex items-center gap-2 text-xs text-[var(--text-tertiary)]">
-            {WIZARD_STEPS.map((wizardStep, index) => {
-              const isActive = wizardStep.id === step;
-              const isComplete = index < currentStepIndex;
-              return (
-                <div key={wizardStep.id} className="flex items-center gap-2">
-                  <span
-                    className={`px-2 py-1 rounded-lg border ${
-                      isActive
-                        ? 'border-[var(--accent-primary)] text-[var(--accent-primary)]'
-                        : isComplete
-                          ? 'border-[var(--accent-success)] text-[var(--accent-success)]'
-                          : 'border-[var(--border-default)]'
-                    }`}
-                    title={wizardStep.helper}
-                  >
-                    {wizardStep.label}
-                  </span>
-                  {index < WIZARD_STEPS.length - 1 && <span className="text-[var(--text-tertiary)]">→</span>}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
+    <>
+      {/* Backdrop */}
+      <div
+        className={`fixed inset-0 bg-black/50 backdrop-blur-[2px] z-[99] transition-opacity duration-300 ${
+          isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}
+        onClick={onClose}
+      />
+
+      {/* Slide-over Panel */}
+      <div
+        className={`fixed top-0 right-0 bottom-0 w-[580px] bg-[#151518] border-l border-[#2a2a32] z-[100] flex flex-col shadow-[-20px_0_60px_rgba(0,0,0,0.5)] transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          isOpen ? 'translate-x-0' : 'translate-x-full'
+        }`}
+        onKeyDown={handleKeyDown}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-5 border-b border-[#1f1f26]">
+          <span className="text-lg font-semibold text-white">New Project</span>
           <button
             onClick={onClose}
-            className="px-3 py-1.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] rounded-lg border border-[var(--border-default)]"
+            className="w-8 h-8 flex items-center justify-center rounded-md text-[#5a5a70] hover:bg-[#222228] hover:text-white transition-colors"
           >
-            Close
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
           </button>
-          {currentStepIndex > 0 && (
-            <button
-              onClick={handleBack}
-              className="px-3 py-1.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] rounded-lg border border-[var(--border-default)]"
-              disabled={isCreating}
-            >
-              Back
-            </button>
-          )}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6 slide-over-content">
+          {/* Repository Section */}
+          <div>
+            <div className="text-[11px] font-semibold text-[#5a5a70] uppercase tracking-[0.5px] mb-2.5">
+              Repository
+            </div>
+
+            {!selectedRepo ? (
+              <>
+                {/* Search Input */}
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#5a5a70] text-sm pointer-events-none">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </span>
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search projects..."
+                    className="w-full pr-4 py-3 bg-[#222228] border border-[#2a2a32] rounded-md text-white placeholder:text-[#5a5a70] text-sm focus:outline-none focus:border-[#6366f1] focus:ring-[3px] focus:ring-[rgba(99,102,241,0.3)] transition-all"
+                    style={{ paddingLeft: '40px' }}
+                  />
+                </div>
+
+                {/* Recent Projects */}
+                {recentRepos.length > 0 && !searchQuery && !showAllRepos && (
+                  <div className="mt-3">
+                    <div className="text-[11px] text-[#5a5a70] mb-2">Recent</div>
+                    <div className="flex flex-wrap gap-2">
+                      {recentRepos.map((repo) => (
+                        <button
+                          key={repo.path}
+                          onClick={() => handleSelectRepo(repo)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1a1a1e] border border-[#1f1f26] rounded-full text-xs text-[#8888a0] hover:border-[#6366f1] hover:text-white hover:bg-[#222228] transition-all"
+                        >
+                          <div className="w-4 h-4 rounded bg-gradient-to-br from-[#6366f1] to-[#8b5cf6]" />
+                          <span>{repo.name}</span>
+                        </button>
+                      ))}
+                      {remainingReposCount > 0 && (
+                        <button
+                          onClick={() => setShowAllRepos(true)}
+                          className="px-3 py-1.5 border border-dashed border-[#2a2a32] rounded-full text-xs text-[#5a5a70] hover:border-[#6366f1] hover:text-[#6366f1] transition-all"
+                        >
+                          +{remainingReposCount} more
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Full Repo List (when searching or showing all) */}
+                {(searchQuery || showAllRepos) && (
+                  <div className="mt-3 border border-[#2a2a32] rounded-md overflow-hidden">
+                    {loadingRepos ? (
+                      <div className="p-6 text-center text-[#5a5a70] text-sm">
+                        <svg className="w-5 h-5 animate-spin mx-auto mb-2" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        Loading...
+                      </div>
+                    ) : filteredRepos.length === 0 ? (
+                      <div className="p-6 text-center text-[#5a5a70] text-sm">
+                        {searchQuery ? "No matching projects" : "No repositories found"}
+                      </div>
+                    ) : (
+                      <div className="max-h-48 overflow-y-auto">
+                        {filteredRepos.map((repo) => (
+                          <button
+                            key={repo.path}
+                            onClick={() => handleSelectRepo(repo)}
+                            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[#222228] transition-colors border-b border-[#1f1f26] last:border-b-0 text-left"
+                          >
+                            <div className="w-8 h-8 rounded-md bg-[#222228] flex items-center justify-center flex-shrink-0">
+                              <svg className="w-4 h-4 text-[#8888a0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                              </svg>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium text-white truncate">{repo.name}</div>
+                              <div className="text-[11px] text-[#5a5a70] font-mono truncate">{repo.path}</div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Browse folder button */}
+                <button
+                  onClick={handleSelectFolder}
+                  className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-dashed border-[#2a2a32] rounded-md text-[#8888a0] text-sm hover:border-[#6366f1] hover:text-[#6366f1] transition-all"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Browse for folder...
+                </button>
+              </>
+            ) : (
+              /* Selected Repository Display */
+              <div className="flex items-center gap-3 p-3 bg-[#222228] border border-[#6366f1] rounded-md">
+                <div className="w-8 h-8 rounded-md bg-gradient-to-br from-[#6366f1] to-[#8b5cf6] flex items-center justify-center flex-shrink-0 text-white">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                  </svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-white">{selectedRepo.name}</div>
+                  <div className="text-[11px] text-[#5a5a70] font-mono truncate">
+                    {selectedRepo.path.replace(/^\/Users\/[^/]+/, '~')}
+                  </div>
+                </div>
+                <button
+                  onClick={handleClearSelection}
+                  className="text-[11px] text-[#6366f1] hover:underline"
+                >
+                  Change
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Model + Session Name Grid */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <div className="text-[11px] font-semibold text-[#5a5a70] uppercase tracking-[0.5px] mb-2.5">
+                Model
+              </div>
+              <ModelSelector value={model} onChange={setModel} />
+            </div>
+            <div>
+              <div className="text-[11px] font-semibold text-[#5a5a70] uppercase tracking-[0.5px] mb-2.5">
+                Session Name
+              </div>
+              <input
+                type="text"
+                value={sessionName}
+                onChange={(e) => setSessionName(e.target.value)}
+                placeholder="Session 1"
+                className="w-full px-3.5 py-2.5 bg-[#222228] border border-[#2a2a32] rounded-md text-white text-[13px] focus:outline-none focus:border-[#6366f1] focus:ring-[3px] focus:ring-[rgba(99,102,241,0.3)] transition-all"
+              />
+            </div>
+          </div>
+
+          {/* Advanced Options Toggle */}
           <button
-            onClick={
-              step === 'project'
-                ? handleNextFromProject
-                : step === 'configure'
-                  ? handleNextFromConfigure
-                  : handleSubmit
-            }
-            disabled={
-              isCreating ||
-              (step === 'project' && !selectedRepo) ||
-              (step === 'configure' && (!projectPath || !sessionName.trim()))
-            }
-            className="px-4 py-2 text-sm font-medium bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-hover)] text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            onClick={() => setAdvancedOpen(!advancedOpen)}
+            className="flex items-center gap-2 py-3 text-[13px] text-[#8888a0] hover:text-white transition-colors"
+          >
+            <svg
+              className={`w-2.5 h-2.5 transition-transform duration-200 ${advancedOpen ? 'rotate-90' : ''}`}
+              fill="currentColor"
+              viewBox="0 0 8 12"
+            >
+              <path d="M1.5 0L0 1.5 4.5 6 0 10.5 1.5 12 7.5 6z" />
+            </svg>
+            <span>Advanced options</span>
+          </button>
+
+          {/* Advanced Options Content */}
+          {advancedOpen && (
+            <div className="p-4 bg-[#1a1a1e] border border-[#1f1f26] rounded-md space-y-5">
+              {/* System Prompt */}
+              <div>
+                <div className="text-[11px] font-semibold text-[#5a5a70] uppercase tracking-[0.5px] mb-2.5">
+                  System Prompt
+                </div>
+                <textarea
+                  value={systemPrompt}
+                  onChange={(e) => setSystemPrompt(e.target.value)}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  placeholder="Instructions that apply to all chats in this project..."
+                  rows={2}
+                  className="w-full px-3.5 py-2.5 bg-[#222228] border border-[#2a2a32] rounded-md text-white text-[13px] placeholder:text-[#5a5a70] focus:outline-none focus:border-[#6366f1] focus:ring-[3px] focus:ring-[rgba(99,102,241,0.3)] resize-y transition-all"
+                />
+                <div className="text-[11px] text-[#5a5a70] mt-1.5">
+                  Persists across all chats and conversation resets
+                </div>
+              </div>
+
+              {/* Initial Task */}
+              <div>
+                <div className="text-[11px] font-semibold text-[#5a5a70] uppercase tracking-[0.5px] mb-2.5">
+                  Initial Task
+                </div>
+                <textarea
+                  value={initialTask}
+                  onChange={(e) => setInitialTask(e.target.value)}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  placeholder="Task to execute when project opens..."
+                  rows={2}
+                  className="w-full px-3.5 py-2.5 bg-[#222228] border border-[#2a2a32] rounded-md text-white text-[13px] placeholder:text-[#5a5a70] focus:outline-none focus:border-[#6366f1] focus:ring-[3px] focus:ring-[rgba(99,102,241,0.3)] resize-y transition-all"
+                />
+                <div className="text-[11px] text-[#5a5a70] mt-1.5">
+                  Runs once when session starts. Leave empty for blank chat.
+                </div>
+              </div>
+
+              {/* Preview Command */}
+              <div>
+                <div className="text-[11px] font-semibold text-[#5a5a70] uppercase tracking-[0.5px] mb-2.5">
+                  Preview Command <span className="opacity-50">(optional)</span>
+                </div>
+                <input
+                  type="text"
+                  value={previewCommand}
+                  onChange={(e) => setPreviewCommand(e.target.value)}
+                  placeholder="npm run dev"
+                  className="w-full px-3.5 py-2.5 bg-[#222228] border border-[#2a2a32] rounded-md text-white text-[13px] font-mono placeholder:text-[#5a5a70] focus:outline-none focus:border-[#6366f1] focus:ring-[3px] focus:ring-[rgba(99,102,241,0.3)] transition-all"
+                />
+                <div className="text-[11px] text-[#5a5a70] mt-1.5">
+                  Command to launch the app preview
+                </div>
+              </div>
+
+              {/* Divider */}
+              <div className="h-px bg-[#2a2a32]" />
+
+              {/* Parallel Sessions */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-[11px] font-semibold text-[#5a5a70] uppercase tracking-[0.5px]">
+                    Parallel Sessions
+                  </div>
+                  <button
+                    onClick={handleAddVariant}
+                    className="flex items-center gap-1 px-2.5 py-1.5 border border-[#2a2a32] rounded-md text-[11px] text-[#8888a0] hover:border-[#6366f1] hover:text-[#6366f1] transition-all"
+                  >
+                    + Add session
+                  </button>
+                </div>
+                <div className="text-[11px] text-[#5a5a70] mb-3">
+                  Launch additional sessions to compare models or parallelize work
+                </div>
+
+                {variants.length === 0 ? (
+                  <div className="p-5 text-center border border-dashed border-[#2a2a32] rounded-md text-[12px] text-[#5a5a70]">
+                    No additional sessions<br />
+                    <span className="opacity-70">Click "+ Add session" to compare models or parallelize</span>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {variants.map((variant, index) => (
+                      <div
+                        key={variant.id}
+                        className="p-3 bg-[#222228] border border-[#2a2a32] rounded-md"
+                      >
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-[13px] font-medium text-white">
+                            Session #{index + 2}
+                          </span>
+                          <button
+                            onClick={() => handleRemoveVariant(variant.id)}
+                            className="w-6 h-6 flex items-center justify-center rounded text-[#5a5a70] hover:bg-[rgba(239,68,68,0.2)] hover:text-[#ef4444] transition-colors"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-[120px,1fr] gap-2">
+                          <div>
+                            <div className="text-[10px] text-[#5a5a70] mb-1.5">Model</div>
+                            <ModelSelector
+                              value={variant.model}
+                              onChange={(value) => handleUpdateVariant(variant.id, { model: value })}
+                            />
+                          </div>
+                          <div>
+                            <div className="text-[10px] text-[#5a5a70] mb-1.5">
+                              Task Override <span className="opacity-50">(optional)</span>
+                            </div>
+                            <textarea
+                              value={variant.prompt}
+                              onChange={(e) => handleUpdateVariant(variant.id, { prompt: e.target.value })}
+                              onKeyDown={(e) => e.stopPropagation()}
+                              placeholder="Same as primary session..."
+                              rows={2}
+                              className="w-full px-2.5 py-2 bg-[#1a1a1e] border border-[#2a2a32] rounded-md text-white text-[12px] placeholder:text-[#5a5a70] focus:outline-none focus:border-[#6366f1] focus:ring-[3px] focus:ring-[rgba(99,102,241,0.3)] resize-y transition-all"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Error Display */}
+          {error && (
+            <div className="p-3 bg-[rgba(239,68,68,0.1)] border border-[#ef4444] rounded-md">
+              <p className="text-sm text-[#ef4444]">{error}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[#1f1f26] bg-[#1a1a1e]">
+          <button
+            onClick={onClose}
+            className="px-5 py-2.5 rounded-md border border-[#2a2a32] text-[#8888a0] text-[13px] font-medium hover:bg-[#222228] hover:text-white transition-all"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!selectedRepo || isCreating}
+            className="px-5 py-2.5 rounded-md bg-[#6366f1] text-white text-[13px] font-medium hover:shadow-[0_0_24px_rgba(99,102,241,0.3)] hover:-translate-y-px transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none flex items-center gap-2"
           >
             {isCreating ? (
               <>
@@ -453,385 +667,59 @@ export function ProjectWizardDialog({
                 Creating...
               </>
             ) : (
-              step === 'variants' ? 'Create project' : 'Continue'
+              'Create'
             )}
           </button>
         </div>
       </div>
 
-      {/* Body */}
-      <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 overflow-y-auto px-6 py-6 pb-12">
-          {step === 'project' && (
-            <div className="space-y-4 max-w-5xl">
-              <div className="relative">
-                <svg
-                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-tertiary)]"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                  />
-                </svg>
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search projects..."
-                  className="w-full pl-14 pr-4 py-2.5 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg text-white placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent-primary)] focus:ring-1 focus:ring-[var(--accent-primary)]"
-                />
+      {/* Conflict Dialog */}
+      {conflictProject && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 px-4">
+          <div className="bg-[#151518] border border-[#2a2a32] rounded-xl shadow-2xl max-w-md w-full p-5 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-[rgba(239,68,68,0.2)] text-[#ef4444] flex items-center justify-center font-semibold text-lg">
+                !
               </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-[2fr,1fr] gap-4">
-                <div className="border border-[var(--border-default)] rounded-lg overflow-hidden">
-                  {loadingRepos ? (
-                    <div className="p-8 text-center text-[var(--text-tertiary)]">
-                      <svg className="w-6 h-6 animate-spin mx-auto mb-2" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
-                      Loading repositories...
-                    </div>
-                  ) : filteredRepos.length === 0 ? (
-                    <div className="p-8 text-center text-[var(--text-tertiary)]">
-                      {searchQuery ? "No matching projects found" : "No git repositories found"}
-                    </div>
-                  ) : (
-                    <div ref={repoListRef} className="max-h-[520px] overflow-y-auto">
-                      {filteredRepos.map((repo) => (
-                        <div
-                          key={repo.path}
-                          data-path={repo.path}
-                          onClick={() => handleSelectRepo(repo)}
-                          className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors border-b border-[var(--border-subtle)] last:border-b-0 ${
-                            selectedRepo?.path === repo.path
-                              ? 'bg-[var(--accent-primary-muted)] border-l-2 border-l-[var(--accent-primary)]'
-                              : 'hover:bg-[var(--bg-hover)]'
-                          }`}
-                        >
-                          <div className="w-8 h-8 rounded-lg bg-[var(--bg-hover)] flex items-center justify-center flex-shrink-0">
-                            <svg className="w-4 h-4 text-[var(--text-secondary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                            </svg>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium text-white truncate">{repo.name}</div>
-                            <div className="text-xs text-[var(--text-tertiary)] font-mono truncate">{repo.path}</div>
-                          </div>
-                          {selectedRepo?.path === repo.path && (
-                            <svg className="w-5 h-5 text-[var(--accent-primary)] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-3">
-                  <button
-                    onClick={handleSelectFolder}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-dashed border-[var(--border-default)] rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-emphasis)] transition-colors bg-[var(--bg-surface)]"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              <div>
+                <div className="text-sm font-semibold text-white">Project already exists</div>
+                <p className="text-xs text-[#8888a0]">
+                  Delete and create a new one, or choose a different folder.
+                </p>
+              </div>
+            </div>
+            <div className="bg-[#222228] border border-[#2a2a32] rounded-md p-3 text-xs text-white font-mono break-all">
+              {conflictProject}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setConflictProject(null)}
+                disabled={isDeleting}
+                className="px-4 py-2 text-sm rounded-md border border-[#2a2a32] text-white hover:bg-[#222228] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteAndReplace}
+                disabled={isDeleting}
+                className="px-4 py-2 text-sm rounded-md bg-[#ef4444] hover:bg-[#ef4444]/80 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {isDeleting ? (
+                  <>
+                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                     </svg>
-                    Browse for another folder...
-                  </button>
-                  <div className="p-3 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg text-xs text-[var(--text-secondary)]">
-                    Showing repositories from:
-                    <div className="mt-1 font-mono text-[var(--text-primary)]">{PROJECTS_DIRECTORY}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {step === 'configure' && (
-            <div className="p-2 space-y-6 max-w-5xl">
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-[var(--text-primary)]">
-                  Session name
-                </label>
-                <input
-                  type="text"
-                  value={sessionName}
-                  onChange={(e) => setSessionName(e.target.value)}
-                  className="w-full px-3 py-2 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg text-white focus:outline-none focus:border-[var(--accent-primary)]"
-                  placeholder="Session 1"
-                />
-                <p className="text-xs text-[var(--text-tertiary)]">
-                  Creates the primary git worktree for this project.
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-[var(--text-primary)]">
-                  System prompt <span className="text-[var(--text-tertiary)]">(optional)</span>
-                </label>
-                <textarea
-                  value={systemPrompt}
-                  onChange={(e) => setSystemPrompt(e.target.value)}
-                  onKeyDown={(e) => e.stopPropagation()}
-                  className="w-full px-3 py-2 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg text-white focus:outline-none focus:border-[var(--accent-primary)] resize-y"
-                  rows={3}
-                  placeholder="System instructions that persist across conversation resets (e.g., 'You are an expert assistant')"
-                />
-                <p className="text-xs text-[var(--text-tertiary)]">
-                  This prompt persists even after clearing the conversation.
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-[var(--text-primary)]">
-                  Initial prompt / task <span className="text-[var(--text-tertiary)]">(optional)</span>
-                </label>
-                <textarea
-                  value={initialPrompt}
-                  onChange={(e) => setInitialPrompt(e.target.value)}
-                  onKeyDown={(e) => e.stopPropagation()}
-                  className="w-full px-3 py-2 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg text-white focus:outline-none focus:border-[var(--accent-primary)] resize-y"
-                  rows={4}
-                  placeholder="Describe the initial task for this session (e.g., 'Create a HELLO.md file')"
-                />
-                <p className="text-xs text-[var(--text-tertiary)]">
-                  Sent once when the chat opens. Cleared after resetting the conversation.
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-[var(--text-primary)]">
-                  Preferred model <span className="text-[var(--text-tertiary)]">(optional)</span>
-                </label>
-                <ModelSelector value={model} onChange={setModel} />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-[var(--text-tertiary)] mb-1">Build command</label>
-                  <input
-                    type="text"
-                    value={buildCommand}
-                    onChange={(e) => setBuildCommand(e.target.value)}
-                    className="w-full px-3 py-2 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg text-white font-mono text-sm focus:outline-none focus:border-[var(--accent-primary)]"
-                    placeholder="npm run build"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-[var(--text-tertiary)] mb-1">Run command (for preview)</label>
-                  <input
-                    type="text"
-                    value={runCommand}
-                    onChange={(e) => setRunCommand(e.target.value)}
-                    className="w-full px-3 py-2 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg text-white font-mono text-sm focus:outline-none focus:border-[var(--accent-primary)]"
-                    placeholder="npm run dev"
-                  />
-                </div>
-              </div>
-              <p className="text-xs text-[var(--text-tertiary)]">
-                Commands run from the worktree directory. Use the Run button to execute the preview.
-              </p>
-
-
-            </div>
-          )}
-
-          {step === 'variants' && (
-            <div className="p-2 space-y-5 max-w-5xl">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <div className="text-sm font-medium text-white">Parallel variants (optional)</div>
-                  <p className="text-sm text-[var(--text-secondary)]">
-                    Launch additional sessions to compare models, prompt tweaks, or split features.
-                  </p>
-                </div>
-              </div>
-
-              <div className="p-3 border border-dashed border-[var(--border-default)] rounded-lg bg-[var(--bg-surface)]/50 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-medium text-[var(--text-primary)]">Custom variants</div>
-                    <p className="text-xs text-[var(--text-tertiary)]">
-                      Add additional sessions. Your current prompt is applied to every variant by default.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleAddVariant}
-                    className="px-3 py-1.5 text-xs bg-[var(--bg-hover)] hover:bg-[var(--bg-active)] border border-[var(--border-default)] hover:border-[var(--border-emphasis)] rounded-lg text-[var(--text-primary)] transition-colors flex items-center gap-1.5"
-                  >
-                    <span className="text-[var(--accent-success)] text-base leading-none">+</span>
-                    Add variant
-                  </button>
-                </div>
-
-                {variants.length === 0 && (
-                  <div className="text-xs text-[var(--text-tertiary)]">No variants added. Click "Add variant" to create parallel sessions.</div>
+                    Deleting...
+                  </>
+                ) : (
+                  "Delete and Replace"
                 )}
-
-                {variants.length > 0 && (
-                  <div className="space-y-3">
-                    {variants.map((variant, index) => (
-                      <div key={variant.id} className="p-3 rounded-lg border border-[var(--border-default)] bg-[var(--bg-surface)] space-y-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex-1">
-                            <label className="block text-xs text-[var(--text-tertiary)] mb-1">
-                              Variant name
-                            </label>
-                            <input
-                              type="text"
-                              value={variant.name}
-                              onChange={(e) => handleUpdateVariant(variant.id, { name: e.target.value })}
-                              className="w-full px-3 py-2 bg-[var(--bg-primary)] border border-[var(--border-default)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--accent-primary)]"
-                              placeholder={`Session #${index + 2}`}
-                            />
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveVariant(variant.id)}
-                            className="p-2 rounded-lg text-[var(--text-tertiary)] hover:text-[var(--accent-error)] hover:bg-[var(--accent-error-muted)] transition-colors"
-                            aria-label="Remove variant"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                        </div>
-
-                        <div className="w-1/2">
-                          <label className="block text-xs text-[var(--text-tertiary)] mb-1">Model</label>
-                          <ModelSelector
-                            value={variant.model}
-                            onChange={(value) => handleUpdateVariant(variant.id, { model: value })}
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-xs text-[var(--text-tertiary)] mb-1">Prompt</label>
-                          <textarea
-                            value={variant.prompt}
-                            onChange={(e) => handleUpdateVariant(variant.id, { prompt: e.target.value })}
-                            onKeyDown={(e) => e.stopPropagation()}
-                            rows={3}
-                            className="w-full px-3 py-2 bg-[var(--bg-primary)] border border-[var(--border-default)] rounded-lg text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary-muted)] focus:border-[var(--accent-primary)] resize-y"
-                            placeholder={initialPrompt || "Describe this variant's goal"}
-                          />
-                        </div>
-                      </div>
-                    ))}
-
-                    <div className="flex items-center justify-between text-xs text-[var(--text-tertiary)]">
-                      <div>{variants.length} session{variants.length === 1 ? "" : "s"} will be created in addition to the primary session.</div>
-                    </div>
-                  </div>
-                )}
-
-              </div>
-
-              <GitignoreFilesSelector
-                projectPath={projectPath}
-                selectedFiles={filesToCopy}
-                onSelectionChange={setFilesToCopy}
-                disabled={isCreating}
-              />
+              </button>
             </div>
-          )}
-
-          {error && (
-            <div className="mt-4 p-3 bg-[var(--accent-error-muted)] border border-[var(--accent-error)] rounded-lg">
-              <p className="text-sm text-[var(--accent-error)]">{error}</p>
-            </div>
-          )}
+          </div>
         </div>
-
-        {conflictProject && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-4">
-            <div className="bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-xl shadow-2xl max-w-md w-full p-5 space-y-4">
-              <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-lg bg-[var(--accent-error-muted)] text-[var(--accent-error)] flex items-center justify-center font-semibold">!</div>
-                <div>
-                  <div className="text-sm font-semibold text-white">Project already exists</div>
-                  <p className="text-xs text-[var(--text-secondary)]">
-                    There is already a project at this path. You can delete it and create a new one, or choose a different folder.
-                  </p>
-                </div>
-              </div>
-              <div className="bg-[var(--bg-hover)]/60 border border-[var(--border-default)] rounded-lg p-3 text-xs text-[var(--text-primary)] font-mono break-all">
-                {conflictProject}
-              </div>
-              <div className="flex justify-end gap-2">
-                <button
-                  onClick={() => setConflictProject(null)}
-                  disabled={isDeleting}
-                  className="px-3 py-1.5 text-sm rounded-lg border border-[var(--border-default)] text-[var(--text-primary)] hover:border-[var(--border-emphasis)] hover:bg-[var(--bg-hover)] disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleDeleteAndReplace}
-                  disabled={isDeleting}
-                  className="px-3 py-1.5 text-sm rounded-lg bg-[var(--accent-error)] hover:bg-[var(--accent-error)]/80 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                >
-                  {isDeleting ? (
-                    <>
-                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
-                      Deleting...
-                    </>
-                  ) : (
-                    "Delete and Replace"
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Summary Pane */}
-        <aside className="w-80 border-l border-[var(--border-default)] bg-[var(--bg-secondary)]/80 backdrop-blur-sm p-4 space-y-4 hidden lg:block">
-          <div>
-            <div className="text-xs uppercase text-[var(--text-tertiary)] mb-1">Project</div>
-            <div className="text-sm text-white truncate">{projectName || "—"}</div>
-            <div className="text-[11px] text-[var(--text-tertiary)] truncate font-mono">{projectPath || "Select a repo"}</div>
-          </div>
-          <div>
-            <div className="text-xs uppercase text-[var(--text-tertiary)] mb-1">Primary Session</div>
-            <div className="text-sm text-white truncate">{sessionName || "Not set"}</div>
-          </div>
-          <div>
-            <div className="text-xs uppercase text-[var(--text-tertiary)] mb-1">System Prompt</div>
-            <div className="text-sm text-white truncate">{systemPrompt || "None"}</div>
-          </div>
-          <div>
-            <div className="text-xs uppercase text-[var(--text-tertiary)] mb-1">Initial Prompt</div>
-            <div className="text-sm text-white truncate">{initialPrompt || "None"}</div>
-          </div>
-          <div>
-            <div className="text-xs uppercase text-[var(--text-tertiary)] mb-1">Model</div>
-            <div className="text-sm text-white truncate">{model || "Default model"}</div>
-          </div>
-          <div>
-            <div className="text-xs uppercase text-[var(--text-tertiary)] mb-1">Variants</div>
-            <div className="text-sm text-white">
-              {variants.length > 0 ? `${variants.length} variant${variants.length === 1 ? "" : "s"}` : "Single session"}
-            </div>
-          </div>
-          <div>
-            <div className="text-xs uppercase text-[var(--text-tertiary)] mb-1">Commands</div>
-            <div className="text-[12px] text-[var(--text-primary)] font-mono truncate">{buildCommand || "—"}</div>
-            <div className="text-[12px] text-[var(--text-primary)] font-mono truncate">{runCommand || "—"}</div>
-          </div>
-        </aside>
-      </div>
-    </div>
+      )}
+    </>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Dashboard } from "./components/dashboard/Dashboard";
 import { Terminal } from "./components/Terminal";
 import { CustomTitlebar } from "./components/CustomTitlebar";
+import { WorkspaceLayout } from "./components/workspace";
 import { useSessionStore } from "./stores/sessionStore";
 import { isDevMode, getWorktreeInfo } from "./lib/dev-mode";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -13,9 +14,12 @@ import {
   cyclePrevWindow,
 } from "./hooks/useGlobalShortcuts";
 
+type WindowMode = "main" | "terminal" | "workspace";
+
 function getWindowParams(): {
-  mode: "main" | "terminal";
+  mode: WindowMode;
   sessionId: string | null;
+  projectId: string | null;
   sessionName: string | null;
   projectName: string | null;
   runCommand: string | null;
@@ -23,10 +27,14 @@ function getWindowParams(): {
 } {
   const params = new URLSearchParams(window.location.search);
   const modeParam = params.get("mode");
-  const mode: "main" | "terminal" = modeParam === "terminal" ? "terminal" : "main";
+  let mode: WindowMode = "main";
+  if (modeParam === "terminal") mode = "terminal";
+  else if (modeParam === "workspace") mode = "workspace";
+
   return {
     mode,
     sessionId: params.get("sessionId"),
+    projectId: params.get("projectId"),
     sessionName: params.get("sessionName"),
     projectName: params.get("projectName"),
     runCommand: params.get("runCommand"),
@@ -35,7 +43,7 @@ function getWindowParams(): {
 }
 
 function App() {
-  const { mode: windowMode, sessionId, sessionName, projectName, runCommand, cwd: urlCwd } = getWindowParams();
+  const { mode: windowMode, sessionId, projectId, sessionName, projectName, runCommand, cwd: urlCwd } = getWindowParams();
 
   // State for triggering actions from global shortcuts
   const [shortcutTrigger, setShortcutTrigger] = useState<{
@@ -168,6 +176,20 @@ function App() {
           <Terminal cwd={urlCwd} initialCommand={runCommand || undefined} mode="raw" />
         </div>
       </div>
+    );
+  }
+
+  // Workspace mode - unified layout with chat, preview, terminal
+  if (windowMode === "workspace" && projectId && sessionId) {
+    return (
+      <WorkspaceLayout
+        projectId={projectId}
+        sessionId={sessionId}
+        onBack={() => {
+          // Navigate back to main dashboard by changing URL
+          window.location.search = "";
+        }}
+      />
     );
   }
 

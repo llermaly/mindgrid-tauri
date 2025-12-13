@@ -5,31 +5,52 @@
    Deep navy backgrounds • Vibrant accents • Rounded corners • Smooth animations
    ============================================================================ */
 
-/* Inter font from Google Fonts */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+/* Fonts from Google Fonts - Outfit for UI, JetBrains Mono for code */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Outfit:wght@300;400;500;600&display=swap');
 
 /* CSS Custom Properties - Design Tokens */
 :root {
-  /* PRIMARY BACKGROUNDS - Dark neutrals */
-  --bg-primary: #1a1a2e;
-  --bg-secondary: #16213e;
-  --bg-tertiary: #0f3460;
-  --bg-surface: #1f1f3a;
-  --bg-hover: #252545;
-  --bg-active: #2a2a50;
-  --bg-elevated: #242442;
+  /* PRIMARY BACKGROUNDS - Dark neutrals (MindGrid spec) */
+  --bg-base: #0d0d0f;
+  --bg-elevated: #151518;
+  --bg-panel: #1a1a1e;
+  --bg-input: #222228;
+
+  /* Legacy aliases for compatibility */
+  --bg-primary: #0d0d0f;
+  --bg-secondary: #151518;
+  --bg-tertiary: #1a1a1e;
+  --bg-surface: #1a1a1e;
+  --bg-hover: #222228;
+  --bg-active: #2a2a32;
 
   /* TEXT COLORS */
-  --text-primary: #ffffff;
-  --text-secondary: #a0a0b0;
-  --text-tertiary: #6b6b7d;
-  --text-inverse: #1a1a2e;
+  --text-primary: #e8e8ec;
+  --text-secondary: #8888a0;
+  --text-muted: #5a5a70;
+  --text-tertiary: #5a5a70;
+  --text-inverse: #0d0d0f;
 
-  /* ACCENT COLORS - Vibrant */
-  --accent-primary: #2563eb;
-  --accent-primary-hover: #3b82f6;
-  --accent-primary-muted: rgba(37, 99, 235, 0.15);
-  --accent-secondary: #7c3aed;
+  /* ACCENT COLORS - Indigo primary (MindGrid spec) */
+  --accent: #6366f1;
+  --accent-glow: rgba(99, 102, 241, 0.3);
+  --accent-primary: #6366f1;
+  --accent-primary-hover: #818cf8;
+  --accent-primary-muted: rgba(99, 102, 241, 0.15);
+  --accent-secondary: #8b5cf6;
+
+  /* Status colors */
+  --green: #22c55e;
+  --green-glow: rgba(34, 197, 94, 0.4);
+  --amber: #f59e0b;
+  --amber-glow: rgba(245, 158, 11, 0.4);
+  --red: #ef4444;
+  --red-glow: rgba(239, 68, 68, 0.4);
+  --blue: #3b82f6;
+  --purple: #8b5cf6;
+  --cyan: #06b6d4;
+
+  /* Legacy status aliases */
   --accent-success: #22c55e;
   --accent-success-muted: rgba(34, 197, 94, 0.15);
   --accent-warning: #f59e0b;
@@ -38,20 +59,22 @@
   --accent-error-muted: rgba(239, 68, 68, 0.15);
   --accent-info: #06b6d4;
 
-  /* BORDER COLORS */
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-default: rgba(255, 255, 255, 0.10);
-  --border-emphasis: rgba(255, 255, 255, 0.18);
-  --border-accent: var(--accent-primary);
+  /* BORDER COLORS (MindGrid spec) */
+  --border: #2a2a32;
+  --border-subtle: #1f1f26;
+  --border-default: #2a2a32;
+  --border-emphasis: #3a3a44;
+  --border-accent: var(--accent);
 
   /* SHADOWS - Layered depth */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
   --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.5);
-  --shadow-glow: 0 0 20px rgba(37, 99, 235, 0.15);
+  --shadow-glow: 0 0 20px var(--accent-glow);
 
-  /* BORDER RADIUS - Polished corners */
+  /* BORDER RADIUS - Polished corners (MindGrid spec) */
+  --radius: 10px;
   --radius-xs: 4px;
   --radius-sm: 6px;
   --radius-md: 8px;
@@ -60,8 +83,8 @@
   --radius-2xl: 20px;
   --radius-full: 9999px;
 
-  /* TYPOGRAPHY - Modern sans-serif */
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  /* TYPOGRAPHY - Modern sans-serif (MindGrid spec) */
+  --font-sans: "Outfit", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace;
 
   /* TRANSITIONS - Smooth and responsive */
@@ -72,7 +95,14 @@
 
   /* TITLEBAR */
   --titlebar-height: 38px;
-  --titlebar-bg: var(--bg-secondary);
+  --titlebar-bg: var(--bg-elevated);
+
+  /* WORKSPACE LAYOUT */
+  --topbar-height: 52px;
+  --statusbar-height: 36px;
+  --sessionbar-height: 44px;
+  --terminal-height: 140px;
+  --terminal-collapsed-height: 36px;
 
   /* SPACING */
   --space-xs: 0.25rem;
@@ -150,9 +180,52 @@ a:hover {
    SCROLLBAR CUSTOMIZATION - Sleek and minimal
    ============================================================================ */
 
+/* Webkit browsers (Chrome, Safari, Edge) - Global scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+/* Scrollable containers - ensure custom scrollbar is applied */
+.slide-over-content,
+.chat-messages,
+.terminal-content,
+.skills-panel-content,
+.project-list,
+.dropdown-menu,
+.modal-content {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+/* Legacy class for backward compatibility */
 .scrollbar-thin::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 .scrollbar-thin::-webkit-scrollbar-track {
@@ -160,19 +233,14 @@ a:hover {
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: var(--border-emphasis);
-  border-radius: var(--radius-full);
-  border: 2px solid transparent;
-  background-clip: padding-box;
+  background: var(--border);
+  border-radius: 3px;
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: var(--text-tertiary);
-  border: 2px solid transparent;
-  background-clip: padding-box;
+  background: var(--text-muted);
 }
 
-/* Hide scrollbar track when not hovering */
 .scrollbar-thin::-webkit-scrollbar-corner {
   background: transparent;
 }

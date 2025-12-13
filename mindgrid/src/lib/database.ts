@@ -367,3 +367,17 @@ export async function clearChatWindowMessages(chatWindowId: string): Promise<voi
   await deleteChatWindowMessages(chatWindowId);
   debug.info("Database", `Cleared messages for chat window ${chatWindowId}`);
 }
+
+// User preferences - last used model
+export async function getLastUsedModel(): Promise<string | null> {
+  const s = await getStore();
+  const model = await s.get<string>("lastUsedModel");
+  return model || null;
+}
+
+export async function setLastUsedModel(model: string): Promise<void> {
+  const s = await getStore();
+  await s.set("lastUsedModel", model);
+  await s.save();
+  debug.info("Database", `Saved last used model: ${model}`);
+}

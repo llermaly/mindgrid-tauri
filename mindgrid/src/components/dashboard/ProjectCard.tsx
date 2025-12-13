@@ -18,9 +18,10 @@ interface ProjectCardProps {
   onDeleteProject: (projectId: string) => Promise<void>;
   onDeleteSession: (sessionId: string) => Promise<void>;
   onRunSession?: (project: DashboardProject, session: DashboardSession) => void;
+  onOpenWorkspace?: (projectId: string, sessionId: string) => void;
 }
 
-export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSessionChat, onOpenNewChat, onCreateSession, onCloseAllChats, onCloseSessionChats, onDeleteProject, onDeleteSession, onRunSession }: ProjectCardProps) {
+export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSessionChat: _onOpenSessionChat, onOpenNewChat, onCreateSession, onCloseAllChats, onCloseSessionChats, onDeleteProject, onDeleteSession, onRunSession, onOpenWorkspace }: ProjectCardProps) {
   const [showDeleteProjectModal, setShowDeleteProjectModal] = useState(false);
   const [showDeleteSessionModal, setShowDeleteSessionModal] = useState<string | null>(null);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
@@ -224,18 +225,20 @@ export function ProjectCard({ project, preset, onOpen, onOpenSession, onOpenSess
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                     </svg>
                   </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onOpenSessionChat(session.id);
-                    }}
-                    className="p-1.5 rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-                    title="Open workspace"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
-                    </svg>
-                  </button>
+                  {onOpenWorkspace && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenWorkspace(project.id, session.id);
+                      }}
+                      className="p-1.5 rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] transition-colors"
+                      title="Open workspace"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                      </svg>
+                    </button>
+                  )}
                   {project.runCommand && onRunSession && session.lifecycleStatus === 'active' && (
                     <button
                       onClick={(e) => {

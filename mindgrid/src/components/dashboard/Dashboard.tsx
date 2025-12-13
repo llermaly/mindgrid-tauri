@@ -16,8 +16,14 @@ import { CreateSessionDialog, type SessionConfig, type SessionVariantConfig } fr
 import { CustomTitlebar } from "../CustomTitlebar";
 import { TransformerModeIndicator } from "../TransformerTabBar";
 import { useTransformerStore } from "../../stores/transformerStore";
+import { WorkspaceLayout } from "../workspace";
 
 type DashboardView = "all" | "settings";
+
+interface WorkspaceState {
+  projectId: string;
+  sessionId: string;
+}
 
 interface DashboardProps {
   shortcutTrigger?: {
@@ -53,6 +59,7 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
   const [showCreateSessionDialog, setShowCreateSessionDialog] = useState(false);
   const [createSessionForProjectId, setCreateSessionForProjectId] = useState<string | null>(null);
   const [worktreeName, setWorktreeName] = useState<string | null>(null);
+  const [workspaceState, setWorkspaceState] = useState<WorkspaceState | null>(null);
 
   // Check if running from a worktree
   useEffect(() => {
@@ -308,26 +315,12 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
     setSelectedSessionId(createdSessions[0]?.id ?? null);
     setCreateSessionForProjectId(null);
 
-    if (createdSessions.length > 1) {
-      await openAllProjectSessionChats(
-        createdSessions.map((session) => ({
-          sessionId: session.id,
-          sessionName: session.name,
-          cwd: session.cwd,
-        })),
-        project.name
-      );
-    } else if (createdSessions[0]) {
-        // Open the single session chat (which is now the Main Session chat window)
-        await openMultipleChatWindows(
-          {
-            sessionId: createdSessions[0].id,
-            sessionName: createdSessions[0].name,
-            projectName: project.name,
-            cwd: createdSessions[0].cwd,
-          },
-          1
-        );
+    // Enter workspace mode with the first session
+    if (createdSessions[0]) {
+      setWorkspaceState({
+        projectId: targetProjectId,
+        sessionId: createdSessions[0].id,
+      });
     }
   };
 
@@ -389,26 +382,12 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
         createdSessions.push(newSession);
       }
 
-      if (createdSessions.length > 1) {
-        await openAllProjectSessionChats(
-          createdSessions.map((session) => ({
-            sessionId: session.id,
-            sessionName: session.name,
-            cwd: session.cwd,
-          })),
-          project.name
-        );
-      } else if (createdSessions[0]) {
-        // Always open exactly one chat window for a single session
-        await openMultipleChatWindows(
-          {
-            sessionId: createdSessions[0].id,
-            sessionName: createdSessions[0].name,
-            projectName: project.name,
-            cwd: createdSessions[0].cwd,
-          },
-          1
-        );
+      // Enter workspace mode with the first session
+      if (createdSessions[0]) {
+        setWorkspaceState({
+          projectId: project.id,
+          sessionId: createdSessions[0].id,
+        });
       }
 
       setSelectedProjectId(project.id);
@@ -418,6 +397,17 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
     }
   };
 
+
+  // Render workspace layout when in workspace mode
+  if (workspaceState) {
+    return (
+      <WorkspaceLayout
+        projectId={workspaceState.projectId}
+        sessionId={workspaceState.sessionId}
+        onBack={() => setWorkspaceState(null)}
+      />
+    );
+  }
 
   return (
     <div className="h-screen flex flex-col bg-[var(--bg-primary)] text-[var(--text-primary)]">
@@ -563,6 +553,9 @@ export function Dashboard({ shortcutTrigger, onShortcutHandled }: DashboardProps
                             onDeleteProject={handleDeleteProject}
                             onDeleteSession={handleDeleteSession}
                             onRunSession={handleRunSession}
+                            onOpenWorkspace={(projectId, sessionId) => {
+                              setWorkspaceState({ projectId, sessionId });
+                            }}
                           />
                         ))}
                       </div>
